@@ -1,0 +1,121 @@
+{
+  "name": "knarr",
+  "version": "0.0.1",
+  "description": "Local npm package development without symlinks. Carry built files into consumer node_modules with incremental sync and watch mode.",
+  "type": "module",
+  "bin": {
+    "knarr": "./dist/cli.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
+    },
+    "./vite": {
+      "types": "./dist/vite-plugin.d.ts",
+      "import": "./dist/vite-plugin.mjs"
+    },
+    "./webpack": {
+      "types": "./dist/webpack-plugin.d.ts",
+      "import": "./dist/webpack-plugin.mjs"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "vite": [
+        "./dist/vite-plugin.d.ts"
+      ],
+      "webpack": [
+        "./dist/webpack-plugin.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "bench": "vitest bench",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "keywords": [
+    "npm",
+    "link",
+    "local",
+    "development",
+    "yalc",
+    "package",
+    "monorepo",
+    "pnpm",
+    "yarn",
+    "bun",
+    "symlink",
+    "copy",
+    "hmr"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oleg-kuibar/knarr.git"
+  },
+  "homepage": "https://knarr.olegkuibar.dev",
+  "bugs": {
+    "url": "https://github.com/oleg-kuibar/knarr/issues"
+  },
+  "author": "Oleg Kuibar (https://github.com/oleg-kuibar)",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "@types/picomatch": "^4.0.2",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.2",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "vite": ">=5.0.0",
+    "webpack": ">=5.0.0",
+    "@rspack/core": ">=0.5.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    },
+    "webpack": {
+      "optional": true
+    },
+    "@rspack/core": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "chokidar": "^5.0.0",
+    "citty": "^0.2.1",
+    "picocolors": "^1.1.1",
+    "picomatch": "^4.0.4",
+    "xxhash-wasm": "^1.1.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "dompurify": "^3.4.1",
+      "picomatch": "^4.0.4",
+      "postcss": "^8.5.10",
+      "rollup": "^4.59.0"
+    },
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

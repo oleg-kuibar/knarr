@@ -1,0 +1,166 @@
+name: Publish
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump type
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+      custom_version:
+        description: 'Custom version (only when bump=custom, e.g. 1.0.0-beta.1)'
+        required: false
+        type: string
+      dry_run:
+        description: Dry run (build & test only, no publish)
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # Skip canary when the push is a release commit from this workflow
+    if: >-
+      !(github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+      && startsWith(github.event.head_commit.message, 'chore: release v'))
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Build example packages
+        run: |
+          cd examples/packages/api-client && pnpm install && pnpm tsup
+          cd ../ui-kit && pnpm install && pnpm tsup
+
+      - run: pnpm test
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Determine publish mode
+        id: mode
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=canary" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
+          fetch-depth: ${{ steps.mode.outputs.mode == 'release' && '0' || '1' }}
+
+      - uses: pnpm/action-setup@v5
+
+      # No registry-url — trusted publishing uses OIDC, not tokens
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Trusted publishing requires npm >= 11.5.1; Node 24 includes a compatible npm.
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # --- Version bump (workflow_dispatch release only) ---
+      - name: Resolve version
+        if: github.event_name == 'workflow_dispatch'
+        id: version
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          if [ "${{ inputs.bump }}" = "custom" ]; then
+            NEW="${{ inputs.custom_version }}"
+            if [ -z "$NEW" ]; then
+              echo "::error::custom_version is required when bump=custom"
+              exit 1
+            fi
+            VALID=$(npx -y semver "$NEW" 2>/dev/null || true)
+            if [ -z "$VALID" ]; then
+              echo "::error::Invalid semver: $NEW"
+              exit 1
+            fi
+          else
+            NEW=$(npx -y semver "$CURRENT" -i "${{ inputs.bump }}")
+          fi
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
+          echo "### Version: $CURRENT → $NEW" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Bump package.json
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == false
+        run: npm version "${{ steps.version.outputs.new }}" --no-git-tag-version
+
+      - name: Commit & tag
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == false
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: release ${{ steps.version.outputs.tag }}"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin HEAD:master --follow-tags
+
+      - name: Dry run summary
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == true
+        run: |
+          echo "### Dry run — no publish" >> "$GITHUB_STEP_SUMMARY"
+          echo "Would release **${{ steps.version.outputs.tag }}**" >> "$GITHUB_STEP_SUMMARY"
+
+      # --- Canary version stamp ---
+      - name: Set canary version
+        if: steps.mode.outputs.mode == 'canary'
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION=$(node -p "require('./package.json').version")
+          CANARY="${VERSION}-canary.${SHORT_SHA}"
+          npm version "$CANARY" --no-git-tag-version
+          echo "CANARY_VERSION=$CANARY" >> $GITHUB_ENV
+
+      # --- Publish (OIDC trusted publishing — no token needed) ---
+      # Uses npm (not pnpm) because pnpm doesn't support OIDC yet
+      # https://github.com/pnpm/pnpm/issues/9812
+      - name: Publish canary
+        if: steps.mode.outputs.mode == 'canary'
+        run: npm publish --provenance --access public --tag canary
+
+      - name: Publish release
+        if: steps.mode.outputs.mode == 'release' && inputs.dry_run != true
+        run: npm publish --provenance --access public
+
+      - name: Generate release notes
+        if: steps.mode.outputs.mode == 'release' && inputs.dry_run != true
+        run: |
+          npx git-cliff --latest --strip header -o RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        if: steps.mode.outputs.mode == 'release' && inputs.dry_run != true
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.version.outputs.tag || github.ref_name }}
+          body_path: RELEASE_NOTES.md

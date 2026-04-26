@@ -1,0 +1,1 @@
+export { createBasicTemplate } from './files';

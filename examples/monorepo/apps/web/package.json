@@ -1,0 +1,20 @@
+{
+  "name": "@mono/web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vite app — uses shared-utils (workspace) + api-client (Knarr)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "postinstall": "knarr restore || true"
+  },
+  "dependencies": {
+    "@mono/shared-utils": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "vite": "^6.0.0"
+  }
+}

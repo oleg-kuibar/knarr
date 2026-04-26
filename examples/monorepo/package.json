@@ -1,0 +1,11 @@
+{
+  "name": "Knarr-monorepo-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "pnpm workspace monorepo — workspace links + Knarr side by side",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev:web": "pnpm --filter @mono/web dev",
+    "start:server": "pnpm --filter @mono/server start"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "bun-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone Node.js/Bun consumer using bun",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "postinstall": "knarr restore || true",
+    "knarr:add": "knarr add @example/ui-kit"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "knarr": "^0.2.0"
+  }
+}

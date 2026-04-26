@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Knarr state (consumer-side)
+.knarr/
+.plunk/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tarballs
+*.tgz
+
+# Coverage
+coverage/
+
+# Benchmark results
+bench-results.json
+
+# Env
+.env
+.env.local

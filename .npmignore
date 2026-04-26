@@ -1,0 +1,21 @@
+# Source
+src/
+examples/
+tsup.config.ts
+tsconfig.json
+vitest.config.ts
+
+# Dev files
+.editorconfig
+.github/
+CONTRIBUTING.md
+CLAUDE.md
+coverage/
+
+# IDE
+.vscode/
+.idea/
+
+# Test artifacts
+*.test.ts
+__tests__/

@@ -1,0 +1,97 @@
+import { defineCommand } from "citty";
+import { resolve } from "node:path";
+import { suppressHumanOutput } from "../utils/output.js";
+import { doPush, startWatchMode, startMultiWatchMode } from "../core/push-engine.js";
+import { doPushAll } from "../core/batch-push.js";
+import { loadKnarrConfig } from "../utils/config.js";
+import { isDryRun } from "../utils/logger.js";
+import { printDryRunReport } from "../utils/dry-run.js";
+
+export default defineCommand({
+  meta: {
+    name: "push",
+    description:
+      "Publish and push to all consumers. Use --watch for continuous mode.",
+  },
+  args: {
+    watch: {
+      type: "boolean",
+      description: "Watch for changes and auto-push",
+      default: false,
+    },
+    all: {
+      type: "boolean",
+      description: "Push all workspace packages in dependency order",
+      default: false,
+    },
+    build: {
+      type: "string",
+      description: "Build command to run before publishing (watch mode)",
+    },
+    "skip-build": {
+      type: "boolean",
+      description: "Watch output dirs directly, skip build command detection",
+      default: false,
+    },
+    debounce: {
+      type: "string",
+      description: "Debounce delay in ms for watch mode (default: 500)",
+    },
+    cooldown: {
+      type: "string",
+      description: "Minimum time between builds in ms (default: 500)",
+    },
+    "no-scripts": {
+      type: "boolean",
+      description: "Skip prepack/postpack lifecycle hooks",
+      default: false,
+    },
+    force: {
+      type: "boolean",
+      alias: "f",
+      description: "Force copy all files, bypassing hash comparison",
+      default: false,
+    },
+    notify: {
+      type: "boolean",
+      description: "Ring terminal bell on push completion (watch mode)",
+      default: false,
+    },
+    "no-cascade": {
+      type: "boolean",
+      description: "Disable cascading rebuilds in --all watch mode",
+      default: false,
+    },
+  },
+  async run({ args }) {
+    suppressHumanOutput();
+    const packageDir = resolve(".");
+    const config = await loadKnarrConfig(packageDir);
+    const pushOptions = {
+      runScripts: !args["no-scripts"],
+      force: args.force,
+      historyLimit: config.historyLimit,
+    };
+
+    if (args.all) {
+      // Push all workspace packages
+      await doPushAll(packageDir, pushOptions);
+
+      if (args.watch) {
+        await startMultiWatchMode(packageDir, args, pushOptions);
+      }
+    } else {
+      const push = () => doPush(packageDir, pushOptions);
+
+      // Initial push
+      await push();
+
+      // Watch mode
+      if (args.watch) {
+        await startWatchMode(packageDir, args, push);
+      }
+    }
+
+    if (isDryRun()) printDryRunReport();
+  },
+});
