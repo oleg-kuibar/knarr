@@ -20,7 +20,9 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: npm
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/knarr
     steps:
       - uses: actions/checkout@v6
 
