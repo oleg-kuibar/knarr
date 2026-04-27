@@ -11,7 +11,8 @@ export type MutationType =
   | "bin-unlink"
   | "cache-invalidate"
   | "lock-skip"
-  | "lifecycle-skip";
+  | "lifecycle-skip"
+  | "command-skip";
 
 export interface DryRunMutation {
   type: MutationType;
@@ -63,6 +64,7 @@ export function printDryRunReport(): void {
     "cache-invalidate": "Invalidate cache",
     "lock-skip": "Skip lock",
     "lifecycle-skip": "Skip lifecycle hook",
+    "command-skip": "Skip command",
   };
 
   for (const [type, items] of grouped) {

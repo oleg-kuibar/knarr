@@ -17,8 +17,12 @@ import { Timer } from "../utils/timer.js";
 import { output } from "../utils/output.js";
 import { errorWithSuggestion } from "../utils/errors.js";
 import { isDryRun, verbose, isJsonOutput } from "../utils/logger.js";
-import { printDryRunReport } from "../utils/dry-run.js";
+import { printDryRunReport, recordMutation } from "../utils/dry-run.js";
 import { warnVersionMismatch } from "../utils/validators.js";
+import {
+  validatePackageName as validatePackageNameStrict,
+  validatePackageVersion,
+} from "../utils/validators.js";
 import type { LinkEntry, PackageManager } from "../types.js";
 
 interface AddPackageOptions {
@@ -33,7 +37,15 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
   const consumerPath = resolve(".");
   const { name: packageName, version: pinnedVersion } = parsePackageArg(options.packageArg);
 
-  validatePackageName(packageName, options.packageArg);
+  validatePackageNameArg(packageName, options.packageArg);
+  if (pinnedVersion) {
+    try {
+      validatePackageVersion(pinnedVersion);
+    } catch {
+      errorWithSuggestion(`Invalid package version "${pinnedVersion}" in "${options.packageArg}".`);
+      process.exit(1);
+    }
+  }
 
   if (options.from) {
     const fromPath = resolve(options.from);
@@ -156,7 +168,7 @@ export async function readPackageNameFromSource(sourcePath: string): Promise<str
   }
 
   const name = (pkg as { name: string }).name.trim();
-  validatePackageName(name, name);
+  validatePackageNameArg(name, name);
   return name;
 }
 
@@ -179,8 +191,10 @@ export function parsePackageArg(arg: string): { name: string; version: string | 
   return { name: arg, version: null };
 }
 
-function validatePackageName(packageName: string, original: string): void {
-  if (!packageName || packageName === "@" || (packageName.startsWith("@") && !packageName.includes("/"))) {
+function validatePackageNameArg(packageName: string, original: string): void {
+  try {
+    validatePackageNameStrict(packageName);
+  } catch {
     errorWithSuggestion(
       `Invalid package name "${original}". Use format: package-name or @scope/package-name.`
     );
@@ -204,11 +218,15 @@ async function handleMissingDeps(
 
   if (yes) {
     const cmd = buildInstallCommand(pm, missing);
-    consola.info(`Installing missing dependencies: ${missing.join(", ")}`);
+    consola.info(
+      isDryRun()
+        ? `[dry-run] Would install missing dependencies: ${missing.join(", ")}`
+        : `Installing missing dependencies: ${missing.join(", ")}`
+    );
     const ok = await runInstallCommand(cmd, consumerPath);
-    if (ok) {
+    if (ok && !isDryRun()) {
       consola.success("Installed missing dependencies");
-    } else {
+    } else if (!ok) {
       consola.warn(`Install failed. Run manually: ${cmd}`);
     }
     return;
@@ -221,9 +239,9 @@ async function handleMissingDeps(
   if (confirm) {
     const cmd = buildInstallCommand(pm, missing);
     const ok = await runInstallCommand(cmd, consumerPath);
-    if (ok) {
+    if (ok && !isDryRun()) {
       consola.success("Installed missing dependencies");
-    } else {
+    } else if (!ok) {
       consola.warn(`Install failed. Run manually: ${cmd}`);
     }
   } else {
@@ -260,11 +278,15 @@ async function configureBundler(
     if (viteResult.modified) {
       consola.success(`Added knarr plugin to ${basename(bundler.configFile)}`);
       const installCmd = buildDevInstallCommand(pm, "knarr");
-      consola.info("Installing knarr as devDependency...");
+      consola.info(
+        isDryRun()
+          ? "[dry-run] Would install knarr as devDependency"
+          : "Installing knarr as devDependency..."
+      );
       const ok = await runInstallCommand(installCmd, consumerPath);
-      if (ok) {
+      if (ok && !isDryRun()) {
         consola.success("Installed knarr");
-      } else {
+      } else if (!ok) {
         consola.warn(`Install failed. Run manually: ${installCmd}`);
       }
     } else if (viteResult.error) {
@@ -287,6 +309,7 @@ async function configureBundler(
 }
 
 function buildInstallCommand(pm: PackageManager, deps: string[]): string {
+  for (const dep of deps) validatePackageNameStrict(dep);
   const joined = deps.join(" ");
   switch (pm) {
     case "pnpm":
@@ -314,6 +337,11 @@ function buildDevInstallCommand(pm: PackageManager, dep: string): string {
 }
 
 function runInstallCommand(cmd: string, cwd: string): Promise<boolean> {
+  if (isDryRun()) {
+    recordMutation({ type: "command-skip", path: cwd, detail: cmd });
+    return Promise.resolve(true);
+  }
+
   return new Promise((resolve) => {
     const isWin = platform() === "win32";
     const shell = isWin ? "cmd" : "sh";

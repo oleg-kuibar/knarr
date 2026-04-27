@@ -1,8 +1,8 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { consola } from "./console.js";
 import pc from "picocolors";
-import { exists, ensureDir } from "./fs.js";
+import { exists, ensureDir, atomicWriteFile } from "./fs.js";
 import { getConsumerStatePath, getConsumerKnarrDir } from "./paths.js";
 import { readConsumerState, writeConsumerState } from "../core/tracker.js";
 import type { PackageManager } from "../types.js";
@@ -37,7 +37,7 @@ export async function ensureGitignore(
     content.length > 0
       ? "\n# knarr local links\n.knarr/\n"
       : "# knarr local links\n.knarr/\n";
-  await writeFile(gitignorePath, content + separator + section);
+  await atomicWriteFile(gitignorePath, content + separator + section);
   return true;
 }
 
@@ -62,7 +62,7 @@ export async function addPostinstall(pkgPath: string): Promise<boolean> {
   pkg.scripts.postinstall = "npx knarr restore || true";
 
   const indent = content.match(/^(\s+)"/m)?.[1] || "  ";
-  await writeFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
+  await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
   return true;
 }
 
@@ -86,7 +86,7 @@ export async function removePostinstall(pkgPath: string): Promise<boolean> {
     delete pkg.scripts;
   }
   const indent = content.match(/^(\s+)"/m)?.[1] || "  ";
-  await writeFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
+  await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
   return true;
 }
 

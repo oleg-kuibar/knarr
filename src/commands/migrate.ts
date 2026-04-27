@@ -1,11 +1,13 @@
 import { defineCommand } from "citty";
 import { resolve, join } from "node:path";
-import { readFile, writeFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
 import pc from "picocolors";
-import { exists } from "../utils/fs.js";
+import { exists, atomicWriteFile, removeDir } from "../utils/fs.js";
 import { Timer } from "../utils/timer.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
+import { isDryRun } from "../utils/logger.js";
+import { printDryRunReport, recordMutation } from "../utils/dry-run.js";
 
 interface YalcLockEntry {
   version: string;
@@ -104,7 +106,7 @@ export default defineCommand({
 
         if (changed) {
           const indent = pkgContent.match(/^(\s+)"/m)?.[1] || "  ";
-          await writeFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
+          await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
           consola.success("Cleaned up package.json");
         }
       } catch (err) {
@@ -114,13 +116,18 @@ export default defineCommand({
 
     // 3. Remove .yalc/ directory
     if (hasYalcDir) {
-      await rm(yalcDir, { recursive: true, force: true });
+      await removeDir(yalcDir);
       consola.success("Removed .yalc/ directory");
     }
 
     // 4. Remove yalc.lock
     if (hasYalcLock) {
-      await rm(yalcLockPath, { force: true });
+      if (isDryRun()) {
+        recordMutation({ type: "remove", path: yalcLockPath });
+      } else {
+        const { rm } = await import("node:fs/promises");
+        await rm(yalcLockPath, { force: true });
+      }
       consola.success("Removed yalc.lock");
     }
 
@@ -145,5 +152,7 @@ export default defineCommand({
       packages,
       elapsed: timer.elapsedMs(),
     });
+
+    if (isDryRun()) printDryRunReport();
   },
 });

@@ -1,9 +1,9 @@
 import { defineCommand } from "citty";
 import { resolve, join, basename } from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
 import pc from "picocolors";
-import { exists, ensureDir } from "../utils/fs.js";
+import { exists, ensureDir, atomicWriteFile } from "../utils/fs.js";
 import { detectPackageManager } from "../utils/pm-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { detectBuildCommand as detectBuildCmd } from "../utils/build-detect.js";
@@ -160,7 +160,7 @@ export default defineCommand({
     const knarrDir = join(projectDir, ".knarr");
     if (!(await exists(knarrDir))) {
       await ensureDir(knarrDir);
-      await writeFile(
+      await atomicWriteFile(
         join(knarrDir, "state.json"),
         JSON.stringify(
           { version: "1", packageManager: pm, role, links: {} },
@@ -266,7 +266,7 @@ async function addScript(
   pkg.scripts[name] = command;
 
   const indent = content.match(/^(\s+)"/m)?.[1] || "  ";
-  await writeFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
+  await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
   return true;
 }
 

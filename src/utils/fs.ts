@@ -315,5 +315,10 @@ export async function dirSize(dir: string): Promise<number> {
 
 /** Copy an entire directory recursively using native fs.cp */
 export async function copyDir(src: string, dest: string): Promise<void> {
+  if (isDryRun()) {
+    verbose(`[dry-run] would copy directory ${src} → ${dest}`);
+    recordMutation({ type: "copy", path: src, dest });
+    return;
+  }
   await cp(src, dest, { recursive: true });
 }
