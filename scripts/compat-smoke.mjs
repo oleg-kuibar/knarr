@@ -238,7 +238,6 @@ test("Yarn 4 node-modules injection", () => {
     name: "yarn-app",
     version: "1.0.0",
     type: "module",
-    packageManager: packageManagerSpec("yarn"),
   });
   writeText(join(app, ".yarnrc.yml"), "nodeLinker: node-modules\n");
   writeText(join(app, "yarn.lock"), "");
