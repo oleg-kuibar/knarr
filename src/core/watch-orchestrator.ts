@@ -9,6 +9,7 @@ type PackageState = "idle" | "building" | "queued";
 
 interface PackageEntry {
   dir: string;
+  buildCmd?: string;
   state: PackageState;
   watcher: { close: () => Promise<void> };
 }
@@ -103,7 +104,7 @@ export class WatchOrchestrator {
         wrappedOnChange
       );
 
-      this.packages.set(name, { dir, state: "idle", watcher });
+      this.packages.set(name, { dir, buildCmd, state: "idle", watcher });
     }
 
     consola.info(`Watching ${this.packages.size} workspace packages`);
@@ -153,12 +154,9 @@ export class WatchOrchestrator {
     verbose(`[cascade] Rebuilding ${name}`);
 
     try {
-      const config = await loadKnarrConfig(entry.dir);
-      const buildCmd = config.buildCmd;
-
-      if (buildCmd) {
+      if (entry.buildCmd) {
         const { runBuildCommand } = await import("./watcher.js");
-        const success = await runBuildCommand(buildCmd, entry.dir);
+        const success = await runBuildCommand(entry.buildCmd, entry.dir);
         if (!success) {
           consola.warn(`[cascade] Build failed for ${name}, skipping dependents`);
           entry.state = "idle";

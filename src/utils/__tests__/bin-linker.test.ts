@@ -84,6 +84,7 @@ describe("createBinLinks and removeBinLinks", () => {
       expect(await exists(join(binDir, "my-cli.cmd"))).toBe(true);
       const cmd = await readFile(join(binDir, "my-cli.cmd"), "utf-8");
       expect(cmd).toContain("ECHO off");
+      expect(cmd).toContain('node "%dp0%\\..\\my-cli\\dist\\cli.js" %*');
       // Also should have shell script for Git Bash
       expect(await exists(join(binDir, "my-cli"))).toBe(true);
     } else {

@@ -69,7 +69,7 @@ export async function createBinLinks(
       // Create .cmd wrapper
       const cmdPath = join(binDir, `${binName}.cmd`);
       const targetWindows = targetRelative.replace(/\//g, "\\");
-      const cmdContent = `@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nCALL :find_dp0\r\n"%dp0%\\${targetWindows}" %*\r\n`;
+      const cmdContent = `@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nCALL :find_dp0\r\nnode "%dp0%\\${targetWindows}" %*\r\n`;
       await writeFile(cmdPath, cmdContent);
 
       // Create .ps1 wrapper for PowerShell
