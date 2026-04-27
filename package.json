@@ -107,7 +107,7 @@
   },
   "dependencies": {
     "chokidar": "^5.0.0",
-    "citty": "^0.2.1",
+    "citty": "^0.2.2",
     "picocolors": "^1.1.1",
     "picomatch": "^4.0.4",
     "xxhash-wasm": "^1.1.0"
