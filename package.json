@@ -82,12 +82,12 @@
     "node": ">=22.12.0"
   },
   "devDependencies": {
-    "@types/node": "^25.2.3",
-    "@types/picomatch": "^4.0.2",
+    "@types/node": "^25.6.0",
+    "@types/picomatch": "^4.0.3",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.2",
-    "vitest": "^4.0.18"
+    "typescript": "^6.0.3",
+    "vite": "^8.0.10",
+    "vitest": "^4.1.5"
   },
   "peerDependencies": {
     "vite": ">=5.0.0",
@@ -107,7 +107,7 @@
   },
   "dependencies": {
     "chokidar": "^5.0.0",
-    "citty": "^0.2.1",
+    "citty": "^0.2.2",
     "picocolors": "^1.1.1",
     "picomatch": "^4.0.4",
     "xxhash-wasm": "^1.1.0"
