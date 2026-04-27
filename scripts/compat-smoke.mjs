@@ -26,6 +26,7 @@ const env = {
 
 const results = [];
 const failures = [];
+const toolVersions = new Map();
 
 function log(message = "") {
   process.stdout.write(`${message}\n`);
@@ -104,6 +105,26 @@ function writeText(path, content) {
 
 function writeJson(path, value) {
   writeText(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function packageManagerSpec(command) {
+  return `${command}@${toolVersion(command)}`;
+}
+
+function toolVersion(command) {
+  const cached = toolVersions.get(command);
+  if (cached) {
+    return cached;
+  }
+
+  const version = run(repoRoot, command, ["--version"], { capture: true })
+    .trim()
+    .split(/\s+/)[0];
+  if (!/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(version)) {
+    throw new Error(`${command} --version returned invalid semver: ${version}`);
+  }
+  toolVersions.set(command, version);
+  return version;
 }
 
 function fileSpec(fromDir, targetPath) {
@@ -203,7 +224,7 @@ test("pnpm virtual-store injection", () => {
     name: "pnpm-app",
     version: "1.0.0",
     type: "module",
-    packageManager: "pnpm@latest",
+    packageManager: packageManagerSpec("pnpm"),
   });
   run(app, "pnpm", ["add", fileSpec(app, oldLib)]);
   run(app, "pnpm", ["add", "-D", fileSpec(app, tarball)]);
@@ -217,7 +238,7 @@ test("Yarn 4 node-modules injection", () => {
     name: "yarn-app",
     version: "1.0.0",
     type: "module",
-    packageManager: "yarn@stable",
+    packageManager: packageManagerSpec("yarn"),
   });
   writeText(join(app, ".yarnrc.yml"), "nodeLinker: node-modules\n");
   writeText(join(app, "yarn.lock"), "");
@@ -233,7 +254,7 @@ test("Bun injection", () => {
     name: "bun-app",
     version: "1.0.0",
     type: "module",
-    packageManager: "bun@latest",
+    packageManager: packageManagerSpec("bun"),
   });
   run(app, "bun", ["add", fileSpec(app, oldLib)]);
   run(app, "bun", ["add", "-d", fileSpec(app, tarball)]);
