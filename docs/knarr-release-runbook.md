@@ -1,7 +1,5 @@
 # Knarr Release Runbook
 
-This repo has been renamed from `@olegkuibar/plunk` to `knarr`.
-
 ## Preflight
 
 Run these immediately before the first publish:
@@ -47,16 +45,6 @@ After publish:
 npm view knarr name version bin dist-tags
 npx knarr --help
 ```
-
-## Archive The Old Package
-
-Deprecate the old scoped package after `knarr` is published and smoke-tested:
-
-```bash
-npm deprecate @olegkuibar/plunk@"*" "Renamed to knarr. Install with: npm install knarr or run: npx knarr ..."
-```
-
-Do not deprecate the unscoped `plunk` package unless it is owned by this project.
 
 ## Follow-Up
 
