@@ -43,6 +43,7 @@
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "compat:smoke": "node scripts/compat-smoke.mjs",
     "bench": "vitest bench",
     "lint": "tsc --noEmit",
     "prepublishOnly": "pnpm build"
