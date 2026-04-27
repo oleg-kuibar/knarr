@@ -1,6 +1,6 @@
 {
   "name": "knarr",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Copy local npm package builds into consumer node_modules with incremental sync and watch mode.",
   "type": "module",
   "types": "./dist/index.d.ts",
