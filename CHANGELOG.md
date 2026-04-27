@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.3
+
+- Keep auto-installed setup dependencies from pruning freshly linked packages.
+- Expose plugin entry points to CommonJS config files used by Webpack and rspack.
+
 ## 0.0.2
 
 - Validate package names and versions before deriving store or consumer paths.

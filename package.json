@@ -1,6 +1,6 @@
 {
   "name": "knarr",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Copy local npm package builds into consumer node_modules with incremental sync and watch mode.",
   "type": "module",
   "types": "./dist/index.d.ts",
@@ -10,15 +10,18 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.mjs"
     },
     "./vite": {
       "types": "./dist/vite-plugin.d.ts",
-      "import": "./dist/vite-plugin.mjs"
+      "import": "./dist/vite-plugin.mjs",
+      "require": "./dist/vite-plugin.mjs"
     },
     "./webpack": {
       "types": "./dist/webpack-plugin.d.ts",
-      "import": "./dist/webpack-plugin.mjs"
+      "import": "./dist/webpack-plugin.mjs",
+      "require": "./dist/webpack-plugin.mjs"
     }
   },
   "typesVersions": {

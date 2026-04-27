@@ -101,6 +101,10 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
     consola.info(`Backed up existing ${packageName} installation`);
   }
 
+  await warnVersionMismatch(consumerPath, packageName, entry.version);
+  await configureBundler(consumerPath, packageName, pm);
+  await handleMissingDeps(entry, consumerPath, pm, options.yes ?? false);
+
   const result = await inject(entry, consumerPath, pm);
   consola.success(
     `Linked ${packageName}@${entry.version} -> node_modules/${packageName} (${result.copied} files copied, ${result.skipped} unchanged)`
@@ -121,10 +125,6 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
   };
   await addLink(consumerPath, packageName, linkEntry);
   await registerConsumer(packageName, consumerPath);
-
-  await warnVersionMismatch(consumerPath, packageName, entry.version);
-  await handleMissingDeps(entry, consumerPath, pm, options.yes ?? false);
-  await configureBundler(consumerPath, packageName, pm);
 
   consola.info(`Done in ${timer.elapsed()}`);
   output({
