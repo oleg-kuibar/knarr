@@ -21,3 +21,14 @@ body:
     attributes:
       label: Alternatives considered
       placeholder: What else did you try or consider?
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Area
+      options:
+        - CLI workflow
+        - package manager support
+        - bundler integration
+        - documentation
+        - performance
+        - other

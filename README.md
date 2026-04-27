@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="knarr_logo.png" width="360" alt="Knarr logo" />
+  <img src="https://raw.githubusercontent.com/oleg-kuibar/knarr/master/docs/assets/knarr-wordmark.png" width="360" alt="Knarr logo" />
 </p>
 
 <p align="center">

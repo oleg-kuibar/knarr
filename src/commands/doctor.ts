@@ -231,7 +231,7 @@ export default defineCommand({
       results.push({
         name: "Node.js version",
         status: "fail",
-        message: `v${process.versions.node} — Knarr requires Node.js >= 22`,
+        message: `v${process.versions.node}; Knarr requires Node.js >= 22`,
       });
     }
 

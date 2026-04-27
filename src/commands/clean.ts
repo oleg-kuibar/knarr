@@ -68,7 +68,7 @@ export default defineCommand({
     const unreliableConsumers = states.filter((s) => !s.reliable);
     if (unreliableConsumers.length > 0) {
       consola.warn(
-        `${unreliableConsumers.length} consumer(s) have corrupt state — their store entries will be preserved`
+        `${unreliableConsumers.length} consumer(s) have corrupt state; their store entries will be preserved`
       );
       const unreliablePaths = new Set(
         unreliableConsumers.map((s) => normalizePath(s.path))
@@ -171,7 +171,7 @@ export default defineCommand({
     }
 
     if (removedConsumers === 0 && removedEntries === 0 && removedOrphans === 0) {
-      consola.info("Store is clean — no stale entries or registrations found");
+      consola.info("Store is clean; no stale entries or registrations found");
     }
 
     const reclaimedTag = reclaimedBytes > 0 ? ` (reclaimed ${formatBytes(reclaimedBytes)})` : "";

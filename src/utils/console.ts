@@ -77,19 +77,19 @@ export const consola = {
   },
 
   info(msg: string, ...args: unknown[]) {
-    if (_level >= 3) console.log(pc.cyan("ℹ"), msg, ...args);
+    if (_level >= 3) console.log(pc.cyan("i"), msg, ...args);
   },
   success(msg: string, ...args: unknown[]) {
-    if (_level >= 3) console.log(pc.green("✔"), msg, ...args);
+    if (_level >= 3) console.log(pc.green("OK"), msg, ...args);
   },
   warn(msg: string, ...args: unknown[]) {
-    if (_level >= 2) console.warn(pc.yellow("⚠"), msg, ...args);
+    if (_level >= 2) console.warn(pc.yellow("!"), msg, ...args);
   },
   error(msg: string, ...args: unknown[]) {
-    if (_level >= 1) console.error(pc.red("✖"), msg, ...args);
+    if (_level >= 1) console.error(pc.red("x"), msg, ...args);
   },
   start(msg: string, ...args: unknown[]) {
-    if (_level >= 3) console.log(pc.cyan("◐"), msg, ...args);
+    if (_level >= 3) console.log(pc.cyan("..."), msg, ...args);
   },
   debug(msg: string, ...args: unknown[]) {
     if (_level >= 4) console.debug(pc.dim("D"), msg, ...args);

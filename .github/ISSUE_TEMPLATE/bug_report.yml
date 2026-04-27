@@ -2,6 +2,10 @@ name: Bug Report
 description: Report a bug
 labels: [bug]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Knarr. For sensitive security reports, please use the process in `SECURITY.md` instead of a public issue.
   - type: textarea
     id: description
     attributes:
@@ -14,8 +18,8 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Run `knarr publish` in ...
-        2. Run `knarr add ...` in ...
+        1. Run `npx knarr use ../my-lib` in ...
+        2. Run `knarr dev` in ...
         3. See error
     validations:
       required: true
@@ -48,7 +52,7 @@ body:
     id: node-version
     attributes:
       label: Node.js version
-      placeholder: e.g. 22.0.0
+      placeholder: e.g. 22.12.0
     validations:
       required: true
   - type: input
@@ -58,3 +62,9 @@ body:
       placeholder: e.g. 0.0.1
     validations:
       required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Paste command output, stack traces, or `--verbose` logs.
+      render: shell

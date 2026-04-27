@@ -11,5 +11,5 @@ const KNARR_ASCII = `
 export function showBanner(): void {
   console.log(pc.yellow(KNARR_ASCII));
   console.log(pc.cyan("  Local npm package development without symlinks"));
-  console.log(pc.dim("  Carries built files into consumer node_modules with incremental sync\n"));
+  console.log(pc.dim("  Copies built files into consumer node_modules with incremental sync\n"));
 }

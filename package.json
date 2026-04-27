@@ -1,7 +1,7 @@
 {
   "name": "knarr",
   "version": "0.0.1",
-  "description": "Local npm package development without symlinks. Carry built files into consumer node_modules with incremental sync and watch mode.",
+  "description": "Copy local npm package builds into consumer node_modules with incremental sync and watch mode.",
   "type": "module",
   "types": "./dist/index.d.ts",
   "bin": {
@@ -49,15 +49,19 @@
     "link",
     "local",
     "development",
+    "local-package",
     "yalc",
     "package",
     "monorepo",
     "pnpm",
+    "react",
+    "vite",
+    "webpack",
+    "nextjs",
     "yarn",
     "bun",
     "symlink",
-    "copy",
-    "hmr"
+    "copy"
   ],
   "publishConfig": {
     "access": "public",

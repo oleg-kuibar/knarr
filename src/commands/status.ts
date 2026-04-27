@@ -77,7 +77,7 @@ export default defineCommand({
 
     // Render sequentially for deterministic output
     for (const s of statuses) {
-      const statusIcon = s.issues.length === 0 ? pc.green("✓") : pc.yellow("!");
+      const statusIcon = s.issues.length === 0 ? pc.green("OK") : pc.yellow("!");
       const buildTag = s.buildId ? `[${s.buildId}]` : "[--------]";
       consola.log(
         `  ${statusIcon} ${pc.cyan(s.name)} ${pc.dim("@" + s.version)} ${pc.dim(buildTag)}`
@@ -87,7 +87,7 @@ export default defineCommand({
       );
 
       for (const issue of s.issues) {
-        consola.log(`    ${pc.yellow("⚠")} ${issue}`);
+        consola.log(`    ${pc.yellow("!")} ${issue}`);
       }
     }
 

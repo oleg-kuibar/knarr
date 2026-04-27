@@ -19,4 +19,4 @@ Unacceptable behavior includes harassment, intimidation, discriminatory language
 
 Project maintainers may remove comments, issues, pull requests, or other contributions that violate this code of conduct. Maintainers may also temporarily or permanently ban contributors for behavior they determine to be harmful, inappropriate, or unsafe.
 
-To report a concern, email <oleg.kuibar@proton.me>.
+To report a concern, contact the maintainers through GitHub.
