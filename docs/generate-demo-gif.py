@@ -76,9 +76,9 @@ def paste_logo(img: Image.Image, x: int, y: int, size: int) -> None:
 def base(headline: str, step: int) -> Image.Image:
     img = Image.new("RGBA", (W, H), BG)
     draw = ImageDraw.Draw(img)
-    paste_logo(img, 48, 34, 48)
-    text(draw, (112, 35), "Knarr", TEXT, FONT_LG)
-    text(draw, (112, 74), "local npm packages without symlinks", MUTED, FONT_SM)
+    paste_logo(img, 42, 26, 68)
+    text(draw, (126, 35), "Knarr", TEXT, FONT_LG)
+    text(draw, (126, 74), "local npm packages without symlinks", MUTED, FONT_SM)
     text(draw, (48, 126), headline, BLUE, FONT_MD)
 
     for index in range(4):
