@@ -26,11 +26,7 @@ export async function ensureGitignore(
       line.trim() === ".knarr/" ||
       line.trim() === ".knarr" ||
       line.trim() === "/.knarr/" ||
-      line.trim() === "/.knarr" ||
-      line.trim() === ".plunk/" ||
-      line.trim() === ".plunk" ||
-      line.trim() === "/.plunk/" ||
-      line.trim() === "/.plunk",
+      line.trim() === "/.knarr",
   );
 
   if (alreadyIgnored) return false;
@@ -55,7 +51,7 @@ export async function addPostinstall(pkgPath: string): Promise<boolean> {
   const pkg = JSON.parse(content);
 
   if (pkg.scripts?.postinstall) {
-    if (pkg.scripts.postinstall.includes("knarr") || pkg.scripts.postinstall.includes("plunk")) return false;
+    if (pkg.scripts.postinstall.includes("knarr")) return false;
     consola.warn(
       `Existing postinstall script found. Add ${pc.cyan("npx knarr restore")} manually if needed.`,
     );
@@ -82,7 +78,7 @@ export async function removePostinstall(pkgPath: string): Promise<boolean> {
     return false;
   }
   const pkg = JSON.parse(content);
-  if (!pkg.scripts?.postinstall?.includes("knarr") && !pkg.scripts?.postinstall?.includes("plunk")) return false;
+  if (!pkg.scripts?.postinstall?.includes("knarr")) return false;
 
   delete pkg.scripts.postinstall;
   // Clean up empty scripts object

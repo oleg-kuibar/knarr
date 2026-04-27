@@ -30,6 +30,11 @@ knarr --help
 | `pnpm bench` | Run benchmarks |
 | `pnpm lint` | Type-check with tsc |
 
+## Requirements
+
+- Node.js 22.12 or newer
+- pnpm 10 or newer
+
 ## Project structure
 
 ```
@@ -94,38 +99,13 @@ pnpm test
 
 ## Releasing
 
-### Canary builds
+### Stable Releases
 
-Every push to `master` automatically publishes a canary version to npmjs.org:
-
-```
-0.2.0-canary.<short-sha>
-```
-
-Install with `npm install knarr@canary`.
-
-### Stable releases
-
-Two options:
-
-**Option A - GitHub Actions UI (recommended)**
-
-1. Go to Actions -> Release -> Run workflow
-2. Pick a bump type (`patch` / `minor` / `major` / `custom`)
-3. Optionally check **Dry run** to build and test without publishing
-4. Click **Run workflow**
-
-The workflow bumps `package.json`, commits, tags, pushes to `master`, publishes to npm, and creates a GitHub Release.
-
-**Option B - Manual tag push**
-
-```bash
-# Bump locally
-npm version patch            # or minor / major
-git push origin master --follow-tags
-```
-
-The tag push triggers the same publish pipeline.
+1. Confirm `package.json` contains the intended version.
+2. Go to Actions -> Publish -> Run workflow
+3. Keep **Dry run** enabled for the first run and inspect `npm pack --dry-run`
+4. Configure npm Trusted Publishing for the `npm` environment
+5. Re-run with **Dry run** disabled
 
 ### Prerequisites
 

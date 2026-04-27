@@ -10,7 +10,7 @@ import type {
 import {
   getConsumersPath,
   getConsumerStatePath,
-  getConsumerKNARRDir,
+  getConsumerKnarrDir,
   normalizePath,
 } from "../utils/paths.js";
 import { ensureDir, ensurePrivateDir, exists, atomicWriteFile, isNodeError } from "../utils/fs.js";
@@ -60,7 +60,7 @@ export async function writeConsumerState(
   consumerPath: string,
   state: ConsumerState
 ): Promise<void> {
-  await ensureDir(getConsumerKNARRDir(consumerPath));
+  await ensureDir(getConsumerKnarrDir(consumerPath));
   const statePath = getConsumerStatePath(consumerPath);
   await atomicWriteFile(statePath, JSON.stringify(state, null, 2));
 }

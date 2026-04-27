@@ -3,8 +3,6 @@
 </p>
 
 <p align="center">
-  <a href="https://knarr.olegkuibar.dev/"><img src="https://img.shields.io/badge/Try_in_Browser-Playground-58a6ff?style=flat" alt="Playground" /></a>
-  <br>
   <a href="https://www.npmjs.com/package/knarr"><img src="https://img.shields.io/npm/v/knarr?color=blue" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/knarr"><img src="https://img.shields.io/npm/dm/knarr" alt="npm downloads" /></a>
   <a href="https://www.npmjs.com/package/knarr"><img src="https://img.shields.io/npm/unpacked-size/knarr" alt="unpacked size" /></a>
@@ -30,8 +28,6 @@ knarr dev
 ```
 
 If you have not installed Knarr globally, use `npx knarr dev` for the second command too.
-
-![Knarr React + Vite + pnpm demo](https://raw.githubusercontent.com/oleg-kuibar/knarr/master/docs/assets/knarr-react-vite-pnpm-demo.gif)
 
 ## Who this is for
 
@@ -138,10 +134,6 @@ npx knarr init          # one-off setup for a consumer project
 
 knarr uses CoW reflinks for instant copy-on-write on APFS/btrfs/ReFS, with automatic fallback. Reflink support is probed once per volume and cached. Incremental sync checks size and mtime first, then falls back to xxhash only when needed, so unchanged files are skipped quickly.
 
-## Try It Online
-
-**[Open Playground](https://knarr.olegkuibar.dev)** - run `knarr publish`, `knarr add`, and `knarr push` in the browser with live HMR preview.
-
 ## Documentation
 
 |                                                    |                                              |
@@ -159,24 +151,18 @@ knarr uses CoW reflinks for instant copy-on-write on APFS/btrfs/ReFS, with autom
 | [Architecture](docs/architecture.md)               | Internals for contributors                   |
 | [API Reference](docs/api.md)                       | Programmatic API (TypeScript)                |
 | [Examples](examples/)                              | Try it yourself with real packages           |
-| [Playground](playground/)                          | Interactive browser-based playground         |
 | [Contributing](CONTRIBUTING.md)                    | Dev setup and guidelines                     |
 
 ## Acknowledgments
 
-Knarr and its playground are built on top of excellent open-source projects:
+Knarr is built on top of excellent open-source projects:
 
 - [chokidar](https://github.com/paulmillr/chokidar) - file watching
 - [xxhash-wasm](https://github.com/nicolo-ribaudo/xxhash-wasm-legacy) - fast file hashing
 - [citty](https://github.com/unjs/citty) - CLI framework
 - [tsup](https://github.com/egoist/tsup) - TypeScript bundler
 - [vitest](https://vitest.dev) - test runner
-- [WebContainers](https://webcontainers.io) - in-browser Node.js runtime
 - [Vite](https://vite.dev) - frontend tooling
-- [React](https://react.dev) - UI framework
-- [Monaco Editor](https://microsoft.github.io/monaco-editor/) - code editor
-- [xterm.js](https://xtermjs.org) - terminal emulator
-- [Tailwind CSS](https://tailwindcss.com) - styling
 
 ## License
 

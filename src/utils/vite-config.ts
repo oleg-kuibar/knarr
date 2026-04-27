@@ -15,8 +15,7 @@ function detectIndent(content: string): string {
 function hasKnarrPlugin(content: string): boolean {
   return (
     content.includes("knarr/vite") ||
-    content.includes("vite-plugin-knarr") ||
-    content.includes("@olegkuibar/plunk/vite")
+    content.includes("vite-plugin-knarr")
   );
 }
 
@@ -392,7 +391,7 @@ export async function removeFromViteConfig(
 
   // Remove the import line
   const importRegex =
-    /^import\s+\w+\s+from\s+["'](?:knarr|@olegkuibar\/plunk)\/vite["'];?\s*\n?/m;
+    /^import\s+\w+\s+from\s+["']knarr\/vite["'];?\s*\n?/m;
   if (importRegex.test(content)) {
     content = content.replace(importRegex, "");
     modified = true;
@@ -403,7 +402,7 @@ export async function removeFromViteConfig(
   if (pluginsArr) {
     const items = parsePluginItems(pluginsArr.inner);
     const filtered = items.filter(
-      (item) => !item.startsWith("knarr(") && !item.startsWith("plunk("),
+      (item) => !item.startsWith("knarr("),
     );
     if (filtered.length !== items.length) {
       const indent = detectIndent(content);
@@ -422,6 +421,3 @@ export async function removeFromViteConfig(
 
   return { modified };
 }
-
-export const addKNARRVitePlugin = addKnarrVitePlugin;
-export const addPlunkVitePlugin = addKnarrVitePlugin;

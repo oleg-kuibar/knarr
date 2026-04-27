@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "description": "Local npm package development without symlinks. Carry built files into consumer node_modules with incremental sync and watch mode.",
   "type": "module",
+  "types": "./dist/index.d.ts",
   "bin": {
     "knarr": "./dist/cli.mjs"
   },
@@ -67,7 +68,7 @@
     "type": "git",
     "url": "git+https://github.com/oleg-kuibar/knarr.git"
   },
-  "homepage": "https://knarr.olegkuibar.dev",
+  "homepage": "https://github.com/oleg-kuibar/knarr#readme",
   "bugs": {
     "url": "https://github.com/oleg-kuibar/knarr/issues"
   },

@@ -9,7 +9,8 @@ vitest.config.ts
 .editorconfig
 .github/
 CONTRIBUTING.md
-CLAUDE.md
+SECURITY.md
+CODE_OF_CONDUCT.md
 coverage/
 
 # IDE

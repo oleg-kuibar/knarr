@@ -8,9 +8,6 @@ export interface KnarrMeta {
   buildId?: string;
 }
 
-/** @deprecated Use KnarrMeta. */
-export type KNARRMeta = KnarrMeta;
-
 /** A store entry representing a published package */
 export interface StoreEntry {
   name: string;

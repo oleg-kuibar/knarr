@@ -71,8 +71,7 @@ export async function publish(
     );
   }
 
-  // Run knarr lifecycle hook, with legacy plunk hook support.
-  await runLifecycleHookAliases(packageDir, pkg, ["preknarr", "preplunk"]);
+  await runLifecycleHook(packageDir, pkg, "preknarr");
 
   // Run prepack lifecycle hook (unless --no-scripts)
   if (options.runScripts !== false) {
@@ -257,7 +256,7 @@ export async function publish(
   }
 
   // Run knarr lifecycle hook (outside the lock so slow scripts don't hold it).
-  await runLifecycleHookAliases(packageDir, pkg, ["postknarr", "postplunk"]);
+  await runLifecycleHook(packageDir, pkg, "postknarr");
 
   consola.success(
     `Published ${pkg.name}@${pkg.version} (${files.length} files) [${result.buildId}]`
@@ -318,16 +317,6 @@ async function runLifecycleHook(
       reject(new Error(`${hookName} script error: ${err.message}`));
     });
   });
-}
-
-async function runLifecycleHookAliases(
-  packageDir: string,
-  pkg: PackageJson,
-  hookNames: string[]
-): Promise<void> {
-  const hookName = hookNames.find((name) => pkg.scripts?.[name]);
-  if (!hookName) return;
-  await runLifecycleHook(packageDir, pkg, hookName);
 }
 
 /** Fields from publishConfig that override the corresponding package.json fields */

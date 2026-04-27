@@ -4,7 +4,6 @@ import { consola } from "./console.js";
 import type {
   ConsumerState,
   KnarrMeta,
-  KNARRMeta,
   ConsumersRegistry,
   LinkEntry,
 } from "../types.js";
@@ -21,9 +20,6 @@ export function isKnarrMeta(value: unknown): value is KnarrMeta {
     (v.schemaVersion === undefined || typeof v.schemaVersion === "number")
   );
 }
-
-/** @deprecated Use isKnarrMeta. */
-export const isKNARRMeta = isKnarrMeta as (value: unknown) => value is KNARRMeta;
 
 /** Check if a value is a valid LinkEntry */
 export function isLinkEntry(value: unknown): value is LinkEntry {

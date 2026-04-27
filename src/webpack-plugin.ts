@@ -218,9 +218,4 @@ export class KnarrWebpackPlugin {
   }
 }
 
-export type KNARRWebpackPluginOptions = KnarrWebpackPluginOptions;
-export type PlunkWebpackPluginOptions = KnarrWebpackPluginOptions;
-export const KNARRWebpackPlugin = KnarrWebpackPlugin;
-export const PlunkWebpackPlugin = KnarrWebpackPlugin;
-
 export default KnarrWebpackPlugin;

@@ -15,11 +15,8 @@ export interface KnarrConfig {
   notify?: boolean;
 }
 
-export type KNARRConfig = KnarrConfig;
-
 /**
  * Load knarr configuration from package.json#knarr.
- * Also accepts package.json#plunk as a legacy alias.
  */
 export async function loadKnarrConfig(
   projectDir: string
@@ -27,7 +24,7 @@ export async function loadKnarrConfig(
   try {
     const raw = await readFile(join(projectDir, "package.json"), "utf-8");
     const pkg = JSON.parse(raw);
-    const source = pkg.knarr ?? pkg.plunk;
+    const source = pkg.knarr;
     if (!source || typeof source !== "object") return {};
 
     const config: KnarrConfig = {};
@@ -58,7 +55,3 @@ export async function loadKnarrConfig(
     return {};
   }
 }
-
-export const loadKNARRConfig = loadKnarrConfig;
-export const loadPlunkConfig = loadKnarrConfig;
-export type PlunkConfig = KnarrConfig;

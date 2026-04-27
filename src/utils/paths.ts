@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 /** Root knarr directory: ~/.knarr/ (override with KNARR_HOME env var). */
 export function getKnarrHome(): string {
-  return process.env.KNARR_HOME || process.env.PLUNK_HOME || join(homedir(), ".knarr");
+  return process.env.KNARR_HOME || join(homedir(), ".knarr");
 }
 
 /** Store root: ~/.knarr/store/ */
@@ -76,10 +76,6 @@ export function getHistoryEntryPath(
 export function getConsumerKnarrDir(consumerPath: string): string {
   return join(consumerPath, ".knarr");
 }
-
-/** Backward-compatible alias for older internal imports. */
-export const getConsumerPlunkDir = getConsumerKnarrDir;
-export const getConsumerKNARRDir = getConsumerKnarrDir;
 
 /** Get the state file in a consumer project */
 export function getConsumerStatePath(consumerPath: string): string {

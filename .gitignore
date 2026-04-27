@@ -6,7 +6,6 @@ dist/
 
 # Knarr state (consumer-side)
 .knarr/
-.plunk/
 
 # OS
 .DS_Store

@@ -52,7 +52,6 @@ Do not deprecate the unscoped `plunk` package unless it is owned by this project
 
 ## Follow-Up
 
-- Rename the GitHub repository to `oleg-kuibar/knarr`.
 - Configure npm Trusted Publishing for `knarr`.
-- Update project URLs, deployment domains, and badges.
-- Keep legacy compatibility for one release cycle: `PLUNK_HOME`, `package.json#plunk`, old Vite import removal, and `preplunk`/`postplunk`.
+- Confirm project URLs and badges point to `oleg-kuibar/knarr`.
+- Keep the Knarr public surface clean: `KNARR_HOME`, `package.json#knarr`, `knarr/vite`, `preknarr`, and `postknarr`.
