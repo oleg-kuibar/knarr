@@ -5,7 +5,7 @@
   "type": "module",
   "types": "./dist/index.d.ts",
   "bin": {
-    "knarr": "./dist/cli.mjs"
+    "knarr": "dist/cli.mjs"
   },
   "exports": {
     ".": {
