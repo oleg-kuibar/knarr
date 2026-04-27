@@ -15,7 +15,6 @@ W, H = 960, 540
 BG = "#0d1117"
 SURFACE = "#161b22"
 SURFACE_SOFT = "#101720"
-SURFACE_ACTIVE = "#0f2238"
 BORDER = "#30363d"
 TEXT = "#e6edf3"
 MUTED = "#8b949e"
@@ -23,7 +22,6 @@ GREEN = "#3fb950"
 BLUE = "#58a6ff"
 YELLOW = "#d29922"
 RED = "#f85149"
-PURPLE = "#a371f7"
 
 
 def font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -38,15 +36,14 @@ def font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-FONT_TINY = font(13)
 FONT_XS = font(15)
 FONT_SM = font(18)
-FONT_MD = font(22)
-FONT_LG = font(32)
-FONT_CODE = font(17)
+FONT_MD = font(24)
+FONT_LG = font(34)
+FONT_CODE = font(20)
 
 
-def draw_text(
+def text(
     draw: ImageDraw.ImageDraw,
     xy: tuple[int, int],
     value: str,
@@ -77,121 +74,106 @@ def paste_logo(img: Image.Image, x: int, y: int, size: int) -> None:
     img.alpha_composite(canvas, (x, y))
 
 
-def progress(draw: ImageDraw.ImageDraw, active: int) -> None:
-    labels = ["use", "dev", "edit", "push", "clean"]
-    x = 596
-    for index, label in enumerate(labels):
-        fill = BLUE if index <= active else "#30363d"
-        text_fill = TEXT if index <= active else MUTED
-        draw.rounded_rectangle((x, 42, x + 44, 50), radius=4, fill=fill)
-        draw_text(draw, (x - 1, 55), label, text_fill, FONT_TINY)
-        x += 62
+def base(headline: str, step: int) -> Image.Image:
+    img = Image.new("RGBA", (W, H), BG)
+    draw = ImageDraw.Draw(img)
+    paste_logo(img, 48, 34, 48)
+    text(draw, (112, 35), "Knarr", TEXT, FONT_LG)
+    text(draw, (112, 74), "local npm packages without symlinks", MUTED, FONT_SM)
+    text(draw, (48, 126), headline, BLUE, FONT_MD)
+
+    for index in range(4):
+        x = 760 + index * 34
+        fill = BLUE if index <= step else BORDER
+        draw.rounded_rectangle((x, 62, x + 22, 70), radius=4, fill=fill)
+
+    return img
 
 
 def terminal(
     draw: ImageDraw.ImageDraw,
-    box: tuple[int, int, int, int],
-    title: str,
     lines: list[tuple[str, str]],
-    cursor_line: int | None = None,
-    cursor_on: bool = False,
+    cursor_line: int | None,
+    cursor_on: bool,
 ) -> None:
+    box = (48, 180, 574, 456)
+    x1, y1, x2, _ = box
     rounded(draw, box, SURFACE)
-    x1, y1, x2, _ = box
-    draw.rounded_rectangle((x1, y1, x2, y1 + 38), radius=14, fill="#21262d")
-    draw.rectangle((x1, y1 + 22, x2, y1 + 38), fill="#21262d")
+    draw.rounded_rectangle((x1, y1, x2, y1 + 42), radius=14, fill="#21262d")
+    draw.rectangle((x1, y1 + 24, x2, y1 + 42), fill="#21262d")
     for i, color in enumerate((RED, YELLOW, GREEN)):
-        draw.ellipse((x1 + 16 + i * 22, y1 + 14, x1 + 28 + i * 22, y1 + 26), fill=color)
-    draw_text(draw, (x1 + 90, y1 + 10), title, MUTED, FONT_XS)
+        draw.ellipse((x1 + 18 + i * 24, y1 + 15, x1 + 31 + i * 24, y1 + 28), fill=color)
+    text(draw, (x1 + 104, y1 + 12), "terminal", MUTED, FONT_XS)
 
-    y = y1 + 58
+    y = y1 + 70
     for idx, (line, color) in enumerate(lines):
-        draw_text(draw, (x1 + 22, y), line, color, FONT_CODE)
-        if cursor_line == idx and cursor_on:
+        text(draw, (x1 + 28, y), line, color, FONT_CODE)
+        if idx == cursor_line and cursor_on:
             width = draw.textlength(line, font=FONT_CODE)
-            draw.rectangle((x1 + 25 + int(width), y + 3, x1 + 35 + int(width), y + 22), fill=TEXT)
-        y += 29
+            draw.rectangle((x1 + 31 + int(width), y + 3, x1 + 42 + int(width), y + 25), fill=TEXT)
+        y += 38
 
 
-def app_preview(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], label: str, active: bool) -> None:
+def result_panel(draw: ImageDraw.ImageDraw, title: str, lines: list[tuple[str, str]], active: bool) -> None:
     outline = GREEN if active else BORDER
-    rounded(draw, box, SURFACE_SOFT, outline=outline, radius=12, width=2 if active else 1)
-    x1, y1, x2, _ = box
-    draw.rectangle((x1 + 1, y1 + 1, x2 - 1, y1 + 36), fill="#0b1220")
-    draw_text(draw, (x1 + 18, y1 + 10), "my-app preview", MUTED, FONT_XS)
-    draw_text(draw, (x1 + 22, y1 + 58), label, GREEN if active else TEXT, FONT_MD)
-    draw_text(draw, (x1 + 22, y1 + 94), "React: single instance", MUTED, FONT_XS)
-    draw_text(draw, (x1 + 22, y1 + 118), "package.json: unchanged", MUTED, FONT_XS)
+    box = (626, 180, 912, 456)
+    rounded(draw, box, SURFACE_SOFT, outline=outline, width=2 if active else 1)
+    x1, y1, _, _ = box
+    text(draw, (x1 + 28, y1 + 34), title, TEXT, FONT_MD)
 
+    y = y1 + 94
+    for line, color in lines:
+        text(draw, (x1 + 28, y), line, color, FONT_SM)
+        y += 42
 
-def file_stack(draw: ImageDraw.ImageDraw, x: int, y: int, active: bool) -> None:
-    colors = [BLUE, GREEN, PURPLE]
-    names = ["src/Button.tsx", "dist/index.js", "node_modules/my-lib"]
-    for i, name in enumerate(names):
-        dy = i * 34
-        fill = SURFACE_ACTIVE if active and i == 2 else SURFACE_SOFT
-        outline = GREEN if active and i == 2 else BORDER
-        rounded(draw, (x, y + dy, x + 275, y + dy + 28), fill, outline=outline, radius=7)
-        draw.rectangle((x + 12, y + dy + 8, x + 18, y + dy + 20), fill=colors[i])
-        draw_text(draw, (x + 30, y + dy + 5), name, TEXT if i == 2 else MUTED, FONT_TINY)
-
-
-def arrow(draw: ImageDraw.ImageDraw, start: tuple[int, int], end: tuple[int, int], color: str) -> None:
-    draw.line((start, end), fill=color, width=4)
-    ex, ey = end
-    draw.polygon([(ex, ey), (ex - 13, ey - 8), (ex - 13, ey + 8)], fill=color)
-
-
-def base(active_step: int, headline: str) -> Image.Image:
-    img = Image.new("RGBA", (W, H), BG)
-    draw = ImageDraw.Draw(img)
-    paste_logo(img, 42, 24, 54)
-    draw_text(draw, (108, 30), "Knarr", TEXT, FONT_LG)
-    draw_text(draw, (108, 68), "local package development without symlinks", MUTED, FONT_SM)
-    progress(draw, active_step)
-    draw_text(draw, (48, 492), headline, BLUE, FONT_MD)
-    return img
+    if active:
+        draw.rounded_rectangle((x1 + 28, y1 + 210, x1 + 154, y1 + 242), radius=8, fill="#12331f")
+        text(draw, (x1 + 46, y1 + 216), "updated", GREEN, FONT_XS)
 
 
 SCENES = [
     {
-        "step": 0,
-        "headline": "Link a local package with one command.",
-        "left": [("$ cd my-app", MUTED), ("$ npx knarr use ../my-lib", TEXT), ("OK published my-lib@0.0.1", GREEN), ("OK linked node_modules/my-lib", GREEN)],
-        "right": [("my-lib", MUTED), ("package.json -> name: my-lib", TEXT), ("files copied into ~/.knarr/store", BLUE)],
-        "preview": "Awaiting my-lib",
+        "headline": "Link the local package once.",
+        "terminal": [
+            ("$ cd my-app", MUTED),
+            ("$ npx knarr use ../my-lib", TEXT),
+            ("OK linked my-lib", GREEN),
+        ],
+        "title": "my-app",
+        "result": [("node_modules/my-lib", TEXT), ("real files, no symlink", BLUE)],
         "active": False,
     },
     {
-        "step": 1,
-        "headline": "Run dev once from the package. Knarr handles the loop.",
-        "left": [("consumer registered", GREEN), ("Vite watches real files", BLUE), ("no package.json edits", GREEN)],
-        "right": [("$ cd ../my-lib", MUTED), ("$ knarr dev", TEXT), ("watching src/**", BLUE), ("pushes to 1 consumer", GREEN)],
-        "preview": "my-lib linked",
+        "headline": "Start the package dev loop.",
+        "terminal": [
+            ("$ cd ../my-lib", MUTED),
+            ("$ knarr dev", TEXT),
+            ("watching src/**", BLUE),
+        ],
+        "title": "my-lib",
+        "result": [("build -> publish", TEXT), ("pushes to my-app", GREEN)],
         "active": False,
     },
     {
-        "step": 2,
-        "headline": "Edit source. No symlink maze, no duplicate React.",
-        "left": [("node_modules/my-lib", TEXT), ("is a real package tree", GREEN), ("bundler sees file writes", BLUE)],
-        "right": [("src/Button.tsx", TEXT), ('label = "Fresh build"', BLUE), ("build -> publish -> push", GREEN)],
-        "preview": "Fresh build",
+        "headline": "Edit the package. The app refreshes.",
+        "terminal": [
+            ("src/Button.tsx saved", TEXT),
+            ("changed files: 2", GREEN),
+            ("elapsed: 184ms", BLUE),
+        ],
+        "title": "Vite app",
+        "result": [("Fresh build", GREEN), ("single React instance", TEXT)],
         "active": True,
     },
     {
-        "step": 3,
-        "headline": "The consumer updates like an installed package.",
-        "left": [("Vite reload", BLUE), ("my-app renders Fresh build", GREEN), ("React instance: single", GREEN)],
-        "right": [("changed files copied: 2", GREEN), ("unchanged files skipped: 41", MUTED), ("elapsed: 184ms", BLUE)],
-        "preview": "Fresh build",
-        "active": True,
-    },
-    {
-        "step": 4,
-        "headline": "Your dependency files stay clean.",
-        "left": [("$ git status --short", TEXT), ("", MUTED), ("clean working tree", GREEN)],
-        "right": [("package.json", TEXT), ("lockfile", TEXT), (".gitignore", TEXT), ("no local override diffs", GREEN)],
-        "preview": "Fresh build",
+        "headline": "No package.json or lockfile churn.",
+        "terminal": [
+            ("$ git status --short", TEXT),
+            ("", MUTED),
+            ("clean working tree", GREEN),
+        ],
+        "title": "clean repo",
+        "result": [("package.json unchanged", TEXT), ("lockfile unchanged", TEXT)],
         "active": True,
     },
 ]
@@ -199,20 +181,20 @@ SCENES = [
 
 def make_frames() -> list[Image.Image]:
     frames: list[Image.Image] = []
-    for scene in SCENES:
-        for tick in range(10):
-            img = base(scene["step"], scene["headline"])
+    for step, scene in enumerate(SCENES):
+        for tick in range(12):
+            img = base(scene["headline"], step)
             draw = ImageDraw.Draw(img)
-            cursor_on = tick % 2 == 0 and scene["step"] in (0, 1)
-            terminal(draw, (48, 118, 420, 390), "consumer", scene["left"], cursor_line=1, cursor_on=cursor_on)
-            terminal(draw, (540, 118, 912, 390), "package", scene["right"], cursor_line=1, cursor_on=cursor_on)
-            arrow(draw, (420, 244), (540, 244), GREEN if scene["active"] else BLUE)
-            file_stack(draw, 70, 410, scene["active"])
-            app_preview(draw, (618, 398, 890, 474), scene["preview"], scene["active"])
+            cursor_on = tick % 2 == 0 and step < 2
+            terminal(draw, scene["terminal"], cursor_line=1, cursor_on=cursor_on)
+            result_panel(draw, scene["title"], scene["result"], scene["active"])
             if scene["active"]:
-                pulse = 7 + tick % 4
-                draw.ellipse((526 - pulse, 244 - pulse, 526 + pulse, 244 + pulse), outline=GREEN, width=2)
-            frames.append(img.convert("P", palette=Image.Palette.ADAPTIVE, colors=96))
+                pulse = 5 + tick % 5
+                draw.ellipse((612 - pulse, 314 - pulse, 612 + pulse, 314 + pulse), outline=GREEN, width=2)
+                draw.line((574, 314, 626, 314), fill=GREEN, width=4)
+            else:
+                draw.line((574, 314, 626, 314), fill=BLUE, width=4)
+            frames.append(img.convert("P", palette=Image.Palette.ADAPTIVE, colors=80))
     return frames
 
 
@@ -223,7 +205,7 @@ def main() -> None:
         OUT,
         save_all=True,
         append_images=frames[1:],
-        duration=95,
+        duration=115,
         loop=0,
         optimize=True,
         disposal=2,
