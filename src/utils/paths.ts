@@ -1,5 +1,17 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import {
+  validatePackageIdentity,
+  validatePackageName,
+} from "./validators.js";
+
+function assertInside(root: string, target: string, label: string): void {
+  const resolvedRoot = resolve(root);
+  const resolvedTarget = resolve(target);
+  const rel = relative(resolvedRoot, resolvedTarget);
+  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return;
+  throw new Error(`${label} escapes expected directory: ${target}`);
+}
 
 /** Root knarr directory: ~/.knarr/ (override with KNARR_HOME env var). */
 export function getKnarrHome(): string {
@@ -26,6 +38,7 @@ export function getConfigPath(): string {
  * Scoped packages: `@scope/name` -> `@scope+name`
  */
 export function encodePackageName(name: string): string {
+  validatePackageName(name);
   return name.replace(/\//g, "+");
 }
 
@@ -45,7 +58,11 @@ export function decodePackageName(encoded: string): string {
 
 /** Get the store directory for a specific package@version */
 export function getStoreEntryPath(name: string, version: string): string {
-  return join(getStorePath(), `${encodePackageName(name)}@${version}`);
+  validatePackageIdentity(name, version);
+  const root = getStorePath();
+  const target = join(root, `${encodePackageName(name)}@${version}`);
+  assertInside(root, target, "Store entry path");
+  return target;
 }
 
 /** Get the package directory within a store entry */
@@ -69,6 +86,9 @@ export function getHistoryEntryPath(
   version: string,
   buildId: string
 ): string {
+  if (!/^[a-f0-9]{8,64}$/i.test(buildId)) {
+    throw new Error(`Invalid build id "${buildId}"`);
+  }
   return join(getStoreHistoryPath(name, version), buildId);
 }
 
@@ -87,7 +107,11 @@ export function getConsumerBackupPath(
   consumerPath: string,
   packageName: string
 ): string {
-  return join(consumerPath, ".knarr", "backups", encodePackageName(packageName));
+  validatePackageName(packageName);
+  const root = join(consumerPath, ".knarr", "backups");
+  const target = join(root, encodePackageName(packageName));
+  assertInside(root, target, "Backup path");
+  return target;
 }
 
 /** Normalize a file path to use forward slashes (for cross-platform consistency). */
@@ -100,5 +124,9 @@ export function getNodeModulesPackagePath(
   consumerPath: string,
   packageName: string
 ): string {
-  return join(consumerPath, "node_modules", packageName);
+  validatePackageName(packageName);
+  const root = join(consumerPath, "node_modules");
+  const target = join(root, packageName);
+  assertInside(root, target, "node_modules package path");
+  return target;
 }

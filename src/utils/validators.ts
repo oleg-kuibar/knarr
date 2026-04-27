@@ -8,6 +8,50 @@ import type {
   LinkEntry,
 } from "../types.js";
 
+const PACKAGE_NAME_RE =
+  /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
+const SEMVER_RE =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const CONTROL_CHARS_RE = /[\x00-\x1F\x7F]/;
+
+/**
+ * Validate an npm package name before using it in store/node_modules paths.
+ * This intentionally mirrors npm's modern lowercase package-name shape and
+ * rejects path separators/traversal segments before any filesystem mutation.
+ */
+export function validatePackageName(name: string): void {
+  if (
+    !name ||
+    name.length > 214 ||
+    CONTROL_CHARS_RE.test(name) ||
+    name.includes("\\") ||
+    name.includes("//") ||
+    name.split("/").some((part) => part === "." || part === "..") ||
+    !PACKAGE_NAME_RE.test(name)
+  ) {
+    throw new Error(`Invalid package name "${name}"`);
+  }
+}
+
+/** Validate a package.json version string before it becomes part of a path. */
+export function validatePackageVersion(version: string): void {
+  if (
+    !version ||
+    CONTROL_CHARS_RE.test(version) ||
+    version.includes("/") ||
+    version.includes("\\") ||
+    version.includes("..") ||
+    !SEMVER_RE.test(version)
+  ) {
+    throw new Error(`Invalid package version "${version}"`);
+  }
+}
+
+export function validatePackageIdentity(name: string, version: string): void {
+  validatePackageName(name);
+  validatePackageVersion(version);
+}
+
 /** Check if a value is valid Knarr metadata. */
 export function isKnarrMeta(value: unknown): value is KnarrMeta {
   if (typeof value !== "object" || value === null) return false;

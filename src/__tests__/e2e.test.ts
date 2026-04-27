@@ -616,6 +616,28 @@ describe("publish error handling", () => {
     await expect(publish(dir)).rejects.toThrow("missing 'version'");
     await rm(dir, { recursive: true, force: true });
   });
+
+  it("throws when package identity would escape store paths", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const dir = await mkdtemp(join(tmpdir(), "KNARR-invalid-name-"));
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "../evil", version: "1.0.0" })
+    );
+    await expect(publish(dir)).rejects.toThrow("Invalid package name");
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("throws when package version is not semver", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const dir = await mkdtemp(join(tmpdir(), "KNARR-invalid-version-"));
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "test", version: "../1.0.0" })
+    );
+    await expect(publish(dir)).rejects.toThrow("Invalid package version");
+    await rm(dir, { recursive: true, force: true });
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────────────
