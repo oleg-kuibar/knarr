@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="knarr_logo.png" width="200" alt="Knarr logo" />
+  <img src="knarr_logo.png" width="360" alt="Knarr logo" />
 </p>
 
 <p align="center">

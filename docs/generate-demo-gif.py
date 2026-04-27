@@ -6,9 +6,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 ROOT = Path(__file__).resolve().parent
-REPO = ROOT.parent
 OUT = ROOT / "assets" / "knarr-demo.gif"
-LOGO = REPO / "knarr_logo.png"
+LOGO = ROOT / "assets" / "knarr-icon.png"
 
 W, H = 960, 540
 

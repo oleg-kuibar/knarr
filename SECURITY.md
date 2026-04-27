@@ -6,9 +6,9 @@ Knarr follows the latest published version on npm. Security fixes are released a
 
 ## Reporting A Vulnerability
 
-Please do not open a public issue for security reports.
+For private vulnerabilities, use GitHub's private vulnerability reporting or open a draft security advisory on this repository.
 
-Email Oleg Kuibar at <oleg.kuibar@proton.me> with:
+For non-sensitive security hardening, dependency updates, documentation fixes, or defense-in-depth improvements, open a pull request with:
 
 - A short description of the issue
 - Steps to reproduce or a proof of concept
