@@ -1,6 +1,6 @@
-import { readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { exists, ensureDir, removeDir, moveDir } from "../utils/fs.js";
+import { exists, ensureDir, removeDir, moveDir, atomicWriteFile } from "../utils/fs.js";
 import { getStoreHistoryPath, getHistoryEntryPath, getStoreEntryPath } from "../utils/paths.js";
 import { verbose } from "../utils/logger.js";
 import type { KnarrMeta, HistoryEntry } from "../types.js";
@@ -57,13 +57,12 @@ export async function captureHistory(
     }
 
     // Copy meta
-    await writeFile(
+    await atomicWriteFile(
       join(tmpHistoryEntry, ".knarr-meta.json"),
       JSON.stringify(meta, null, 2)
     );
 
-    // Atomic rename
-    await rename(tmpHistoryEntry, entryDir);
+    await moveDir(tmpHistoryEntry, entryDir);
     verbose(`[history] Captured build ${buildId} to history`);
   } catch (err) {
     verbose(`[history] Failed to capture history: ${err instanceof Error ? err.message : String(err)}`);
@@ -162,23 +161,61 @@ export async function restoreHistoryEntry(
   // Read the history meta first (before any mutations) so failure is clean
   const metaContent = await readFile(historyMeta, "utf-8");
 
-  // Capture current store entry to history (non-destructive: captureHistory copies, doesn't move)
-  if (await exists(storeEntryDir)) {
-    await captureHistory(name, version, storeEntryDir, historyLimit);
-  }
-
-  // Swap: remove current package/, move history package/ into place, write meta
   const storePkg = join(storeEntryDir, "package");
   const storeMeta = join(storeEntryDir, ".knarr-meta.json");
-
-  if (await exists(storePkg)) await removeDir(storePkg);
-  if (await exists(historyPkg)) {
-    await moveDir(historyPkg, storePkg);
+  if (!(await exists(historyPkg))) {
+    throw new Error(`History entry ${buildId} is missing its package directory`);
   }
-  await writeFile(storeMeta, metaContent);
 
-  // Clean up history entry (package/ was moved, only meta remains)
-  await removeDir(historyEntryDir);
+  const currentMetaContent = await readFile(storeMeta, "utf-8").catch(() => null);
+  const oldEntryDir = storeEntryDir + `.restore-old-${process.pid}-${Date.now()}`;
+  const oldPkg = join(oldEntryDir, "package");
+  let stagedOld = false;
+  let historyMovedToStore = false;
+
+  try {
+    if ((await exists(storePkg)) || currentMetaContent) {
+      await ensureDir(oldEntryDir);
+      if (await exists(storePkg)) {
+        await moveDir(storePkg, oldPkg);
+      }
+      if (currentMetaContent) {
+        await atomicWriteFile(join(oldEntryDir, ".knarr-meta.json"), currentMetaContent);
+      }
+      stagedOld = true;
+    }
+
+    await moveDir(historyPkg, storePkg);
+    historyMovedToStore = true;
+    await atomicWriteFile(storeMeta, metaContent);
+
+    // Clean up history entry (package/ was moved, only meta remains)
+    await removeDir(historyEntryDir);
+
+    if (stagedOld) {
+      try {
+        await captureHistory(name, version, oldEntryDir, historyLimit);
+      } finally {
+        await removeDir(oldEntryDir);
+      }
+    }
+  } catch (err) {
+    // Preserve both sides when a restore fails mid-swap.
+    if (historyMovedToStore && (await exists(storePkg))) {
+      await ensureDir(historyEntryDir);
+      await moveDir(storePkg, historyPkg);
+    } else if (stagedOld && (await exists(storePkg))) {
+      await removeDir(storePkg);
+    }
+    if (stagedOld && (await exists(oldPkg))) {
+      await moveDir(oldPkg, storePkg);
+    }
+    if (currentMetaContent) {
+      await atomicWriteFile(storeMeta, currentMetaContent);
+    }
+    await removeDir(oldEntryDir);
+    throw err;
+  }
 
   verbose(`[history] Restored build ${buildId} as current`);
   return entry;

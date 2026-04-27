@@ -1,4 +1,4 @@
-import { readFile, writeFile, rename, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join, relative, dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
@@ -9,12 +9,13 @@ import type { PackageJson, KnarrMeta, StoreEntry } from "../types.js";
 import { getStorePackagePath, getStoreEntryPath } from "../utils/paths.js";
 import { resolvePackFiles } from "../utils/pack-list.js";
 import { computeContentHash } from "../utils/hash.js";
-import { copyWithCoW, ensureDir, ensurePrivateDir, removeDir, moveDir, exists } from "../utils/fs.js";
+import { copyWithCoW, ensureDir, ensurePrivateDir, removeDir, moveDir, exists, atomicWriteFile } from "../utils/fs.js";
 import { readMeta, writeMeta } from "./store.js";
 import { withFileLock } from "../utils/lockfile.js";
 import type { Catalogs } from "../utils/workspace.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
+import { validatePackageIdentity } from "../utils/validators.js";
 
 export interface PublishOptions {
   allowPrivate?: boolean;
@@ -65,6 +66,7 @@ export async function publish(
   const pkg = JSON.parse(pkgContent) as PackageJson;
   if (!pkg.name) throw new Error("package.json missing 'name' field");
   if (!pkg.version) throw new Error("package.json missing 'version' field");
+  validatePackageIdentity(pkg.name, pkg.version);
   if (pkg.private && !options.allowPrivate) {
     throw new Error(
       `Package "${pkg.name}" is private. Use --private flag to publish private packages.`
@@ -180,7 +182,7 @@ export async function publish(
 
               if (rel === "package.json" && processedPkg !== pkg) {
                 // Write the rewritten package.json
-                await writeFile(dest, JSON.stringify(processedPkg, null, 2));
+                await atomicWriteFile(dest, JSON.stringify(processedPkg, null, 2));
               } else {
                 // Parent dirs already pre-created above
                 await copyWithCoW(file, dest, { ensureParent: false });
@@ -192,7 +194,7 @@ export async function publish(
         // If publishDir != packageDir, ensure we always write the processed package.json
         // (the files list from publishDir may have its own package.json or none)
         if (publishDir !== packageDir) {
-          await writeFile(
+          await atomicWriteFile(
             join(tmpPackageDir, "package.json"),
             JSON.stringify(processedPkg, null, 2)
           );
@@ -206,7 +208,7 @@ export async function publish(
           sourcePath: packageDir,
           buildId,
         };
-        await writeFile(
+        await atomicWriteFile(
           join(tmpDir, ".knarr-meta.json"),
           JSON.stringify(meta, null, 2)
         );
@@ -214,12 +216,26 @@ export async function publish(
         // Atomic swap: rename old aside, move temp to final, then capture history
         const hadOld = await exists(storeEntryDir);
         const oldDir = storeEntryDir + ".old-" + Date.now();
-        if (hadOld) await rename(storeEntryDir, oldDir);
-        await moveDir(tmpDir, storeEntryDir);
+        let oldMoved = false;
+        try {
+          if (hadOld) {
+            await moveDir(storeEntryDir, oldDir);
+            oldMoved = !isDryRun();
+          }
+          await moveDir(tmpDir, storeEntryDir);
+        } catch (err) {
+          if (oldMoved && (await exists(oldDir))) {
+            if (await exists(storeEntryDir)) {
+              await removeDir(storeEntryDir);
+            }
+            await moveDir(oldDir, storeEntryDir);
+          }
+          throw err;
+        }
 
         // Capture old build to history AFTER the new entry is safely in place.
         // We read from `oldDir` (the renamed aside) so the live entry is never mutated.
-        if (hadOld) {
+        if (hadOld && !isDryRun()) {
           try {
             const { captureHistory } = await import("./history.js");
             await captureHistory(pkg.name, pkg.version, oldDir, options.historyLimit);
