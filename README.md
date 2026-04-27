@@ -138,22 +138,14 @@ knarr uses CoW reflinks for instant copy-on-write on APFS/btrfs/ReFS, with autom
 
 ## Documentation
 
-|                                                    |                                              |
-| -------------------------------------------------- | -------------------------------------------- |
-| [Getting Started](docs/getting-started.md)         | Install, first use/add cycle, watch mode     |
-| [Commands](docs/commands.md)                       | Every command, every flag                    |
-| [How It Works](docs/how-it-works.md)               | Store format, injection, CoW copies          |
-| [Bundler Guide](docs/bundlers.md)                  | Vite, Webpack, esbuild, Turbopack setup      |
-| [Comparison](docs/comparison.md)                   | npm link vs yalc vs Knarr                    |
-| [CI/CD](docs/ci-cd.md)                             | Using Knarr in CI pipelines                  |
-| [Monorepo Guide](docs/monorepo.md)                 | Workspace setup and recursive publish        |
-| [Troubleshooting](docs/troubleshooting.md)         | Common issues and fixes                      |
-| [FAQ](docs/faq.md)                                 | Frequently asked questions                   |
-| [Migrating from yalc](docs/migrating-from-yalc.md) | Step-by-step migration guide                 |
-| [Architecture](docs/architecture.md)               | Internals for contributors                   |
-| [API Reference](docs/api.md)                       | Programmatic API (TypeScript)                |
-| [Examples](examples/)                              | Try it yourself with real packages           |
-| [Contributing](CONTRIBUTING.md)                    | Dev setup and guidelines                     |
+- [Getting Started](docs/getting-started.md)
+- [Commands](docs/commands.md)
+- [Comparison](docs/comparison.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Examples](examples/)
+- [Contributing](CONTRIBUTING.md)
+
+Additional guides for bundlers, CI, monorepos, internals, and the experimental programmatic API live in [docs/](docs/).
 
 ## Acknowledgments
 
