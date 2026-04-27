@@ -24,11 +24,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+          registry-url: https://registry.npmjs.org
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -37,12 +38,14 @@ jobs:
 
       - name: Build example packages
         run: |
-          cd examples/packages/api-client && pnpm install && pnpm tsup
-          cd ../ui-kit && pnpm install && pnpm tsup
+          cd examples/packages/api-client && npm ci && npx tsup
+          cd ../ui-kit && npm ci && npx tsup
 
       - run: pnpm test
       - run: npm pack --dry-run
 
       - name: Publish
         if: inputs.dry_run == false
-        run: npm publish --provenance --access public
+        # Trusted publishing uses OIDC; npm adds provenance automatically for
+        # public packages published from public GitHub repositories.
+        run: npm publish --access public

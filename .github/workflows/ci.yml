@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v6
         with:
@@ -38,7 +38,7 @@ jobs:
 
       - name: Build example packages
         run: |
-          cd examples/packages/api-client && pnpm install && pnpm tsup
-          cd ../ui-kit && pnpm install && pnpm tsup
+          cd examples/packages/api-client && npm ci && npx tsup
+          cd ../ui-kit && npm ci && npx tsup
 
       - run: pnpm test
