@@ -29,6 +29,8 @@ knarr dev
 
 If you have not installed Knarr globally, use `npx knarr dev` for the second command too.
 
+![Knarr local package workflow](https://raw.githubusercontent.com/oleg-kuibar/knarr/master/docs/assets/knarr-demo.gif)
+
 ## Who this is for
 
 - Library and design-system authors testing packages inside real consumer apps
