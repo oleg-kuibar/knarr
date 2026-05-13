@@ -47,11 +47,17 @@ cd ../my-app
 knarr add my-lib
 ```
 
+In library mode, `init` also detects the build command and saves it to `package.json#knarr.buildCmd` when that field is not already configured. `knarr dev` and `knarr push --watch` use that persisted command.
+
 Flags:
 
 | Flag | Description |
 |---|---|
 | `-y, --yes` | Auto-accept prompts (install missing deps, etc.) |
+| `--build <cmd>` | Build command to run before publishing |
+| `--skip-build` | Skip build auto-detection before publishing |
+
+When a local source path is used, Knarr detects the source package's build command and asks before running it. With `--yes`, the detected build runs automatically. Use `--skip-build` when the package output is already built.
 
 ---
 
@@ -102,6 +108,8 @@ Flags:
 | Flag | Description |
 |---|---|
 | `--from <path>` | Path to package source — publishes first, then links |
+| `--build <cmd>` | Build command to run before publishing `--from` |
+| `--skip-build` | Skip build auto-detection before publishing `--from` |
 | `-y, --yes` | Auto-accept prompts (install missing deps without asking) |
 
 Under the hood:
@@ -146,7 +154,7 @@ Flags:
 | `--notify` | Ring terminal bell on push completion (watch mode) |
 | `--no-cascade` | Disable cascading rebuilds in `--all` mode (default: cascade enabled) |
 
-Without `--watch`, it runs once: publish, then copy changed files to all consumers.
+Without `--watch`, it runs once: publish, then copy changed files to all consumers. The summary includes the package version and build ID, consumers updated, failed or skipped consumers, copied/removed/unchanged file counts, bin links, cache invalidations, and elapsed time. With `--json`, the same summary includes per-consumer results.
 
 With `--watch`, it runs continuously using a "debounce effects, not detection" strategy: file changes are detected immediately, then coalesced — rapid saves within the debounce window collapse into a single push. If new changes arrive while a push is in progress, Knarr automatically re-pushes after it finishes so the final state is always pushed.
 
@@ -216,6 +224,8 @@ On startup, `knarr dev`:
 2. Runs an initial publish + push to all consumers
 3. Starts watching for file changes
 4. On each change: coalesce → build → publish → push to all consumers
+
+Each watch cycle prints a compact start line and the shared push summary. Build failures do not stop the watcher; Knarr skips that push and shows when the last successful push completed.
 
 This is the ideal workflow for library authors:
 
@@ -298,13 +308,29 @@ Project mode shows name, version, and source path. Store mode adds publish time.
 
 ## `knarr status`
 
-Check whether linked packages are healthy.
+Quickly check whether linked packages are healthy.
 
 ```bash
 knarr status
 ```
 
-For each linked package, checks that the store entry exists, the content hash still matches, and the files are present in `node_modules/`. Tells you what to do if something is off.
+For each linked package, checks that the store entry exists, the content hash still matches, and the files are present in `node_modules/`. Use this when you want a fast health check.
+
+---
+
+## `knarr explain [package]`
+
+Explain why a linked package is in its current state.
+
+```bash
+knarr explain              # summarize all linked packages
+knarr explain my-lib       # detailed state for one package
+knarr explain @scope/lib
+```
+
+`explain` is the deep diagnostic view. It shows the source path, linked version and build ID, store entry, content hash match, registered consumers, backup status, resolved `node_modules` target, package manager strategy, issues, and the suggested next action.
+
+Use `status` for a quick health check, `doctor` for setup diagnostics and repair, and `explain` when you need to understand the exact state of one link.
 
 ---
 
@@ -353,7 +379,14 @@ Run diagnostic checks on your Knarr setup.
 
 ```bash
 knarr doctor
+knarr doctor --fix
 ```
+
+Flags:
+
+| Flag | Description |
+|---|---|
+| `--fix` | Apply safe automatic repairs |
 
 Checks performed:
 
@@ -368,8 +401,11 @@ Checks performed:
 | Package manager | Detected from lockfile |
 | Bundler | Detected from config files |
 | .gitignore | `.knarr/` is listed |
+| Postinstall restore | `package.json` restores links after installs |
 
-Each check reports PASS, WARN, or FAIL with an actionable message. Use `--json` for machine-readable output.
+Each check reports PASS, WARN, or FAIL with an actionable message. By default, `doctor` is read-only. With `--fix`, Knarr repairs safe setup issues such as stale consumer registrations, missing `.knarr/` ignores, missing restore hooks, missing state files, and supported bundler integration gaps. Corrupt state files are never rewritten automatically; Knarr prints the recovery commands instead.
+
+Use `--json` for machine-readable output. JSON results include `fixable`, `fixed`, `fixes`, and `unfixableReason` fields for repair-aware tooling.
 
 ---
 
@@ -379,12 +415,14 @@ Migrate from yalc to Knarr.
 
 ```bash
 knarr migrate
+knarr migrate --from ../my-lib
 ```
 
 Flags:
 
 | Flag | Description |
 |---|---|
+| `--from <path>` | Publish and link a local package after cleanup (best for one-package yalc migrations) |
 | `-y, --yes` | Skip confirmation prompts |
 
 Detects yalc usage in the current project and cleans it up:
@@ -393,7 +431,8 @@ Detects yalc usage in the current project and cleans it up:
 2. Removes `file:.yalc/` references from `package.json`
 3. Deletes the `.yalc/` directory
 4. Deletes `yalc.lock`
-5. Prints next steps (`knarr init`, `knarr add`)
+5. Optionally publishes and links a local source path when `--from` is provided
+6. Prints next steps (`knarr init`, `knarr add`, or `knarr dev`)
 
 If no yalc usage is detected, it exits without changes. See [Migrating from yalc](migrating-from-yalc.md) for a full guide.
 

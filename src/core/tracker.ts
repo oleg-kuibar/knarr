@@ -192,13 +192,33 @@ export async function getConsumers(packageName: string): Promise<string[]> {
  * Clean stale consumers — remove registrations for directories that no longer exist.
  * Returns the number of stale entries removed.
  */
-export async function cleanStaleConsumers(): Promise<{
+export function cleanStaleConsumers(): Promise<{
   removedConsumers: number;
   removedPackages: number;
+  removedMissingLinks: number;
+  skippedUnreliableConsumers: number;
+}>;
+export function cleanStaleConsumers(options: {
+  removeMissingLinks?: boolean;
+}): Promise<{
+  removedConsumers: number;
+  removedPackages: number;
+  removedMissingLinks: number;
+  skippedUnreliableConsumers: number;
+}>;
+export async function cleanStaleConsumers(
+  options: { removeMissingLinks?: boolean } = {}
+): Promise<{
+  removedConsumers: number;
+  removedPackages: number;
+  removedMissingLinks: number;
+  skippedUnreliableConsumers: number;
 }> {
   const regPath = getConsumersPath();
   let removedConsumers = 0;
   let removedPackages = 0;
+  let removedMissingLinks = 0;
+  let skippedUnreliableConsumers = 0;
 
   await withFileLock(regPath, async () => {
     const registry = await readConsumersRegistry();
@@ -206,15 +226,30 @@ export async function cleanStaleConsumers(): Promise<{
 
     for (const [pkgName, consumers] of Object.entries(registry)) {
       const results = await Promise.all(
-        consumers.map(async (consumerPath) => ({
-          consumerPath,
-          valid: await exists(consumerPath),
-        }))
+        consumers.map(async (consumerPath) => {
+          if (!(await exists(consumerPath))) {
+            return { consumerPath, valid: false, reason: "missing-dir" as const };
+          }
+
+          if (options.removeMissingLinks) {
+            const { state, reliable } = await readConsumerStateSafe(consumerPath);
+            if (!reliable) {
+              skippedUnreliableConsumers++;
+              return { consumerPath, valid: true, reason: "unreliable-state" as const };
+            }
+            if (!state.links[pkgName]) {
+              return { consumerPath, valid: false, reason: "missing-link" as const };
+            }
+          }
+
+          return { consumerPath, valid: true, reason: null };
+        })
       );
       const validConsumers = results
         .filter((r) => r.valid)
         .map((r) => r.consumerPath);
       removedConsumers += consumers.length - validConsumers.length;
+      removedMissingLinks += results.filter((r) => r.reason === "missing-link").length;
       if (validConsumers.length > 0) {
         updated[pkgName] = validConsumers;
       } else {
@@ -225,5 +260,10 @@ export async function cleanStaleConsumers(): Promise<{
     await writeConsumersRegistry(updated);
   });
 
-  return { removedConsumers, removedPackages };
+  return {
+    removedConsumers,
+    removedPackages,
+    removedMissingLinks,
+    skippedUnreliableConsumers,
+  };
 }

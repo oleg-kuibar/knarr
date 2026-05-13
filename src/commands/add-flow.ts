@@ -9,6 +9,7 @@ import { inject, backupExisting, checkMissingDeps } from "../core/injector.js";
 import { addLink, registerConsumer, getLink } from "../core/tracker.js";
 import { exists } from "../utils/fs.js";
 import { detectPackageManager, detectYarnNodeLinker, hasYarnrcYml } from "../utils/pm-detect.js";
+import { detectBuildCommand } from "../utils/build-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { ensureConsumerInit } from "../utils/init-helpers.js";
 import { addToTranspilePackages } from "../utils/nextjs-config.js";
@@ -28,14 +29,34 @@ import type { LinkEntry, PackageManager } from "../types.js";
 interface AddPackageOptions {
   packageArg: string;
   from?: string;
+  build?: string;
+  skipBuild?: boolean;
   yes?: boolean;
   timer?: Timer;
+  emitOutput?: boolean;
 }
 
-export async function addPackageToConsumer(options: AddPackageOptions): Promise<void> {
+export interface AddPackageResult {
+  package: string;
+  version: string;
+  copied: number;
+  skipped: number;
+  binLinks: number;
+  elapsed: number;
+  buildCmd: string | null;
+  buildRan: boolean;
+  buildSkipped: boolean;
+  nextSteps: string[];
+}
+
+export async function addPackageToConsumer(options: AddPackageOptions): Promise<AddPackageResult> {
   const timer = options.timer ?? new Timer();
   const consumerPath = resolve(".");
   const { name: packageName, version: pinnedVersion } = parsePackageArg(options.packageArg);
+  let sourcePath: string | undefined;
+  let buildCmd: string | null = null;
+  let buildRan = false;
+  let buildSkipped = false;
 
   validatePackageNameArg(packageName, options.packageArg);
   if (pinnedVersion) {
@@ -49,6 +70,15 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
 
   if (options.from) {
     const fromPath = resolve(options.from);
+    sourcePath = fromPath;
+    const buildResult = await maybeBuildSource(fromPath, {
+      build: options.build,
+      skipBuild: options.skipBuild,
+      yes: options.yes ?? false,
+    });
+    buildCmd = buildResult.buildCmd;
+    buildRan = buildResult.ran;
+    buildSkipped = buildResult.skipped;
     consola.info(`Publishing from ${fromPath}...`);
     await publish(fromPath);
   }
@@ -126,17 +156,33 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
   await addLink(consumerPath, packageName, linkEntry);
   await registerConsumer(packageName, consumerPath);
 
+  const nextSteps = sourcePath
+    ? [`cd ${sourcePath} && knarr dev`]
+    : [];
+  if (nextSteps.length > 0) {
+    consola.info(`Next: ${nextSteps[0]}`);
+  }
+
   consola.info(`Done in ${timer.elapsed()}`);
-  output({
+  const addResult: AddPackageResult = {
     package: packageName,
     version: entry.version,
     copied: result.copied,
     skipped: result.skipped,
     binLinks: result.binLinks,
     elapsed: timer.elapsedMs(),
-  });
+    buildCmd,
+    buildRan,
+    buildSkipped,
+    nextSteps,
+  };
+
+  if (options.emitOutput !== false) {
+    output(addResult);
+  }
 
   if (isDryRun()) printDryRunReport();
+  return addResult;
 }
 
 export async function readPackageNameFromSource(sourcePath: string): Promise<string> {
@@ -200,6 +246,56 @@ function validatePackageNameArg(packageName: string, original: string): void {
     );
     process.exit(1);
   }
+}
+
+async function maybeBuildSource(
+  sourcePath: string,
+  options: { build?: string; skipBuild?: boolean; yes: boolean }
+): Promise<{ buildCmd: string | null; ran: boolean; skipped: boolean }> {
+  if (options.skipBuild) {
+    if (options.build) {
+      consola.warn("--skip-build was provided; ignoring --build");
+    }
+    return { buildCmd: null, ran: false, skipped: true };
+  }
+
+  let buildCmd = options.build;
+  let explicit = !!buildCmd;
+  if (!buildCmd) {
+    const sourcePm = await detectPackageManager(sourcePath);
+    buildCmd = (await detectBuildCommand(sourcePath, sourcePm)) ?? undefined;
+  }
+
+  if (!buildCmd) {
+    return { buildCmd: null, ran: false, skipped: false };
+  }
+
+  if (!explicit && !options.yes && !isJsonOutput()) {
+    const confirmed = await consola.prompt(
+      `Run detected build command before publishing? (${buildCmd})`,
+      { type: "confirm", initial: true }
+    );
+    if (!confirmed || typeof confirmed === "symbol") {
+      consola.info("Skipping build before publish");
+      return { buildCmd, ran: false, skipped: true };
+    }
+  } else if (!explicit && isJsonOutput() && !options.yes) {
+    verbose(`[add] Detected build command but skipping in json mode: ${buildCmd}`);
+    return { buildCmd, ran: false, skipped: true };
+  }
+
+  consola.info(
+    isDryRun()
+      ? `[dry-run] Would run build command: ${buildCmd}`
+      : `Running build command: ${buildCmd}`
+  );
+  const ok = await runShellCommand(buildCmd, sourcePath);
+  if (!ok) {
+    errorWithSuggestion(`Build command failed: ${buildCmd}`);
+    process.exit(1);
+  }
+
+  return { buildCmd, ran: true, skipped: false };
 }
 
 async function handleMissingDeps(
@@ -337,6 +433,10 @@ function buildDevInstallCommand(pm: PackageManager, dep: string): string {
 }
 
 function runInstallCommand(cmd: string, cwd: string): Promise<boolean> {
+  return runShellCommand(cmd, cwd);
+}
+
+function runShellCommand(cmd: string, cwd: string): Promise<boolean> {
   if (isDryRun()) {
     recordMutation({ type: "command-skip", path: cwd, detail: cmd });
     return Promise.resolve(true);

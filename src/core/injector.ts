@@ -21,6 +21,7 @@ export interface InjectResult {
   removed: number;
   skipped: number;
   binLinks: number;
+  cacheInvalidations: number;
 }
 
 export interface InjectOptions {
@@ -40,7 +41,7 @@ export async function inject(
   pm: PackageManager,
   options: InjectOptions = {}
 ): Promise<InjectResult> {
-  const targetDir = await resolveTargetDir(
+  const targetDir = await resolveInjectionTarget(
     consumerPath,
     storeEntry.name,
     pm,
@@ -58,9 +59,8 @@ export async function inject(
 
   verbose(`[inject] ${copied} copied, ${removed} removed, ${skipped} skipped`);
 
-  if (copied > 0 || removed > 0) {
-    await invalidateBundlerCache(consumerPath);
-  }
+  const cacheInvalidations =
+    copied > 0 || removed > 0 ? await invalidateBundlerCache(consumerPath) : 0;
 
   // Read the published package.json for bin links
   const pkg = await readPackageJson(storeEntry.packageDir);
@@ -70,7 +70,7 @@ export async function inject(
     verbose(`[inject] Created ${binLinks} bin link(s)`);
   }
 
-  return { copied, removed, skipped, binLinks };
+  return { copied, removed, skipped, binLinks, cacheInvalidations };
 }
 
 /**
@@ -81,7 +81,7 @@ export async function backupExisting(
   packageName: string,
   pm: PackageManager
 ): Promise<boolean> {
-  const installedDir = await resolveTargetDir(consumerPath, packageName, pm);
+  const installedDir = await resolveInjectionTarget(consumerPath, packageName, pm);
   if (!(await exists(installedDir))) return false;
 
   const backupDir = getConsumerBackupPath(consumerPath, packageName);
@@ -101,7 +101,7 @@ export async function restoreBackup(
   const backupDir = getConsumerBackupPath(consumerPath, packageName);
   if (!(await exists(backupDir))) return false;
 
-  const targetDir = await resolveTargetDir(consumerPath, packageName, pm);
+  const targetDir = await resolveInjectionTarget(consumerPath, packageName, pm);
   await removeDir(targetDir);
   await copyDir(backupDir, targetDir);
   await removeDir(backupDir);
@@ -116,7 +116,7 @@ export async function removeInjected(
   packageName: string,
   pm: PackageManager
 ): Promise<void> {
-  const targetDir = await resolveTargetDir(consumerPath, packageName, pm);
+  const targetDir = await resolveInjectionTarget(consumerPath, packageName, pm);
   const pkg = await readPackageJson(targetDir);
   if (pkg) {
     await removeBinLinks(consumerPath, pkg);
@@ -161,11 +161,12 @@ export async function checkMissingDeps(
  * Resolve the actual target directory in node_modules for a given
  * package manager strategy.
  */
-async function resolveTargetDir(
+export async function resolveInjectionTarget(
   consumerPath: string,
   packageName: string,
   pm: PackageManager,
-  version?: string
+  version?: string,
+  options: { warnOnFallback?: boolean } = {}
 ): Promise<string> {
   const directPath = getNodeModulesPackagePath(consumerPath, packageName);
 
@@ -226,10 +227,12 @@ async function resolveTargetDir(
   }
 
   // Fall back to direct path
-  consola.warn(
-    `pnpm: Could not find ${packageName} in .pnpm/ virtual store, using direct node_modules path. ` +
-    `If this causes issues, run 'pnpm install' to rebuild the virtual store, then 'knarr add' again.`
-  );
+  if (options.warnOnFallback !== false) {
+    consola.warn(
+      `pnpm: Could not find ${packageName} in .pnpm/ virtual store, using direct node_modules path. ` +
+      `If this causes issues, run 'pnpm install' to rebuild the virtual store, then 'knarr add' again.`
+    );
+  }
   return directPath;
 }
 

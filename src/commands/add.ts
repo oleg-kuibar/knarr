@@ -18,6 +18,15 @@ export default defineCommand({
       type: "string",
       description: "Path to package source (will publish first)",
     },
+    build: {
+      type: "string",
+      description: "Build command to run before publishing --from",
+    },
+    "skip-build": {
+      type: "boolean",
+      description: "Skip build detection before publishing --from",
+      default: false,
+    },
     yes: {
       type: "boolean",
       alias: "y",
@@ -30,6 +39,8 @@ export default defineCommand({
     await addPackageToConsumer({
       packageArg: args.package,
       from: args.from,
+      build: args.build,
+      skipBuild: args["skip-build"],
       yes: args.yes,
       timer: new Timer(),
     });

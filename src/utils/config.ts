@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { verbose } from "./logger.js";
+import { atomicWriteFile } from "./fs.js";
 
 /**
  * knarr configuration stored in package.json under the "knarr" key.
@@ -54,4 +55,30 @@ export async function loadKnarrConfig(
   } catch {
     return {};
   }
+}
+
+/**
+ * Persist package.json#knarr.buildCmd without overwriting an existing value.
+ * Returns true when package.json was updated.
+ */
+export async function setKnarrBuildCmdIfMissing(
+  pkgPath: string,
+  buildCmd: string | undefined
+): Promise<boolean> {
+  if (!buildCmd) return false;
+
+  const raw = await readFile(pkgPath, "utf-8");
+  const pkg = JSON.parse(raw);
+  const current = pkg.knarr;
+
+  if (current && typeof current === "object" && typeof current.buildCmd === "string") {
+    return false;
+  }
+
+  pkg.knarr = current && typeof current === "object" ? current : {};
+  pkg.knarr.buildCmd = buildCmd;
+
+  const indent = raw.match(/^(\s+)"/m)?.[1] || "  ";
+  await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
+  return true;
 }

@@ -18,15 +18,18 @@ npx knarr use ../my-lib
 ```bash
 cd my-app
 npx knarr use ../my-lib
+npx knarr use ../my-lib --yes        # run detected build automatically
+npx knarr use ../my-lib --skip-build # use already-built output
 ```
 
 This command:
 
 1. Reads `../my-lib/package.json` and infers the package name
-2. Publishes the built package files to `~/.knarr/store/`
-3. Initializes `.knarr/` in the app if needed
-4. Copies the package into `my-app/node_modules/`
-5. Records the link so future `knarr push` and `knarr dev` runs know where to update
+2. Detects the package build command and asks before running it
+3. Publishes the built package files to `~/.knarr/store/`
+4. Initializes `.knarr/` in the app if needed
+5. Copies the package into `my-app/node_modules/`
+6. Records the link so future `knarr push` and `knarr dev` runs know where to update
 
 `knarr use` is equivalent to:
 

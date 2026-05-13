@@ -15,6 +15,15 @@ export default defineCommand({
       description: "Path to the local package source",
       required: true,
     },
+    build: {
+      type: "string",
+      description: "Build command to run before publishing",
+    },
+    "skip-build": {
+      type: "boolean",
+      description: "Skip build detection before publishing",
+      default: false,
+    },
     yes: {
       type: "boolean",
       alias: "y",
@@ -31,6 +40,8 @@ export default defineCommand({
     await addPackageToConsumer({
       packageArg: packageName,
       from,
+      build: args.build,
+      skipBuild: args["skip-build"],
       yes: args.yes,
       timer,
     });

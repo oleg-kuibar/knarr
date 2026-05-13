@@ -18,7 +18,7 @@ const args = process.argv.slice(2);
 const KNOWN_COMMANDS = [
   "init", "publish", "add", "use", "remove", "push", "dev",
   "restore", "list", "status", "update", "clean", "gc",
-  "doctor", "migrate", "reset", "rollback", "check",
+  "doctor", "explain", "migrate", "reset", "rollback", "check",
 ];
 const hasSubcommand = args.some(
   (arg) => !arg.startsWith("-") && KNOWN_COMMANDS.includes(arg)
@@ -62,6 +62,7 @@ async function showInteractiveMenu(): Promise<string | null> {
       { label: "dev      - Watch, rebuild, and push continuously", value: "dev" },
       { label: "list     - Show linked packages", value: "list" },
       { label: "status   - Show project status", value: "status" },
+      { label: "explain  - Explain linked package state", value: "explain" },
       { label: "help     - Show help", value: "--help" },
     ],
   });
@@ -104,6 +105,7 @@ const main = defineCommand({
     restore: () => import("./commands/restore.js").then((m) => m.default),
     list: () => import("./commands/list.js").then((m) => m.default),
     status: () => import("./commands/status.js").then((m) => m.default),
+    explain: () => import("./commands/explain.js").then((m) => m.default),
     update: () => import("./commands/update.js").then((m) => m.default),
     clean: () => import("./commands/clean.js").then((m) => m.default),
     gc: () => import("./commands/clean.js").then((m) => m.default),

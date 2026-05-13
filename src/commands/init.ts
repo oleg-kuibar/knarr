@@ -12,6 +12,7 @@ import { Timer } from "../utils/timer.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
+import { setKnarrBuildCmdIfMissing } from "../utils/config.js";
 import {
   readConsumerState,
   writeConsumerState,
@@ -42,6 +43,8 @@ export default defineCommand({
     const timer = new Timer();
     const projectDir = resolve(".");
     const skipPrompts = args.yes;
+    let configUpdated = false;
+    const nextSteps: string[] = [];
     consola.info(`Initializing knarr in ${pc.cyan(projectDir)}\n`);
 
     // 1. Detect and confirm package manager
@@ -149,6 +152,10 @@ export default defineCommand({
       } else {
         // Detect or prompt for build command
         libraryBuildCmd = await detectBuildCommand(pkgPath, pm, skipPrompts);
+        configUpdated = await setKnarrBuildCmdIfMissing(pkgPath, libraryBuildCmd);
+        if (configUpdated && libraryBuildCmd) {
+          consola.success(`Saved build command to package.json#knarr.buildCmd`);
+        }
         const added = await addLibraryScripts(pkgPath);
         for (const name of added) {
           consola.success(`Added "${name}" script to package.json`);
@@ -216,31 +223,29 @@ export default defineCommand({
       // Consumer next steps
       consola.log("");
       consola.info(`${pc.bold("Next steps:")}`);
-      consola.log(
-        `  1. ${pc.cyan("knarr use ../my-lib")}                 <- publish + link a local package`
-      );
-      consola.log(
-        `  2. ${pc.cyan("cd ../my-lib && knarr dev")}          <- watch + rebuild + auto-push`
-      );
+      nextSteps.push("knarr use ../my-lib");
+      nextSteps.push("cd ../my-lib && knarr dev");
+      consola.log(`  1. ${pc.cyan(nextSteps[0])}                 <- publish + link a local package`);
+      consola.log(`  2. ${pc.cyan(nextSteps[1])}          <- watch + rebuild + auto-push`);
     } else {
       // Library next steps
       consola.log("");
       consola.info(`${pc.bold("Next steps:")}`);
-      consola.log(
-        `  1. ${pc.cyan("knarr publish")}                    <- copy built files to knarr store`
-      );
-      consola.log(
-        `  2. ${pc.cyan(`${pm} run knarr:dev`)}               <- watch + rebuild + auto-push to consumers`
-      );
-      consola.log(
-        `  3. In consumer project: ${pc.cyan("knarr use " + projectDir)}`
-      );
+      nextSteps.push("knarr publish");
+      nextSteps.push(`${pm} run knarr:dev`);
+      nextSteps.push(`knarr use ${projectDir}`);
+      consola.log(`  1. ${pc.cyan(nextSteps[0])}                    <- copy built files to knarr store`);
+      consola.log(`  2. ${pc.cyan(nextSteps[1])}               <- watch + rebuild + auto-push to consumers`);
+      consola.log(`  3. In consumer project: ${pc.cyan(nextSteps[2])}`);
     }
 
     consola.info(`Done in ${timer.elapsed()}`);
     output({
       packageManager: pm,
       role,
+      buildCmd: libraryBuildCmd ?? null,
+      configUpdated,
+      nextSteps,
       elapsed: timer.elapsedMs(),
     });
 
@@ -278,7 +283,7 @@ async function detectBuildCommand(
   pkgPath: string,
   pm: PackageManager,
   skipPrompts: boolean
-): Promise<string> {
+): Promise<string | undefined> {
   const packageDir = join(pkgPath, "..");
   const detected = await detectBuildCmd(packageDir, pm);
 
@@ -288,7 +293,6 @@ async function detectBuildCommand(
   }
 
   // No build script found - ask the user
-  const runPrefix = pm === "npm" ? "npm run " : `${pm} `;
   if (!skipPrompts) {
     consola.warn("No build script found in package.json");
     const input = await consola.prompt(
@@ -300,12 +304,10 @@ async function detectBuildCommand(
     }
   }
 
-  // Fallback placeholder
-  const fallback = `${runPrefix}build`;
   consola.warn(
-    `Using ${pc.cyan(fallback)} as placeholder - add a "build" script to package.json`
+    `No build command saved - add a "build" script to package.json or configure package.json#knarr.buildCmd`
   );
-  return fallback;
+  return undefined;
 }
 
 /**
@@ -332,16 +334,4 @@ async function addLibraryScripts(
   }
 
   return added;
-}
-
-/**
- * Read the package name from package.json, falling back to basename.
- */
-async function readPkgName(pkgPath: string): Promise<string> {
-  try {
-    const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
-    return pkg.name || "my-package";
-  } catch {
-    return "my-package";
-  }
 }

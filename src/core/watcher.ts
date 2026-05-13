@@ -95,6 +95,8 @@ export async function startWatcher(
   let closed = false;
   let running = false;
   let lastBuildEndTime = 0;
+  let cycle = 0;
+  let lastSuccessfulPush: Date | null = null;
   let hasPendingChanges = false;
 
   const doBuild = async () => {
@@ -114,12 +116,19 @@ export async function startWatcher(
 
     running = true;
     hasPendingChanges = false;
+    cycle++;
 
     try {
+      consola.info(`Change cycle #${cycle} started`);
       if (options.buildCmd) {
         const success = await runBuildCommand(options.buildCmd, watchDir);
         if (!success) {
-          consola.warn("Build failed (see output above), skipping push");
+          consola.warn(
+            "Build failed (see output above), skipping push" +
+              (lastSuccessfulPush
+                ? `. Last successful push: ${lastSuccessfulPush.toLocaleTimeString()}`
+                : ". No successful push yet.")
+          );
           if (options.notify) {
             const { ringBell } = await import("../utils/bell.js");
             ringBell(true);
@@ -128,6 +137,7 @@ export async function startWatcher(
         }
       }
       await onChange();
+      lastSuccessfulPush = new Date();
       if (options.notify) ringBell(true);
     } catch (err) {
       consola.error(`Push failed: ${err instanceof Error ? err.message : String(err)}`);

@@ -26,11 +26,11 @@ export function resetBundlerDetectionCache(): void {
 
 export async function invalidateBundlerCache(
   consumerPath: string
-): Promise<void> {
+): Promise<number> {
   if (isDryRun()) {
     verbose(`[dry-run] would invalidate bundler caches for ${consumerPath}`);
     recordMutation({ type: "cache-invalidate", path: consumerPath });
-    return;
+    return 0;
   }
 
   let bundlers = bundlerCache.get(consumerPath);
@@ -39,6 +39,7 @@ export async function invalidateBundlerCache(
     bundlerCache.set(consumerPath, bundlers);
   }
 
+  let invalidated = 0;
   for (const bundler of bundlers) {
     if (!bundler.type) continue;
     const dirs = CACHE_DIRS[bundler.type];
@@ -49,6 +50,7 @@ export async function invalidateBundlerCache(
       if (await exists(cacheDir)) {
         try {
           await removeDir(cacheDir);
+          invalidated++;
           verbose(`[inject] Invalidated ${bundler.type} cache: ${dir}`);
         } catch {
           // Dev server might have the dir locked (especially on Windows)
@@ -57,4 +59,5 @@ export async function invalidateBundlerCache(
       }
     }
   }
+  return invalidated;
 }

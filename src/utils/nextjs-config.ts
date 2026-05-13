@@ -23,6 +23,28 @@ function parseArrayItems(str: string): string[] {
   return items;
 }
 
+export async function hasTranspilePackage(
+  configPath: string,
+  packageName: string
+): Promise<{ configured: boolean; error?: string }> {
+  let content: string;
+  try {
+    content = await readFile(configPath, "utf-8");
+  } catch {
+    return { configured: false, error: "could not read config file" };
+  }
+
+  const transpileRegex = /transpilePackages\s*:\s*\[([^\]]*)\]/s;
+  const transpileMatch = transpileRegex.exec(content);
+  if (!transpileMatch) {
+    return { configured: false };
+  }
+
+  return {
+    configured: parseArrayItems(transpileMatch[1]).includes(packageName),
+  };
+}
+
 /**
  * Format an array of strings as a JS array literal.
  */

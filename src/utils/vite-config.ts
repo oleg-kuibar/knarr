@@ -19,6 +19,17 @@ function hasKnarrPlugin(content: string): boolean {
   );
 }
 
+export async function hasKnarrVitePlugin(
+  configPath: string
+): Promise<{ configured: boolean; error?: string }> {
+  try {
+    const content = await readFile(configPath, "utf-8");
+    return { configured: hasKnarrPlugin(content) };
+  } catch {
+    return { configured: false, error: "could not read config file" };
+  }
+}
+
 function defineConfigUsesTernary(content: string): boolean {
   const callRegex = /(^|[^A-Za-z0-9_$])defineConfig\s*\(/g;
   let match: RegExpExecArray | null;

@@ -26,6 +26,37 @@ export interface PushOptions {
   historyLimit?: number;
 }
 
+export interface PushConsumerResult {
+  consumerPath: string;
+  status: "updated" | "failed" | "skipped";
+  copied: number;
+  removed: number;
+  skipped: number;
+  binLinks: number;
+  cacheInvalidations: number;
+  reason?: string;
+  error?: string;
+}
+
+export interface PushSummary {
+  name: string;
+  version: string;
+  buildId: string;
+  noChange: boolean;
+  skippedReason?: string;
+  consumers: number;
+  updatedConsumers: number;
+  failedConsumers: number;
+  skippedConsumers: number;
+  copied: number;
+  removed: number;
+  skipped: number;
+  binLinks: number;
+  cacheInvalidations: number;
+  elapsed: number;
+  consumerResults: PushConsumerResult[];
+}
+
 /**
  * Publish a package to the store, then inject into all registered consumers.
  * Shared by both `push` and `dev` commands.
@@ -33,7 +64,7 @@ export interface PushOptions {
 export async function doPush(
   packageDir: string,
   options: PushOptions = {}
-): Promise<void> {
+): Promise<PushSummary> {
   const timer = new Timer();
 
   // Publish to store
@@ -43,8 +74,15 @@ export async function doPush(
     historyLimit: options.historyLimit,
   });
   if (result.skipped) {
-    consola.info("No changes to push");
-    return;
+    const summary = createEmptySummary(result.name, result.version, result.buildId, timer.elapsedMs());
+    summary.noChange = true;
+    summary.skippedReason = "content unchanged";
+    consola.info(
+      `No changes to push for ${result.name}@${result.version}` +
+        (result.buildId ? ` [${result.buildId}]` : "")
+    );
+    output(summary);
+    return summary;
   }
 
   // Get the store entry
@@ -53,7 +91,21 @@ export async function doPush(
     errorWithSuggestion(
       `Failed to read store entry for ${result.name}@${result.version} after publish`
     );
-    return;
+    const summary = createEmptySummary(result.name, result.version, result.buildId, timer.elapsedMs());
+    summary.failedConsumers = 1;
+    summary.consumerResults = [
+      {
+        consumerPath: packageDir,
+        status: "failed",
+        copied: 0,
+        removed: 0,
+        skipped: 0,
+        binLinks: 0,
+        cacheInvalidations: 0,
+        error: "store entry missing after publish",
+      },
+    ];
+    return summary;
   }
 
   // Push to all consumers in parallel
@@ -65,22 +117,23 @@ export async function doPush(
     consola.info(
       "No consumers registered yet. Run 'knarr add " + result.name + "' in a consumer project to start receiving pushes."
     );
-    output({
-      name: result.name,
-      version: result.version,
-      buildId: result.buildId,
-      consumers: 0,
-      failedConsumers: 0,
-      copied: 0,
-      skipped: 0,
-      elapsed: timer.elapsedMs(),
-    });
-    return;
+    const summary = createEmptySummary(
+      result.name,
+      result.version,
+      result.buildId,
+      timer.elapsedMs()
+    );
+    output(summary);
+    return summary;
   }
 
   let totalCopied = 0;
+  let totalRemoved = 0;
   let totalSkipped = 0;
-  let pushCount = 0;
+  let totalBinLinks = 0;
+  let totalCacheInvalidations = 0;
+  let updatedCount = 0;
+  let skippedCount = 0;
   let failedCount = 0;
 
   const results = await Promise.all(
@@ -91,7 +144,16 @@ export async function doPush(
           verbose(
             `[push] No link found for ${result.name} in ${consumerPath}, skipping`
           );
-          return null;
+          return {
+            consumerPath,
+            status: "skipped",
+            copied: 0,
+            removed: 0,
+            skipped: 0,
+            binLinks: 0,
+            cacheInvalidations: 0,
+            reason: "not linked in consumer state",
+          } satisfies PushConsumerResult;
         }
 
         try {
@@ -112,42 +174,122 @@ export async function doPush(
             buildId: entry.meta.buildId ?? "",
           });
 
-          return injectResult;
+          return {
+            consumerPath,
+            status: "updated",
+            copied: injectResult.copied,
+            removed: injectResult.removed,
+            skipped: injectResult.skipped,
+            binLinks: injectResult.binLinks,
+            cacheInvalidations: injectResult.cacheInvalidations,
+          } satisfies PushConsumerResult;
         } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
           consola.warn(
-            `Failed to push to ${consumerPath}: ${err instanceof Error ? err.message : String(err)}`
+            `Failed to push to ${consumerPath}: ${message}`
           );
-          return null;
+          return {
+            consumerPath,
+            status: "failed",
+            copied: 0,
+            removed: 0,
+            skipped: 0,
+            binLinks: 0,
+            cacheInvalidations: 0,
+            error: message,
+          } satisfies PushConsumerResult;
         }
       })
     )
   );
 
   for (const r of results) {
-    if (r) {
+    if (r.status === "updated") {
       totalCopied += r.copied;
+      totalRemoved += r.removed;
       totalSkipped += r.skipped;
-      pushCount++;
+      totalBinLinks += r.binLinks;
+      totalCacheInvalidations += r.cacheInvalidations;
+      updatedCount++;
+    } else if (r.status === "skipped") {
+      skippedCount++;
     } else {
       failedCount++;
     }
   }
 
   const buildTag = result.buildId ? ` [${result.buildId}]` : "";
-  consola.success(
-    `Pushed ${result.name}@${result.version}${buildTag} to ${pushCount} consumer(s) in ${timer.elapsed()} (${totalCopied} files changed, ${totalSkipped} unchanged)`
-  );
+  const detailParts = [
+    `${totalCopied} copied`,
+    `${totalRemoved} removed`,
+    `${totalSkipped} unchanged`,
+  ];
+  if (totalBinLinks > 0) detailParts.push(`${totalBinLinks} bin links`);
+  if (totalCacheInvalidations > 0) {
+    detailParts.push(`${totalCacheInvalidations} cache invalidations`);
+  }
+  if (skippedCount > 0) detailParts.push(`${skippedCount} consumer(s) skipped`);
+  if (failedCount > 0) detailParts.push(`${failedCount} failed`);
 
-  output({
+  const consumerLabel =
+    failedCount > 0 || skippedCount > 0
+      ? `${updatedCount}/${consumers.length} consumer(s)`
+      : `${updatedCount} consumer(s)`;
+  const message =
+    `Pushed ${result.name}@${result.version}${buildTag} to ${consumerLabel} ` +
+    `in ${timer.elapsed()} (${detailParts.join(", ")})`;
+
+  if (failedCount > 0) {
+    consola.warn(message);
+  } else {
+    consola.success(message);
+  }
+
+  const summary: PushSummary = {
     name: result.name,
     version: result.version,
     buildId: result.buildId,
-    consumers: pushCount,
+    noChange: false,
+    consumers: consumers.length,
+    updatedConsumers: updatedCount,
     failedConsumers: failedCount,
+    skippedConsumers: skippedCount,
     copied: totalCopied,
+    removed: totalRemoved,
     skipped: totalSkipped,
+    binLinks: totalBinLinks,
+    cacheInvalidations: totalCacheInvalidations,
     elapsed: timer.elapsedMs(),
-  });
+    consumerResults: results,
+  };
+
+  output(summary);
+  return summary;
+}
+
+function createEmptySummary(
+  name: string,
+  version: string,
+  buildId: string,
+  elapsed: number
+): PushSummary {
+  return {
+    name,
+    version,
+    buildId,
+    noChange: false,
+    consumers: 0,
+    updatedConsumers: 0,
+    failedConsumers: 0,
+    skippedConsumers: 0,
+    copied: 0,
+    removed: 0,
+    skipped: 0,
+    binLinks: 0,
+    cacheInvalidations: 0,
+    elapsed,
+    consumerResults: [],
+  };
 }
 
 export interface WatchConfig {
@@ -180,7 +322,7 @@ function parseMs(value: string | undefined): number | undefined {
 export async function startWatchMode(
   packageDir: string,
   args: WatchArgs,
-  push: () => Promise<void>
+  push: () => Promise<unknown>
 ): Promise<void> {
   const { startWatcher } = await import("./watcher.js");
   const config = await loadKnarrConfig(packageDir);
@@ -196,7 +338,9 @@ export async function startWatchMode(
       cooldown: parseMs(args.cooldown) ?? config.cooldown,
       notify,
     },
-    push
+    async () => {
+      await push();
+    }
   );
 
   await new Promise<void>((resolve) => {

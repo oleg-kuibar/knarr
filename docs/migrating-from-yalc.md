@@ -34,6 +34,7 @@ Knarr provides a `migrate` command that cleans up yalc artifacts:
 ```bash
 cd my-app
 knarr migrate
+knarr migrate --from ../my-lib
 ```
 
 This command:
@@ -44,11 +45,13 @@ This command:
 4. Deletes `yalc.lock`
 5. Prints next steps
 
-After running `migrate`, you still need to set up knarr:
+For a one-package migration, pass `--from` to clean up yalc, publish the local package, and link it in one pass:
 
 ```bash
-npx knarr use ../my-lib     # publish + link in one step
+npx knarr migrate --from ../my-lib
 ```
+
+Without `--from`, `migrate` cleans up yalc artifacts and prints the exact `knarr add --from <path>` follow-up commands.
 
 ## Manual migration
 
