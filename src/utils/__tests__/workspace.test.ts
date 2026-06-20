@@ -46,10 +46,12 @@ describe("parseCatalogs", () => {
           "  - packages/*",
           "catalog:",
           "  react: ^19.0.0 # default catalog comment",
+          '  "@scope/pkg": ^1.0.0',
           "  hashy: \"npm:pkg#tag\" # keep quoted hash",
           "catalogs:",
           "  legacy:",
           "    react: ^18.0.0 # named catalog comment",
+          '    "@scope/pkg": ^0.9.0',
           "",
         ].join("\n")
       );
@@ -57,8 +59,10 @@ describe("parseCatalogs", () => {
       const catalogs = await parseCatalogs(root);
 
       expect(catalogs.default.react).toBe("^19.0.0");
+      expect(catalogs.default["@scope/pkg"]).toBe("^1.0.0");
       expect(catalogs.default.hashy).toBe("npm:pkg#tag");
       expect(catalogs.named.legacy.react).toBe("^18.0.0");
+      expect(catalogs.named.legacy["@scope/pkg"]).toBe("^0.9.0");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

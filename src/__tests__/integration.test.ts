@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   mkdtemp,
   writeFile,
@@ -162,6 +162,60 @@ describe("publish", () => {
       );
 
       expect(storePkg.dependencies["dep-a"]).toBe("^2.3.4");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rewrites workspace alias protocol specs to npm aliases", async () => {
+    const { publish } = await import("../core/publisher.js");
+
+    const root = await mkdtemp(join(tmpdir(), "KNARR-ws-alias-root-"));
+    const fooDir = join(root, "packages", "foo");
+    const scopedDir = join(root, "packages", "scoped-foo");
+    const libDir = join(root, "packages", "lib");
+    await mkdir(join(fooDir, "dist"), { recursive: true });
+    await mkdir(join(scopedDir, "dist"), { recursive: true });
+    await mkdir(join(libDir, "dist"), { recursive: true });
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({ private: true, workspaces: ["packages/*"] })
+    );
+    await writeFile(
+      join(fooDir, "package.json"),
+      JSON.stringify({ name: "foo", version: "1.2.3", files: ["dist"] })
+    );
+    await writeFile(join(fooDir, "dist", "index.js"), "");
+    await writeFile(
+      join(scopedDir, "package.json"),
+      JSON.stringify({ name: "@scope/foo", version: "4.5.6", files: ["dist"] })
+    );
+    await writeFile(join(scopedDir, "dist", "index.js"), "");
+    await writeFile(
+      join(libDir, "package.json"),
+      JSON.stringify({
+        name: "alias-lib",
+        version: "1.0.0",
+        files: ["dist"],
+        dependencies: {
+          bar: "workspace:foo@*",
+          "scoped-alias": "workspace:@scope/foo@^",
+        },
+      })
+    );
+    await writeFile(join(libDir, "dist", "index.js"), "");
+
+    try {
+      await publish(libDir);
+      const storePkg = JSON.parse(
+        await readFile(
+          join(testKNARRHome, "store", "alias-lib@1.0.0", "package", "package.json"),
+          "utf-8"
+        )
+      );
+
+      expect(storePkg.dependencies.bar).toBe("npm:foo@1.2.3");
+      expect(storePkg.dependencies["scoped-alias"]).toBe("npm:@scope/foo@^4.5.6");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -400,6 +454,36 @@ describe("publish", () => {
     ).toBe('module.exports = "from-dist";');
   });
 
+  it("does not apply root files globs inside publishConfig.directory without a nested manifest", async () => {
+    const { publish } = await import("../core/publisher.js");
+
+    await writeFile(join(testLib, "dist", "index.js"), 'module.exports = "from-dist";');
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({
+        name: "test-lib",
+        version: "1.0.0",
+        files: ["dist"],
+        main: "index.js",
+        publishConfig: { directory: "dist" },
+      })
+    );
+
+    await publish(testLib);
+
+    expect(
+      await readFile(
+        join(testKNARRHome, "store", "test-lib@1.0.0", "package", "index.js"),
+        "utf-8"
+      )
+    ).toBe('module.exports = "from-dist";');
+    expect(
+      await exists(
+        join(testKNARRHome, "store", "test-lib@1.0.0", "package", "dist", "index.js")
+      )
+    ).toBe(false);
+  });
+
   it("preserves unresolved workspace shorthand instead of using package version", async () => {
     const { publish } = await import("../core/publisher.js");
 
@@ -595,6 +679,42 @@ describe("package manager state migrations", () => {
     expect(state.links["test-lib"]?.packageManager).toBe("npm");
     expect(state.links["test-lib"]?.contentHash).toBe(entry!.meta.contentHash);
     expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
+  });
+
+  it("update rejects Yarn PnP before skipping unchanged links", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { addLink } = await import("../core/tracker.js");
+    const updateCommand = await import("../commands/update.js");
+
+    await writeFile(join(testConsumer, ".yarnrc.yml"), "nodeLinker: pnp\n");
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    await addLink(testConsumer, "test-lib", {
+      version: "1.0.0",
+      contentHash: entry!.meta.contentHash,
+      linkedAt: new Date().toISOString(),
+      sourcePath: testLib,
+      backupExists: false,
+      packageManager: "yarn",
+      buildId: entry!.meta.buildId ?? "",
+    });
+
+    const originalCwd = process.cwd();
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`process.exit:${code}`);
+    }) as typeof process.exit);
+    process.chdir(testConsumer);
+    try {
+      await expect(updateCommand.default.run?.({ args: {} } as any)).rejects.toThrow(
+        "process.exit:1"
+      );
+    } finally {
+      process.chdir(originalCwd);
+      exitSpy.mockRestore();
+    }
+
+    expect(await exists(join(testConsumer, "node_modules", "test-lib"))).toBe(false);
   });
 });
 

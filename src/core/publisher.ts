@@ -118,7 +118,10 @@ export async function publish(
     );
   }
 
-  const files = await resolvePackFiles(publishDir, filePkg);
+  const packListPkg = publishDirHasPackageJson
+    ? filePkg
+    : { ...filePkg, files: undefined };
+  const files = await resolvePackFiles(publishDir, packListPkg);
   if (files.length === 0) {
     throw new Error("No publishable files found");
   }
@@ -459,21 +462,9 @@ function rewriteProtocolVersions(pkg: PackageJson): PackageJson {
     const newDeps = { ...deps };
     for (const [name, version] of Object.entries(deps)) {
       if (version.startsWith("workspace:")) {
-        const versionPart = version.slice("workspace:".length);
-        // workspace:* or workspace:^ or workspace:~ → use the dependency's version from the workspace
-        if (versionPart === "*" || versionPart === "^" || versionPart === "~") {
-          const depVersion = _cachedWorkspaceVersions?.versions.get(name);
-          if (!depVersion) {
-            consola.warn(
-              `workspace: specifier for "${name}" could not be resolved — published package.json will contain "${version}" which may cause install failures`
-            );
-            continue;
-          }
-          newDeps[name] = versionPart === "*" ? depVersion : versionPart + depVersion;
-        } else {
-          // workspace:1.0.0 → 1.0.0
-          newDeps[name] = versionPart;
-        }
+        const resolved = resolveWorkspaceSpecifier(name, version);
+        if (!resolved) continue;
+        newDeps[name] = resolved;
         fieldChanged = true;
         changed = true;
       } else if (version.startsWith("catalog:")) {
@@ -502,6 +493,49 @@ function rewriteProtocolVersions(pkg: PackageJson): PackageJson {
   }
 
   return changed ? result : pkg;
+}
+
+function resolveWorkspaceSpecifier(
+  depName: string,
+  specifier: string
+): string | null {
+  const raw = specifier.slice("workspace:".length);
+  const alias = parseWorkspaceAlias(raw);
+  const targetName = alias?.name ?? depName;
+  const versionPart = alias?.range ?? raw;
+
+  // workspace:* / workspace:^ / workspace:~ use the workspace package's version.
+  if (versionPart === "*" || versionPart === "^" || versionPart === "~") {
+    const depVersion = _cachedWorkspaceVersions?.versions.get(targetName);
+    if (!depVersion) {
+      consola.warn(
+        `workspace: specifier for "${targetName}" could not be resolved — published package.json will contain "${specifier}" which may cause install failures`
+      );
+      return null;
+    }
+
+    const resolved = versionPart === "*" ? depVersion : versionPart + depVersion;
+    return alias && targetName !== depName
+      ? `npm:${targetName}@${resolved}`
+      : resolved;
+  }
+
+  // workspace:1.0.0 -> 1.0.0; workspace:foo@1.0.0 -> npm:foo@1.0.0
+  return alias && targetName !== depName
+    ? `npm:${targetName}@${versionPart}`
+    : versionPart;
+}
+
+function parseWorkspaceAlias(
+  specifierBody: string
+): { name: string; range: string } | null {
+  const atIndex = specifierBody.lastIndexOf("@");
+  if (atIndex <= 0) return null;
+
+  const name = specifierBody.slice(0, atIndex);
+  const range = specifierBody.slice(atIndex + 1);
+  if (!name || !range) return null;
+  return { name, range };
 }
 
 /**

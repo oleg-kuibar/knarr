@@ -10,7 +10,11 @@ import { suppressHumanOutput, output } from "../utils/output.js";
 import { errorWithSuggestion } from "../utils/errors.js";
 import { verbose } from "../utils/logger.js";
 import { warnVersionMismatch } from "../utils/validators.js";
-import { detectPackageManagerInfo } from "../utils/pm-detect.js";
+import {
+  detectPackageManagerInfo,
+  hasYarnPnpMarkers,
+  isYarnPnpProject,
+} from "../utils/pm-detect.js";
 import type { LinkEntry } from "../types.js";
 
 const updateLimit = pLimit(4);
@@ -33,6 +37,21 @@ export default defineCommand({
     const consumerPath = resolve(".");
     const state = await readConsumerState(consumerPath);
     const currentPm = await detectPackageManagerInfo(consumerPath);
+    if (
+      await hasYarnPnpMarkers(consumerPath) ||
+      (currentPm.packageManager === "yarn" && await isYarnPnpProject(consumerPath))
+    ) {
+      consola.error(
+        `Yarn PnP mode is not compatible with Knarr.\n\n` +
+        `Knarr works by copying files into node_modules/, but PnP eliminates\n` +
+        `node_modules/ entirely. To use Knarr with Yarn Berry, add one of these\n` +
+        `to .yarnrc.yml:\n\n` +
+        `  nodeLinker: node-modules\n` +
+        `  nodeLinker: pnpm\n\n` +
+        `Then run: yarn install`
+      );
+      process.exit(1);
+    }
     const links = Object.entries(state.links);
 
     if (links.length === 0) {
@@ -79,7 +98,7 @@ export default defineCommand({
 
           try {
             // Inject the updated version
-            const result = await inject(entry, consumerPath, link.packageManager);
+            const result = await inject(entry, consumerPath, packageManager);
 
             // Update link entry
             const updatedLink: LinkEntry = {

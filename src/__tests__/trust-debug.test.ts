@@ -191,6 +191,35 @@ describe("doctor --fix", () => {
     expect(yarnLinker?.status).toBe("fail");
     expect(yarnLinker?.message).toContain("PnP");
   });
+
+  it.each([
+    ["explicit PnP linker", async () => {
+      await writeFile(join(testConsumer, ".yarnrc.yml"), "nodeLinker: pnp\n");
+    }],
+    ["Yarn Berry default PnP", async () => {
+      await writeFile(
+        join(testConsumer, "package.json"),
+        JSON.stringify({ name: "test-app", version: "1.0.0", packageManager: "yarn@4.0.0" }, null, 2)
+      );
+    }],
+  ])("does not apply local setup fixes for %s", async (_name, prepare) => {
+    const { runDoctorDiagnostics } = await import("../commands/doctor.js");
+    await prepare();
+
+    const result = await runDoctorDiagnostics(testConsumer, { fix: true });
+    const state = result.results.find((r) => r.name === "Consumer state");
+    const gitignore = result.results.find((r) => r.name === ".gitignore");
+    const postinstall = result.results.find((r) => r.name === "Postinstall restore");
+
+    expect(result.fixed).toBe(0);
+    expect(state?.fixable).toBe(false);
+    expect(gitignore?.fixable).toBe(false);
+    expect(postinstall?.fixable).toBe(false);
+    expect(await exists(join(testConsumer, ".knarr", "state.json"))).toBe(false);
+    expect(await exists(join(testConsumer, ".gitignore"))).toBe(false);
+    const pkg = JSON.parse(await readFile(join(testConsumer, "package.json"), "utf-8"));
+    expect(pkg.scripts?.postinstall).toBeUndefined();
+  });
 });
 
 describe("knarr explain", () => {

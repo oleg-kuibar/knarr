@@ -425,9 +425,10 @@ function parseKeyValue(line: string): [string, string] | null {
   const key = trimmed.slice(0, colonIdx).trim();
   const value = stripYamlInlineComment(trimmed.slice(colonIdx + 1)).trim();
   if (!key || !value) return null;
-  // Remove optional quotes around value
+  // Remove optional quotes around key and value
+  const unquotedKey = key.replace(/^["']|["']$/g, "");
   const unquoted = value.replace(/^["']|["']$/g, "");
-  return [key, unquoted];
+  return [unquotedKey, unquoted];
 }
 
 function stripYamlInlineComment(value: string): string {

@@ -11,7 +11,7 @@ import { normalizePath } from "./paths.js";
  * Mimics `npm pack` logic:
  * 1. If `files` field exists in package.json, use those globs (always includes package.json)
  * 2. If no `files` field, include everything except common ignores
- * 3. Respect .npmignore if present
+ * 3. Respect .npmignore, falling back to .gitignore when .npmignore is absent
  *
  * Returns absolute file paths.
  */
@@ -112,6 +112,7 @@ const DEFAULT_IGNORES = new Set([
   ".hg",
   ".DS_Store",
   ".npmrc",
+  ".gitignore",
   ".knarr",
   "test",
   "tests",
@@ -160,33 +161,46 @@ function shouldIgnore(relPath: string, matchers: IgnoreMatchers): boolean {
 }
 
 async function loadNpmIgnore(dir: string): Promise<IgnoreMatchers> {
-  const matchers: IgnoreMatchers = { literals: new Set(), patterns: [], negations: [] };
-  try {
-    const content = await readFile(join(dir, ".npmignore"), "utf-8");
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
+  const npmIgnore = await readIgnoreFile(dir, ".npmignore");
+  if (npmIgnore !== null) return parseIgnoreFile(npmIgnore);
 
-      if (trimmed.startsWith("!")) {
-        // Negation pattern — un-ignore
-        const pat = trimmed.slice(1);
-        if (hasGlobChars(pat)) {
-          matchers.negations.push(picomatch(pat, { dot: true }));
-        } else {
-          // Negation of a literal isn't handled via Set, use a matcher
-          matchers.negations.push(picomatch(pat, { dot: true }));
-        }
-      } else if (hasGlobChars(trimmed)) {
-        matchers.patterns.push(picomatch(trimmed, { dot: true }));
-      } else {
-        matchers.literals.add(trimmed.replace(/\/$/, ""));
-      }
-    }
+  const gitIgnore = await readIgnoreFile(dir, ".gitignore");
+  return gitIgnore === null ? createIgnoreMatchers() : parseIgnoreFile(gitIgnore);
+}
+
+async function readIgnoreFile(dir: string, filename: string): Promise<string | null> {
+  try {
+    return await readFile(join(dir, filename), "utf-8");
   } catch (err) {
-    if (isNodeError(err) && err.code !== "ENOENT") {
-      throw err;
+    if (isNodeError(err) && err.code === "ENOENT") return null;
+    throw err;
+  }
+}
+
+function createIgnoreMatchers(): IgnoreMatchers {
+  return { literals: new Set(), patterns: [], negations: [] };
+}
+
+function parseIgnoreFile(content: string): IgnoreMatchers {
+  const matchers: IgnoreMatchers = { literals: new Set(), patterns: [], negations: [] };
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    if (trimmed.startsWith("!")) {
+      // Negation pattern — un-ignore
+      const pat = trimmed.slice(1);
+      if (hasGlobChars(pat)) {
+        matchers.negations.push(picomatch(pat, { dot: true }));
+      } else {
+        // Negation of a literal isn't handled via Set, use a matcher
+        matchers.negations.push(picomatch(pat, { dot: true }));
+      }
+    } else if (hasGlobChars(trimmed)) {
+      matchers.patterns.push(picomatch(trimmed, { dot: true }));
+    } else {
+      matchers.literals.add(trimmed.replace(/\/$/, ""));
     }
-    // no .npmignore
   }
   return matchers;
 }
