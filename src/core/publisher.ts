@@ -99,8 +99,10 @@ export async function publish(
   }
 
   // 3. Resolve publishable files (from publishDir when publishConfig.directory is set)
-  const filePkg = publishDir !== packageDir
-    ? JSON.parse(await readFile(join(publishDir, "package.json"), "utf-8").catch(() => JSON.stringify(pkg))) as PackageJson
+  const publishPkgPath = join(publishDir, "package.json");
+  const publishDirHasPackageJson = publishDir === packageDir || await exists(publishPkgPath);
+  const filePkg = publishDirHasPackageJson
+    ? JSON.parse(await readFile(publishPkgPath, "utf-8")) as PackageJson
     : pkg;
   if (!filePkg.name) throw new Error("publish package.json missing 'name' field");
   if (!filePkg.version) throw new Error("publish package.json missing 'version' field");
@@ -126,7 +128,7 @@ export async function publish(
   let processedPkg = rewriteProtocolVersions(filePkg);
   processedPkg = applyPublishConfig(processedPkg);
   const contentOverrides = new Map<string, string | Buffer>();
-  if (processedPkg !== filePkg) {
+  if (processedPkg !== filePkg || !publishDirHasPackageJson) {
     contentOverrides.set("package.json", JSON.stringify(processedPkg, null, 2));
   }
   const hashFiles = [...files];
@@ -197,11 +199,15 @@ export async function publish(
           files.map((file) =>
             copyLimit(async () => {
               const rel = relative(publishDir, file);
+              const normalizedRel = rel.replace(/\\/g, "/");
               const dest = join(tmpPackageDir, rel);
+              const override = contentOverrides.get(normalizedRel);
 
-              if (rel === "package.json" && processedPkg !== filePkg) {
-                // Write the rewritten package.json
-                await atomicWriteFile(dest, JSON.stringify(processedPkg, null, 2));
+              if (override !== undefined) {
+                await atomicWriteFile(
+                  dest,
+                  Buffer.isBuffer(override) ? override.toString("utf-8") : override
+                );
               } else {
                 // Parent dirs already pre-created above
                 await copyWithCoW(file, dest, { ensureParent: false });
@@ -435,7 +441,13 @@ function rewriteProtocolVersions(pkg: PackageJson): PackageJson {
         const versionPart = version.slice("workspace:".length);
         // workspace:* or workspace:^ or workspace:~ → use the dependency's version from the workspace
         if (versionPart === "*" || versionPart === "^" || versionPart === "~") {
-          const depVersion = _cachedWorkspaceVersions?.versions.get(name) ?? pkg.version;
+          const depVersion = _cachedWorkspaceVersions?.versions.get(name);
+          if (!depVersion) {
+            consola.warn(
+              `workspace: specifier for "${name}" could not be resolved — published package.json will contain "${version}" which may cause install failures`
+            );
+            continue;
+          }
           newDeps[name] = versionPart === "*" ? depVersion : versionPart + depVersion;
         } else {
           // workspace:1.0.0 → 1.0.0

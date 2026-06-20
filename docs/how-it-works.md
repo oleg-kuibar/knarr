@@ -103,7 +103,7 @@ File resolution follows `npm pack` rules:
 - `.npmignore` exclusions always apply
 - `package.json`, `README*`, `LICENSE*`, `CHANGELOG*` are always included
 
-If a dependency uses `workspace:*` (or `workspace:^`, `workspace:~`), Knarr rewrites it to the actual version in the store copy. The `catalog:` protocol (pnpm's shared version definitions in `pnpm-workspace.yaml`) is also resolved — both `catalog:` (default catalog) and `catalog:<name>` (named catalog) specifiers get replaced with the actual version string. Your source `package.json` is never touched.
+If a dependency uses `workspace:*` (or `workspace:^`, `workspace:~`), Knarr rewrites it to the actual workspace package version in the store copy. If the dependency cannot be found in the workspace, Knarr leaves the specifier unchanged and warns instead of guessing a version. The `catalog:` protocol (pnpm's shared version definitions in `pnpm-workspace.yaml`) is also resolved — both `catalog:` (default catalog) and `catalog:<name>` (named catalog) specifiers get replaced with the actual version string. Your source `package.json` is never touched.
 
 When `publishConfig.directory` is set in `package.json`, Knarr reads files from that subdirectory instead of the package root. This matches how npm/pnpm handle `publishConfig.directory` at pack time.
 

@@ -65,7 +65,7 @@ Now `knarr push` from `packages/my-lib/` will update both apps.
 
 ### workspace:* protocol
 
-When knarr publishes a package, it rewrites `workspace:*`, `workspace:^`, and `workspace:~` version specifiers to the actual resolved versions in the store copy. Your source `package.json` is never modified.
+When knarr publishes a package, it rewrites `workspace:*`, `workspace:^`, and `workspace:~` version specifiers to the actual resolved workspace package versions in the store copy. If a dependency cannot be found in the workspace, Knarr leaves the specifier unchanged and warns instead of guessing a version. Your source `package.json` is never modified.
 
 For example, if `my-lib/package.json` has:
 

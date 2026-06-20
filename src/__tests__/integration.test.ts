@@ -294,6 +294,65 @@ describe("publish", () => {
     expect(await exists(storeIndex)).toBe(true);
     expect(await readFile(storeIndex, "utf-8")).toBe('module.exports = "from-dist";');
   });
+
+  it("writes a package manifest when publishConfig.directory has none", async () => {
+    const { publish } = await import("../core/publisher.js");
+
+    await writeFile(join(testLib, "dist", "index.js"), 'module.exports = "from-dist";');
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({
+        name: "test-lib",
+        version: "1.0.0",
+        main: "index.js",
+        publishConfig: { directory: "dist" },
+      })
+    );
+
+    await publish(testLib);
+
+    const storePkgPath = join(
+      testKNARRHome,
+      "store",
+      "test-lib@1.0.0",
+      "package",
+      "package.json"
+    );
+    const storePkg = JSON.parse(await readFile(storePkgPath, "utf-8"));
+    expect(storePkg.name).toBe("test-lib");
+    expect(storePkg.main).toBe("index.js");
+    expect(storePkg.publishConfig).toBeUndefined();
+    expect(
+      await readFile(
+        join(testKNARRHome, "store", "test-lib@1.0.0", "package", "index.js"),
+        "utf-8"
+      )
+    ).toBe('module.exports = "from-dist";');
+  });
+
+  it("preserves unresolved workspace shorthand instead of using package version", async () => {
+    const { publish } = await import("../core/publisher.js");
+
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({
+        name: "test-lib",
+        version: "1.0.0",
+        files: ["dist"],
+        dependencies: { "missing-workspace-dep": "workspace:^" },
+      })
+    );
+
+    await publish(testLib);
+
+    const storePkg = JSON.parse(
+      await readFile(
+        join(testKNARRHome, "store", "test-lib@1.0.0", "package", "package.json"),
+        "utf-8"
+      )
+    );
+    expect(storePkg.dependencies["missing-workspace-dep"]).toBe("workspace:^");
+  });
 });
 
 describe("inject", () => {

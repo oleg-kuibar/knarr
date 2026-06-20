@@ -648,9 +648,20 @@ describe("workspace protocol rewriting on publish", () => {
   it("rewrites workspace:* to actual version in store copy", async () => {
     const { publish } = await import("../core/publisher.js");
 
-    const tempLib = await mkdtemp(join(tmpdir(), "KNARR-ws-"));
+    const root = await mkdtemp(join(tmpdir(), "KNARR-ws-root-"));
+    const tempLib = join(root, "packages", "lib");
     await mkdir(join(tempLib, "dist"), { recursive: true });
     await writeFile(join(tempLib, "dist", "index.js"), "");
+    await writeFile(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
+    for (const dep of ["dep-a", "dep-b", "dep-c"]) {
+      const depDir = join(root, "packages", dep);
+      await mkdir(join(depDir, "dist"), { recursive: true });
+      await writeFile(
+        join(depDir, "package.json"),
+        JSON.stringify({ name: dep, version: "3.2.1", files: ["dist"] })
+      );
+      await writeFile(join(depDir, "dist", "index.js"), "");
+    }
     await writeFile(
       join(tempLib, "package.json"),
       JSON.stringify({
@@ -687,7 +698,7 @@ describe("workspace protocol rewriting on publish", () => {
     const sourcePkg = JSON.parse(await readFile(join(tempLib, "package.json"), "utf-8"));
     expect(sourcePkg.dependencies["dep-a"]).toBe("workspace:*");
 
-    await rm(tempLib, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   });
 
   it("does not rewrite package.json when no workspace deps exist", async () => {

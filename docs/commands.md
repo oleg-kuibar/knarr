@@ -87,7 +87,7 @@ Included files:
 - Files listed in the `files` field of `package.json`
 - Always: `package.json`, `README`, `LICENSE`/`LICENCE`, `CHANGELOG`
 - `.npmignore` exclusions apply
-- `workspace:*` and `catalog:` protocol versions get rewritten to real versions in the store copy (source is untouched)
+- Resolvable `workspace:*` and `catalog:` protocol versions get rewritten to real versions in the store copy (source is untouched)
 - When `publishConfig.directory` is set, files are read from that subdirectory
 
 Lifecycle hooks run in this order: `preknarr` → `prepack` → [publish] → `postpack` → `postknarr`. The `prepack`/`postpack` hooks are skipped with `--no-scripts`. Default timeout is 30s (override with `KNARR_HOOK_TIMEOUT` env var).

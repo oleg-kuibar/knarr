@@ -38,7 +38,7 @@ graph TD
 ```
 package.json → resolvePackFiles() → computeContentHash()
   → compare with store meta → copy files to temp dir
-  → rewrite workspace:/catalog: versions → atomic rename to store
+  → rewrite resolvable workspace:/catalog: versions → atomic rename to store
   → write .knarr-meta.json
 ```
 
