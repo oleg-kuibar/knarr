@@ -10,6 +10,7 @@ import {
   writeConsumerState,
 } from "../core/tracker.js";
 import { getStoreEntry, listStoreEntries } from "../core/store.js";
+import { resolveInjectionTarget } from "../core/injector.js";
 import { ensureDir, exists, isNodeError } from "../utils/fs.js";
 import {
   getConsumerKnarrDir,
@@ -244,7 +245,24 @@ export async function runDoctorDiagnostics(
       });
     }
 
-    const nmPath = join(consumerPath, "node_modules", name);
+    let nmPath: string;
+    try {
+      nmPath = await resolveInjectionTarget(
+        consumerPath,
+        name,
+        link.packageManager,
+        link.version,
+        { warnOnFallback: false }
+      );
+    } catch (err) {
+      await addCheck({
+        name: `node_modules: ${name}`,
+        status: "fail",
+        message: `Cannot resolve package target. ${err instanceof Error ? err.message : String(err)}`,
+      });
+      continue;
+    }
+
     if (!(await exists(nmPath))) {
       await addCheck({
         name: `node_modules: ${name}`,
@@ -254,7 +272,13 @@ export async function runDoctorDiagnostics(
     } else {
       try {
         const nmPkg = JSON.parse(await readFile(join(nmPath, "package.json"), "utf-8"));
-        if (nmPkg.version && nmPkg.version !== link.version) {
+        if (nmPkg.name && nmPkg.name !== name) {
+          await addCheck({
+            name: `node_modules: ${name}`,
+            status: "fail",
+            message: `node_modules target contains package "${nmPkg.name}". Run your package manager install, then 'knarr restore'.`,
+          });
+        } else if (nmPkg.version && nmPkg.version !== link.version) {
           await addCheck({
             name: `node_modules: ${name}`,
             status: "warn",

@@ -4,6 +4,7 @@ import {
   mkdtemp,
   readFile,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
@@ -219,6 +220,59 @@ describe("doctor --fix", () => {
     expect(await exists(join(testConsumer, ".gitignore"))).toBe(false);
     const pkg = JSON.parse(await readFile(join(testConsumer, "package.json"), "utf-8"));
     expect(pkg.scripts?.postinstall).toBeUndefined();
+  });
+
+  it("fails node_modules checks for wrong pnpm virtual-store package identity", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { addLink } = await import("../core/tracker.js");
+    const { runDoctorDiagnostics } = await import("../commands/doctor.js");
+
+    await rm(join(testConsumer, "package-lock.json"), { force: true });
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+    const wrongTarget = join(
+      testConsumer,
+      "node_modules",
+      ".pnpm",
+      "test-lib@1.0.0",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(wrongTarget, { recursive: true });
+    await writeFile(
+      join(wrongTarget, "package.json"),
+      JSON.stringify({ name: "other-lib", version: "1.0.0" })
+    );
+    await symlink(
+      join(".pnpm", "test-lib@1.0.0", "node_modules", "test-lib"),
+      join(testConsumer, "node_modules", "test-lib"),
+      "dir"
+    );
+    const published = await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    await addLink(testConsumer, "test-lib", {
+      version: "1.0.0",
+      contentHash: entry!.meta.contentHash,
+      linkedAt: new Date().toISOString(),
+      sourcePath: testLib,
+      backupExists: false,
+      packageManager: "pnpm",
+      buildId: published.buildId,
+    });
+
+    const result = await runDoctorDiagnostics(testConsumer);
+    const nodeModules = result.results.find((r) => r.name === "node_modules: test-lib");
+
+    expect(nodeModules?.status).toBe("fail");
+    expect(nodeModules?.message).toContain("other-lib");
   });
 });
 
