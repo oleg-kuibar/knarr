@@ -14,7 +14,7 @@ import { output } from "../utils/output.js";
 import { errorWithSuggestion } from "../utils/errors.js";
 import { verbose } from "../utils/logger.js";
 import { consola } from "../utils/console.js";
-import type { PackageJson } from "../types.js";
+import type { PackageJson, StoreEntry } from "../types.js";
 
 const consumerLimit = pLimit(4);
 
@@ -108,22 +108,49 @@ export async function doPush(
     return summary;
   }
 
+  return pushStoreEntry(entry, {
+    force: options.force,
+    timer,
+    noConsumersStatus: "published",
+  });
+}
+
+export interface PushStoreEntryOptions {
+  /** Force copy all files, bypassing hash comparison */
+  force?: boolean;
+  /** Timer to reuse when the store entry push is part of a larger operation */
+  timer?: Timer;
+  /** Human status when there are no consumers (default: "available") */
+  noConsumersStatus?: "published" | "available";
+  /** Emit structured output for this push summary (default: true) */
+  emitOutput?: boolean;
+}
+
+/**
+ * Inject an already-published store entry into all registered consumers.
+ * Used by rollback so restored history is pushed without republishing source.
+ */
+export async function pushStoreEntry(
+  entry: StoreEntry,
+  options: PushStoreEntryOptions = {}
+): Promise<PushSummary> {
+  const timer = options.timer ?? new Timer();
+
   // Push to all consumers in parallel
-  const consumers = await getConsumers(result.name);
+  const consumers = await getConsumers(entry.name);
   if (consumers.length === 0) {
-    consola.success(
-      `Published ${result.name}@${result.version} to store`
-    );
+    const status = options.noConsumersStatus ?? "available";
+    consola.success(`${entry.name}@${entry.version} ${status} in store`);
     consola.info(
-      "No consumers registered yet. Run 'knarr add " + result.name + "' in a consumer project to start receiving pushes."
+      "No consumers registered yet. Run 'knarr add " + entry.name + "' in a consumer project to start receiving pushes."
     );
     const summary = createEmptySummary(
-      result.name,
-      result.version,
-      result.buildId,
+      entry.name,
+      entry.version,
+      entry.meta.buildId ?? "",
       timer.elapsedMs()
     );
-    output(summary);
+    if (options.emitOutput !== false) output(summary);
     return summary;
   }
 
@@ -139,10 +166,10 @@ export async function doPush(
   const results = await Promise.all(
     consumers.map((consumerPath) =>
       consumerLimit(async () => {
-        const link = await getLink(consumerPath, result.name);
+        const link = await getLink(consumerPath, entry.name);
         if (!link) {
           verbose(
-            `[push] No link found for ${result.name} in ${consumerPath}, skipping`
+            `[push] No link found for ${entry.name} in ${consumerPath}, skipping`
           );
           return {
             consumerPath,
@@ -167,7 +194,7 @@ export async function doPush(
           // Always update state.json so the Vite plugin detects the push
           // and triggers a full reload. Even if no files were copied (all
           // skipped as unchanged), the user expects a refresh after `knarr push`.
-          await addLink(consumerPath, result.name, {
+          await addLink(consumerPath, entry.name, {
             ...link,
             contentHash: entry.meta.contentHash,
             linkedAt: new Date().toISOString(),
@@ -218,7 +245,8 @@ export async function doPush(
     }
   }
 
-  const buildTag = result.buildId ? ` [${result.buildId}]` : "";
+  const buildId = entry.meta.buildId ?? "";
+  const buildTag = buildId ? ` [${buildId}]` : "";
   const detailParts = [
     `${totalCopied} copied`,
     `${totalRemoved} removed`,
@@ -236,7 +264,7 @@ export async function doPush(
       ? `${updatedCount}/${consumers.length} consumer(s)`
       : `${updatedCount} consumer(s)`;
   const message =
-    `Pushed ${result.name}@${result.version}${buildTag} to ${consumerLabel} ` +
+    `Pushed ${entry.name}@${entry.version}${buildTag} to ${consumerLabel} ` +
     `in ${timer.elapsed()} (${detailParts.join(", ")})`;
 
   if (failedCount > 0) {
@@ -246,9 +274,9 @@ export async function doPush(
   }
 
   const summary: PushSummary = {
-    name: result.name,
-    version: result.version,
-    buildId: result.buildId,
+    name: entry.name,
+    version: entry.version,
+    buildId,
     noChange: false,
     consumers: consumers.length,
     updatedConsumers: updatedCount,
@@ -263,7 +291,7 @@ export async function doPush(
     consumerResults: results,
   };
 
-  output(summary);
+  if (options.emitOutput !== false) output(summary);
   return summary;
 }
 
@@ -384,7 +412,7 @@ export async function resolveWatchConfig(
     }
   }
 
-  if (buildCmd) {
+  if (buildCmd && !patterns) {
     // With a build command: watch source directories that actually exist.
     // Avoids infinite loop where build output (dist/) triggers another build.
     const { exists } = await import("../utils/fs.js");
@@ -397,6 +425,8 @@ export async function resolveWatchConfig(
     )).filter((c) => c.exists).map((c) => c.dir);
     patterns = existing.length > 0 ? existing : ["src", "lib"];
     verbose(`[watch] Using source patterns with build command: ${patterns.join(", ")}`);
+  } else if (buildCmd && patterns) {
+    verbose(`[watch] Using configured watch patterns with build command: ${patterns.join(", ")}`);
   } else {
     // Without a build command: watch the package.json `files` field (typically dist/)
     consola.info("No build command detected — watching output directories directly");

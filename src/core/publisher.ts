@@ -108,12 +108,26 @@ export async function publish(
   }
   verbose(`[publish] Resolved ${files.length} files for ${pkg.name}@${pkg.version}`);
 
-  // 4. Compute content hash
-  const contentHash = await computeContentHash(files, publishDir);
-
-  // 5. Pre-load workspace versions and catalog definitions
+  // 4. Pre-load workspace versions and catalog definitions
   await preloadWorkspaceVersions(pkg, packageDir);
   await preloadCatalogs(pkg, packageDir);
+
+  // 5. Compute the content hash from the exact package.json that will land in
+  // the store, including workspace/catalog rewrites and publishConfig overrides.
+  let processedPkg = rewriteProtocolVersions(pkg);
+  processedPkg = applyPublishConfig(processedPkg);
+  const contentOverrides = new Map<string, string | Buffer>();
+  if (processedPkg !== pkg || publishDir !== packageDir) {
+    contentOverrides.set("package.json", JSON.stringify(processedPkg, null, 2));
+  }
+  const hashFiles = [...files];
+  const hashFileRels = new Set(
+    files.map((file) => relative(publishDir, file).replace(/\\/g, "/"))
+  );
+  for (const rel of contentOverrides.keys()) {
+    if (!hashFileRels.has(rel)) hashFiles.push(join(publishDir, rel));
+  }
+  const contentHash = await computeContentHash(hashFiles, publishDir, contentOverrides);
 
   // 6. Fast path: check if already up to date (no lock needed)
   if (!options.force) {
@@ -160,10 +174,6 @@ export async function publish(
 
       try {
         await ensurePrivateDir(tmpPackageDir);
-
-        // Handle workspace:* protocol and publishConfig field overrides
-        let processedPkg = rewriteProtocolVersions(pkg);
-        processedPkg = applyPublishConfig(processedPkg);
 
         verbose(`[publish] Copying files to temp store...`);
 
@@ -481,9 +491,6 @@ async function preloadWorkspaceVersions(
     _cachedWorkspaceVersions = null;
     return;
   }
-
-  // Reuse cache if same workspace root
-  if (_cachedWorkspaceVersions?.root === root) return;
 
   const { findWorkspacePackages } = await import("../utils/workspace.js");
   const pkgDirs = await findWorkspacePackages(root);

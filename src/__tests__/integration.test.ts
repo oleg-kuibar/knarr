@@ -3,13 +3,17 @@ import {
   mkdtemp,
   writeFile,
   readFile,
+  lstat,
   mkdir,
   rm,
+  symlink,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { exists } from "../utils/fs.js";
 import { detectYarnNodeLinker } from "../utils/pm-detect.js";
+import { initFlags } from "../utils/logger.js";
+import { consola } from "../utils/console.js";
 
 let testKNARRHome: string;
 let testLib: string;
@@ -187,6 +191,45 @@ describe("inject", () => {
     expect(await exists(injectedFile)).toBe(true);
     expect(await readFile(injectedFile, "utf-8")).toBe('module.exports = "hello";');
   });
+
+  it("removes stale bin links when package bins change", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({
+        name: "bin-lib",
+        version: "1.0.0",
+        files: ["dist"],
+        bin: { "old-bin": "dist/old.js" },
+      })
+    );
+    await writeFile(join(testLib, "dist", "old.js"), "#!/usr/bin/env node\n");
+    await publish(testLib);
+    let entry = await getStoreEntry("bin-lib", "1.0.0");
+    await inject(entry!, testConsumer, "npm");
+    await expect(lstat(join(testConsumer, "node_modules", ".bin", "old-bin"))).resolves.toBeDefined();
+
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({
+        name: "bin-lib",
+        version: "1.0.0",
+        files: ["dist"],
+        bin: { "new-bin": "dist/new.js" },
+      })
+    );
+    await rm(join(testLib, "dist", "old.js"));
+    await writeFile(join(testLib, "dist", "new.js"), "#!/usr/bin/env node\n");
+    await publish(testLib);
+    entry = await getStoreEntry("bin-lib", "1.0.0");
+    await inject(entry!, testConsumer, "npm");
+
+    await expect(lstat(join(testConsumer, "node_modules", ".bin", "old-bin"))).rejects.toThrow();
+    await expect(lstat(join(testConsumer, "node_modules", ".bin", "new-bin"))).resolves.toBeDefined();
+  });
 });
 
 describe("tracker", () => {
@@ -287,6 +330,126 @@ describe("backup and restore", () => {
   });
 });
 
+describe("rollback", () => {
+  it("pushes the restored history build without republishing current source", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+    const { addLink, registerConsumer } = await import("../core/tracker.js");
+    const rollbackCommand = await import("../commands/rollback.js");
+
+    const first = await publish(testLib);
+    const firstEntry = await getStoreEntry("test-lib", "1.0.0");
+    await inject(firstEntry!, testConsumer, "npm");
+    await addLink(testConsumer, "test-lib", {
+      version: "1.0.0",
+      contentHash: firstEntry!.meta.contentHash,
+      linkedAt: new Date().toISOString(),
+      sourcePath: testLib,
+      backupExists: false,
+      packageManager: "npm",
+      buildId: firstEntry!.meta.buildId ?? "",
+    });
+    await registerConsumer("test-lib", testConsumer);
+
+    await writeFile(join(testLib, "dist", "index.js"), 'module.exports = "v2";');
+    await publish(testLib);
+
+    const originalCwd = process.cwd();
+    process.chdir(testLib);
+    try {
+      await rollbackCommand.default.run?.({
+        args: { "build-id": first.buildId, yes: true },
+      } as any);
+    } finally {
+      process.chdir(originalCwd);
+    }
+
+    const restoredEntry = await getStoreEntry("test-lib", "1.0.0");
+    expect(
+      await readFile(join(restoredEntry!.packageDir, "dist", "index.js"), "utf-8")
+    ).toBe('module.exports = "hello";');
+    expect(
+      await readFile(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"), "utf-8")
+    ).toBe('module.exports = "hello";');
+  });
+
+  it("reports rollback consumer push failures in one JSON result", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { addLink, registerConsumer } = await import("../core/tracker.js");
+    const rollbackCommand = await import("../commands/rollback.js");
+
+    const first = await publish(testLib);
+    const firstEntry = await getStoreEntry("test-lib", "1.0.0");
+    await writeFile(join(testLib, "dist", "index.js"), 'module.exports = "v2";');
+    await publish(testLib);
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+    const external = await mkdtemp(join(tmpdir(), "KNARR-external-target-"));
+    await symlink(external, join(testConsumer, "node_modules", "test-lib"), "dir");
+    await addLink(testConsumer, "test-lib", {
+      version: "1.0.0",
+      contentHash: firstEntry!.meta.contentHash,
+      linkedAt: new Date().toISOString(),
+      sourcePath: testLib,
+      backupExists: false,
+      packageManager: "pnpm",
+      buildId: firstEntry!.meta.buildId ?? "",
+    });
+    await registerConsumer("test-lib", testConsumer);
+
+    const originalCwd = process.cwd();
+    const originalArgv = [...process.argv];
+    const originalExitCode = process.exitCode;
+    const originalConsolaLevel = consola.level;
+    const originalLog = console.log;
+    const logs: string[] = [];
+    let observedExitCode: string | number | undefined;
+
+    process.chdir(testLib);
+    process.argv = ["node", "knarr", "--json"];
+    process.exitCode = undefined;
+    initFlags();
+    console.log = (...args: unknown[]) => {
+      logs.push(args.join(" "));
+    };
+    try {
+      await rollbackCommand.default.run?.({
+        args: { "build-id": first.buildId, yes: true },
+      } as any);
+      observedExitCode = process.exitCode;
+    } finally {
+      process.chdir(originalCwd);
+      console.log = originalLog;
+      process.argv = originalArgv;
+      process.exitCode = originalExitCode;
+      initFlags();
+      consola.level = originalConsolaLevel;
+      await rm(external, { recursive: true, force: true });
+    }
+
+    expect(logs).toHaveLength(1);
+    const result = JSON.parse(logs[0]) as {
+      rolledBack: boolean;
+      pushed: boolean;
+      pushSummary: { failedConsumers: number };
+    };
+    expect(result.rolledBack).toBe(true);
+    expect(result.pushed).toBe(false);
+    expect(result.pushSummary.failedConsumers).toBe(1);
+    expect(observedExitCode).toBe(1);
+  });
+});
+
 describe("scoped packages", () => {
   it("handles @scope/name correctly", async () => {
     const { publish } = await import("../core/publisher.js");
@@ -362,6 +525,31 @@ describe("use command flow", () => {
   });
 });
 
+describe("add command backup preservation", () => {
+  it("does not overwrite the original backup when re-adding an existing link", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { addPackageToConsumer } = await import("../commands/add-flow.js");
+    const { getConsumerBackupPath } = await import("../utils/paths.js");
+
+    const installedDir = join(testConsumer, "node_modules", "test-lib");
+    await mkdir(installedDir, { recursive: true });
+    await writeFile(join(installedDir, "index.js"), "original install");
+    await publish(testLib);
+
+    const originalCwd = process.cwd();
+    process.chdir(testConsumer);
+    try {
+      await addPackageToConsumer({ packageArg: "test-lib", yes: true });
+      await addPackageToConsumer({ packageArg: "test-lib", yes: true });
+    } finally {
+      process.chdir(originalCwd);
+    }
+
+    const backupDir = getConsumerBackupPath(testConsumer, "test-lib");
+    expect(await readFile(join(backupDir, "index.js"), "utf-8")).toBe("original install");
+  });
+});
+
 describe("yarn support", () => {
   it("injects into yarn pnpm-linker .pnpm/ virtual store", async () => {
     const { publish } = await import("../core/publisher.js");
@@ -371,6 +559,14 @@ describe("yarn support", () => {
     // Set up consumer as a yarn project with pnpm linker
     await writeFile(join(testConsumer, "yarn.lock"), "");
     await writeFile(join(testConsumer, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
 
     // Create pnpm-style virtual store structure
     const pnpmPkgDir = join(
@@ -454,6 +650,14 @@ describe("pnpm injection", () => {
 
     // Create pnpm lockfile and .pnpm/ structure
     await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
     const pnpmPkgDir = join(
       testConsumer,
       "node_modules",
@@ -478,6 +682,93 @@ describe("pnpm injection", () => {
     expect(await readFile(injectedFile, "utf-8")).toBe('module.exports = "hello";');
   });
 
+  it("honors pnpm virtualStoreDir metadata outside node_modules", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+    await writeFile(
+      join(testConsumer, "node_modules", ".modules.yaml"),
+      JSON.stringify({ virtualStoreDir: "../.pnpm" })
+    );
+
+    const pnpmPkgDir = join(
+      testConsumer,
+      ".pnpm",
+      "test-lib@1.0.0",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(pnpmPkgDir, { recursive: true });
+    await writeFile(join(pnpmPkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+    await symlink(
+      join("..", ".pnpm", "test-lib@1.0.0", "node_modules", "test-lib"),
+      join(testConsumer, "node_modules", "test-lib"),
+      "dir"
+    );
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "pnpm");
+
+    expect(result.copied).toBeGreaterThan(0);
+    expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
+  });
+
+  it("honors pnpm global virtual store links from metadata", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+
+    const nodeModulesDir = join(testConsumer, "node_modules");
+    const globalVirtualStore = join(testKNARRHome, "store", "v10", "links");
+    await writeFile(
+      join(nodeModulesDir, ".modules.yaml"),
+      JSON.stringify({
+        virtualStoreDir: relative(nodeModulesDir, globalVirtualStore).replace(/\\/g, "/"),
+      })
+    );
+
+    const pnpmPkgDir = join(
+      globalVirtualStore,
+      "@",
+      "test-lib",
+      "1.0.0",
+      "abc123",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(pnpmPkgDir, { recursive: true });
+    await writeFile(join(pnpmPkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+    await symlink(relative(nodeModulesDir, pnpmPkgDir), join(nodeModulesDir, "test-lib"), "dir");
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "pnpm");
+
+    expect(result.copied).toBeGreaterThan(0);
+    expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
+  });
+
   it("handles scoped packages in .pnpm/", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
@@ -495,6 +786,14 @@ describe("pnpm injection", () => {
 
     // Set up pnpm structure with encoded scoped name (@scope+name)
     await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "@my-scope/ui-kit": "2.0.0" },
+      })
+    );
     const pnpmPkgDir = join(
       testConsumer,
       "node_modules",
@@ -522,6 +821,14 @@ describe("pnpm injection", () => {
     const { inject } = await import("../core/injector.js");
 
     await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
 
     // Create two versions in .pnpm/
     for (const ver of ["1.0.0", "2.0.0"]) {
@@ -549,6 +856,167 @@ describe("pnpm injection", () => {
     const wrong = join(testConsumer, "node_modules", ".pnpm", "test-lib@2.0.0", "node_modules", "test-lib", "dist", "index.js");
     expect(await exists(correct)).toBe(true);
     expect(await exists(wrong)).toBe(false);
+  });
+
+  it("accepts .pnpm candidates when the consumer path resolves through a symlink", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    const aliasParent = await mkdtemp(join(tmpdir(), "KNARR-consumer-alias-"));
+    const aliasConsumer = join(aliasParent, "consumer");
+    await symlink(testConsumer, aliasConsumer, "dir");
+
+    try {
+      await writeFile(join(aliasConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+      await writeFile(
+        join(aliasConsumer, "package.json"),
+        JSON.stringify({
+          name: "test-app",
+          version: "1.0.0",
+          dependencies: { "test-lib": "1.0.0" },
+        })
+      );
+      const pnpmPkgDir = join(
+        aliasConsumer,
+        "node_modules",
+        ".pnpm",
+        "test-lib@1.0.0",
+        "node_modules",
+        "test-lib"
+      );
+      await mkdir(pnpmPkgDir, { recursive: true });
+      await writeFile(join(pnpmPkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+
+      await publish(testLib);
+      const entry = await getStoreEntry("test-lib", "1.0.0");
+      const result = await inject(entry!, aliasConsumer, "pnpm");
+
+      expect(result.copied).toBeGreaterThan(0);
+      expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
+    } finally {
+      await rm(aliasParent, { recursive: true, force: true });
+    }
+  });
+
+  it("does not scan undeclared .pnpm entries", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    const pnpmPkgDir = join(
+      testConsumer,
+      "node_modules",
+      ".pnpm",
+      "test-lib@1.0.0",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(pnpmPkgDir, { recursive: true });
+    await writeFile(join(pnpmPkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "pnpm");
+
+    expect(result.copied).toBeGreaterThan(0);
+    expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
+    expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(false);
+  });
+
+  it("refuses pnpm symlinks that resolve outside the consumer virtual store", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    const external = await mkdtemp(join(tmpdir(), "KNARR-external-target-"));
+    await symlink(external, join(testConsumer, "node_modules", "test-lib"), "dir");
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+
+    await expect(inject(entry!, testConsumer, "pnpm")).rejects.toThrow(
+      "resolves outside a configured pnpm virtual store"
+    );
+
+    await rm(external, { recursive: true, force: true });
+  });
+
+  it("refuses .pnpm fallback candidates that resolve outside the consumer virtual store", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+    const external = await mkdtemp(join(tmpdir(), "KNARR-external-target-"));
+    const pnpmNodeModules = join(
+      testConsumer,
+      "node_modules",
+      ".pnpm",
+      "test-lib@1.0.0",
+      "node_modules"
+    );
+    await mkdir(pnpmNodeModules, { recursive: true });
+    await symlink(external, join(pnpmNodeModules, "test-lib"), "dir");
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+
+    try {
+      await expect(inject(entry!, testConsumer, "pnpm")).rejects.toThrow(
+        "resolves outside a configured pnpm virtual store"
+      );
+      expect(await exists(join(external, "dist", "index.js"))).toBe(false);
+    } finally {
+      await rm(external, { recursive: true, force: true });
+    }
+  });
+
+  it("does not fall back to a different .pnpm version for declared packages", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+    const wrongVersionDir = join(
+      testConsumer,
+      "node_modules",
+      ".pnpm",
+      "test-lib@2.0.0",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(wrongVersionDir, { recursive: true });
+    await writeFile(
+      join(wrongVersionDir, "package.json"),
+      JSON.stringify({ name: "test-lib", version: "2.0.0" })
+    );
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "pnpm");
+
+    expect(result.copied).toBeGreaterThan(0);
+    expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
+    expect(await exists(join(wrongVersionDir, "dist", "index.js"))).toBe(false);
   });
 
   it("falls back to direct path when no .pnpm/ structure exists", async () => {

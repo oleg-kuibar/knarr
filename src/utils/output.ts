@@ -1,5 +1,6 @@
 import { consola } from "./console.js";
-import { isJsonOutput } from "./logger.js";
+import { isDryRun, isJsonOutput } from "./logger.js";
+import { getMutations, markDryRunJsonReportPrinted } from "./dry-run.js";
 
 /**
  * Print structured data. When --json is active, prints JSON to stdout.
@@ -7,6 +8,19 @@ import { isJsonOutput } from "./logger.js";
  */
 export function output(data: unknown): void {
   if (isJsonOutput()) {
+    if (isDryRun()) {
+      markDryRunJsonReportPrinted();
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        console.log(JSON.stringify({
+          ...(data as Record<string, unknown>),
+          dryRun: true,
+          mutations: getMutations(),
+        }, null, 2));
+      } else {
+        console.log(JSON.stringify({ data, dryRun: true, mutations: getMutations() }, null, 2));
+      }
+      return;
+    }
     console.log(JSON.stringify(data, null, 2));
   }
 }

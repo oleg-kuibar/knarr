@@ -4,13 +4,33 @@ import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
 import pc from "picocolors";
 import { listHistory, restoreHistoryEntry, resolveHistoryLimit } from "../core/history.js";
-import { doPush } from "../core/push-engine.js";
+import { getStoreEntry } from "../core/store.js";
+import { pushStoreEntry } from "../core/push-engine.js";
+import type { PushSummary } from "../core/push-engine.js";
 import { loadKnarrConfig } from "../utils/config.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { errorWithSuggestion } from "../utils/errors.js";
 import { isDryRun } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
 import type { PackageJson } from "../types.js";
+
+interface RollbackOutput {
+  rolledBack: boolean;
+  buildId: string | null;
+  pushed: boolean;
+  pushSummary: PushSummary | null;
+  pushError: string | null;
+}
+
+function outputRollback(result: Partial<RollbackOutput>): void {
+  output({
+    rolledBack: result.rolledBack ?? false,
+    buildId: result.buildId ?? null,
+    pushed: result.pushed ?? false,
+    pushSummary: result.pushSummary ?? null,
+    pushError: result.pushError ?? null,
+  });
+}
 
 export default defineCommand({
   meta: {
@@ -49,7 +69,7 @@ export default defineCommand({
     const entries = await listHistory(pkg.name, pkg.version);
     if (entries.length === 0) {
       consola.info("No build history available");
-      output({ rolledBack: false });
+      outputRollback({ rolledBack: false });
       return;
     }
 
@@ -66,7 +86,7 @@ export default defineCommand({
             `  ${pc.cyan(entry.buildId)}  ${pc.dim(entry.publishedAt)}`
           );
         }
-        output({ rolledBack: false });
+        outputRollback({ rolledBack: false });
         return;
       }
     } else {
@@ -83,6 +103,7 @@ export default defineCommand({
       );
       if (!confirmed || typeof confirmed === "symbol") {
         consola.info("Cancelled");
+        outputRollback({ rolledBack: false, buildId: targetBuildId });
         return;
       }
     }
@@ -93,7 +114,7 @@ export default defineCommand({
 
     if (!restored) {
       consola.error(`Failed to restore build ${targetBuildId}`);
-      output({ rolledBack: false });
+      outputRollback({ rolledBack: false, buildId: targetBuildId });
       return;
     }
 
@@ -101,16 +122,40 @@ export default defineCommand({
       `Restored ${pkg.name}@${pkg.version} to build ${targetBuildId}`
     );
 
+    let pushSummary: PushSummary | null = null;
+    let pushError: string | undefined;
+
     // Auto-push to all consumers
     try {
-      await doPush(packageDir, { force: true });
+      const entry = await getStoreEntry(pkg.name, pkg.version);
+      if (entry) {
+        pushSummary = await pushStoreEntry(entry, {
+          force: true,
+          emitOutput: false,
+        });
+        if (pushSummary.failedConsumers > 0) {
+          process.exitCode = 1;
+        }
+      } else {
+        pushError = `Store entry missing after rollback for ${pkg.name}@${pkg.version}`;
+        consola.warn(pushError);
+        process.exitCode = 1;
+      }
     } catch (err) {
+      pushError = err instanceof Error ? err.message : String(err);
       consola.warn(
-        `Push after rollback failed: ${err instanceof Error ? err.message : String(err)}`
+        `Push after rollback failed: ${pushError}`
       );
+      process.exitCode = 1;
     }
 
-    output({ rolledBack: true, buildId: targetBuildId });
+    outputRollback({
+      rolledBack: true,
+      buildId: targetBuildId,
+      pushed: pushSummary ? pushSummary.failedConsumers === 0 : false,
+      pushSummary,
+      pushError,
+    });
 
     if (isDryRun()) printDryRunReport();
   },

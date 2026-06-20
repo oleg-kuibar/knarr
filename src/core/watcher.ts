@@ -6,16 +6,18 @@ import { consola } from "../utils/console.js";
 import { ringBell } from "../utils/bell.js";
 import type { WatchOptions } from "../types.js";
 
-/** Module-level reference to active child process for signal cleanup */
-let activeChild: ChildProcess | null = null;
+/** Module-level references to active child processes for signal cleanup */
+const activeChildren = new Set<ChildProcess>();
 let activeWatcher: { close: () => Promise<void> } | null = null;
 
 /** Kill the active build process if one is running */
 export function killActiveBuild(): void {
-  if (activeChild && !activeChild.killed) {
-    activeChild.kill("SIGTERM");
-    activeChild = null;
+  for (const child of activeChildren) {
+    if (!child.killed) {
+      child.kill("SIGTERM");
+    }
   }
+  activeChildren.clear();
 }
 
 const IGNORED_DIRS = new Set(["node_modules", ".git", ".knarr"]);
@@ -293,10 +295,10 @@ export function runBuildCommand(cmd: string, cwd: string): Promise<boolean> {
       stdio: "inherit",
     });
 
-    activeChild = child;
+    activeChildren.add(child);
 
     child.on("close", (code) => {
-      activeChild = null;
+      activeChildren.delete(child);
       if (code === 0) {
         consola.success("Build succeeded");
         resolve(true);
@@ -307,7 +309,7 @@ export function runBuildCommand(cmd: string, cwd: string): Promise<boolean> {
     });
 
     child.on("error", (err) => {
-      activeChild = null;
+      activeChildren.delete(child);
       consola.error(`Build error: ${err.message}`);
       resolve(false);
     });
