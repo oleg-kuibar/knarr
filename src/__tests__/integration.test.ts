@@ -1183,6 +1183,60 @@ describe("yarn support", () => {
   });
 });
 
+describe("bun support", () => {
+  it("injects directly for bun lockfile projects", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "bun.lockb"), "");
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "bun");
+
+    expect(result.copied).toBeGreaterThan(0);
+    expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
+  });
+
+  it("uses current bun layout instead of stale stored pnpm layout", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "bun.lockb"), "");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+    const stalePnpmPkgDir = join(
+      testConsumer,
+      "node_modules",
+      ".pnpm",
+      "test-lib@1.0.0",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(stalePnpmPkgDir, { recursive: true });
+    await writeFile(
+      join(stalePnpmPkgDir, "package.json"),
+      JSON.stringify({ name: "test-lib", version: "1.0.0" })
+    );
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "pnpm");
+
+    expect(result.copied).toBeGreaterThan(0);
+    expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
+    expect(await exists(join(stalePnpmPkgDir, "dist", "index.js"))).toBe(false);
+  });
+});
+
 describe("pnpm injection", () => {
   it("injects into pnpm .pnpm/ virtual store", async () => {
     const { publish } = await import("../core/publisher.js");
