@@ -86,6 +86,31 @@ export async function doPush(
     return summary;
   }
 
+  if (isDryRun()) {
+    const consumers = await getConsumers(result.name);
+    const summary = createEmptySummary(result.name, result.version, result.buildId, timer.elapsedMs());
+    summary.skippedReason = "dry-run";
+    summary.consumers = consumers.length;
+    summary.skippedConsumers = consumers.length;
+    summary.consumerResults = consumers.map((consumerPath) => ({
+      consumerPath,
+      status: "skipped",
+      copied: 0,
+      removed: 0,
+      skipped: 0,
+      binLinks: 0,
+      cacheInvalidations: 0,
+      reason: "dry-run publish preview; store entry was not written",
+    }));
+    consola.info(
+      `Dry-run: would publish ${result.name}@${result.version}` +
+        (result.buildId ? ` [${result.buildId}]` : "") +
+        ". Skipping consumer injection preview because the store entry was not written."
+    );
+    output(summary);
+    return summary;
+  }
+
   // Get the store entry
   const entry = await getStoreEntry(result.name, result.version);
   if (!entry) {

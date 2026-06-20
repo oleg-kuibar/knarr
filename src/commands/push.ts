@@ -87,6 +87,7 @@ export default defineCommand({
         // Push all workspace packages
         await doPushAll(packageDir, pushOptions);
       }
+      if (isDryRun()) { printDryRunReport(); return; }
 
       if (args.watch) {
         await startMultiWatchMode(packageDir, args, pushOptions);
@@ -101,6 +102,7 @@ export default defineCommand({
         // Initial push
         await push();
       }
+      if (isDryRun()) { printDryRunReport(); return; }
 
       // Watch mode
       if (args.watch) {
@@ -108,6 +110,5 @@ export default defineCommand({
       }
     }
 
-    if (isDryRun()) printDryRunReport();
   },
 });

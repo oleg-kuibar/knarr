@@ -273,7 +273,11 @@ preknarr → prepack → [publish files] → postpack → postknarr
 
 ## Dry-run mode
 
-When you pass `--dry-run` to any command, Knarr skips all filesystem mutations (copies, removes, directory creation, bin links, lock acquisition, lifecycle hooks) but still runs the full logic to determine what _would_ happen. Each skipped mutation is recorded centrally, and at exit Knarr prints a grouped summary:
+When you pass `--dry-run` to any command, Knarr skips all filesystem mutations (copies, removes, directory creation, bin links, lock acquisition, lifecycle hooks, package-manager commands) and records the skipped work centrally. Watch modes preview the initial build/push once and exit without starting file watchers.
+
+For `knarr push --dry-run`, Knarr previews the publish/store writes and then stops before consumer injection, because the dry-run store entry was not actually written. This avoids reading a stale real store entry and showing a misleading injection preview. Commands that inject from an already-existing store entry, such as `restore`, still preview those copy mutations.
+
+At exit, Knarr prints a grouped summary:
 
 ```
 [dry-run] 14 mutation(s) would be performed:
@@ -288,6 +292,8 @@ When you pass `--dry-run` to any command, Knarr skips all filesystem mutations (
     /path/to/store/my-lib@1.0.0
   Skip lifecycle hook (1):
     /path/to/my-lib (prepack: npm run build)
+  Skip command (1):
+    /path/to/my-lib (npm run build)
 ```
 
 With `--json`, the summary is output as structured JSON with all mutation details.

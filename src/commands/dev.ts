@@ -80,6 +80,7 @@ export default defineCommand({
         // Initial push all workspace packages in topo order
         await doPushAll(packageDir, pushOptions);
       }
+      if (isDryRun()) { printDryRunReport(); return; }
 
       // Watch all workspace packages
       await startMultiWatchMode(packageDir, args, pushOptions);

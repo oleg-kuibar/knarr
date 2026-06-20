@@ -344,6 +344,104 @@ describe("push summaries", () => {
       await rm(failedConsumer, { recursive: true, force: true });
     }
   });
+
+  it("dry-run push does not fail when the store entry is not written", async () => {
+    const { doPush } = await import("../core/push-engine.js");
+    setFlags(["--dry-run"]);
+
+    const summary = await doPush(testLib);
+
+    expect(summary.failedConsumers).toBe(0);
+    expect(summary.skippedReason).toBe("dry-run");
+    expect(await exists(join(knarrHome, "store", "test-lib@1.0.0"))).toBe(false);
+  });
+
+  it("dry-run push does not preview stale store content", async () => {
+    await linkPackage();
+    const { doPush } = await import("../core/push-engine.js");
+    await writeFile(join(testLib, "dist", "index.js"), 'module.exports = "v2";');
+    setFlags(["--dry-run"]);
+
+    const summary = await doPush(testLib);
+
+    expect(summary.failedConsumers).toBe(0);
+    expect(summary.skippedConsumers).toBe(1);
+    expect(summary.consumerResults[0].reason).toContain("store entry was not written");
+    expect(
+      await readFile(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"), "utf-8")
+    ).toBe('module.exports = "v1";');
+  });
+});
+
+describe("dry-run watch commands", () => {
+  it("push --watch previews once and exits without running the build", async () => {
+    const pushCommand = await import("../commands/push.js");
+    await makeBuildWouldWrite(testLib);
+    setFlags(["--dry-run"]);
+
+    const originalCwd = process.cwd();
+    process.chdir(testLib);
+    try {
+      await expectReturnsPromptly(
+        pushCommand.default.run?.({
+          args: watchArgs({ watch: true }),
+        } as any) ?? Promise.resolve(),
+        "push --watch --dry-run"
+      );
+    } finally {
+      process.chdir(originalCwd);
+    }
+
+    expect(await exists(join(testLib, "dist", "build-ran.txt"))).toBe(false);
+  });
+
+  it("push --watch --all previews once and exits without starting workspace watchers", async () => {
+    const pushCommand = await import("../commands/push.js");
+    const { root, pkgDir } = await makeWorkspacePackage("dry-run-push-all");
+    setFlags(["--dry-run"]);
+
+    const originalCwd = process.cwd();
+    let buildRan = false;
+    process.chdir(pkgDir);
+    try {
+      await expectReturnsPromptly(
+        pushCommand.default.run?.({
+          args: watchArgs({ watch: true, all: true }),
+        } as any) ?? Promise.resolve(),
+        "push --watch --all --dry-run"
+      );
+      buildRan = await exists(join(pkgDir, "dist", "build-ran.txt"));
+    } finally {
+      process.chdir(originalCwd);
+      await rm(root, { recursive: true, force: true });
+    }
+
+    expect(buildRan).toBe(false);
+  });
+
+  it("dev --all previews once and exits without starting workspace watchers", async () => {
+    const devCommand = await import("../commands/dev.js");
+    const { root, pkgDir } = await makeWorkspacePackage("dry-run-dev-all");
+    setFlags(["--dry-run"]);
+
+    const originalCwd = process.cwd();
+    let buildRan = false;
+    process.chdir(pkgDir);
+    try {
+      await expectReturnsPromptly(
+        devCommand.default.run?.({
+          args: watchArgs({ all: true }),
+        } as any) ?? Promise.resolve(),
+        "dev --all --dry-run"
+      );
+      buildRan = await exists(join(pkgDir, "dist", "build-ran.txt"));
+    } finally {
+      process.chdir(originalCwd);
+      await rm(root, { recursive: true, force: true });
+    }
+
+    expect(buildRan).toBe(false);
+  });
 });
 
 async function writePackage(dir: string, name: string): Promise<void> {
@@ -382,4 +480,88 @@ async function linkPackage(name = "test-lib"): Promise<void> {
     buildId: published.buildId,
   });
   await registerConsumer(name, testConsumer);
+}
+
+function watchArgs(overrides: Record<string, unknown>): Record<string, unknown> {
+  return {
+    watch: false,
+    all: false,
+    "skip-build": false,
+    "no-scripts": true,
+    force: false,
+    notify: false,
+    "no-cascade": false,
+    ...overrides,
+  };
+}
+
+async function makeBuildWouldWrite(dir: string): Promise<void> {
+  await writeFile(
+    join(dir, "package.json"),
+    JSON.stringify(
+      {
+        name: "test-lib",
+        version: "1.0.0",
+        main: "dist/index.js",
+        files: ["dist"],
+        scripts: { build: "node build.cjs" },
+      },
+      null,
+      2
+    )
+  );
+  await writeFile(
+    join(dir, "build.cjs"),
+    "require('node:fs').writeFileSync('dist/build-ran.txt', 'ran');\n"
+  );
+}
+
+async function makeWorkspacePackage(
+  name: string
+): Promise<{ root: string; pkgDir: string }> {
+  const root = await mkdtemp(join(tmpdir(), "KNARR-dry-run-workspace-"));
+  const pkgDir = join(root, "packages", name);
+  await mkdir(join(pkgDir, "dist"), { recursive: true });
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({ private: true, workspaces: ["packages/*"] }, null, 2)
+  );
+  await writeFile(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
+  await writeFile(join(pkgDir, "dist", "index.js"), 'module.exports = "v1";');
+  await writeFile(
+    join(pkgDir, "package.json"),
+    JSON.stringify(
+      {
+        name,
+        version: "1.0.0",
+        main: "dist/index.js",
+        files: ["dist"],
+        scripts: { build: "node build.cjs" },
+      },
+      null,
+      2
+    )
+  );
+  await writeFile(
+    join(pkgDir, "build.cjs"),
+    "require('node:fs').writeFileSync('dist/build-ran.txt', 'ran');\n"
+  );
+  return { root, pkgDir };
+}
+
+async function expectReturnsPromptly(
+  promise: Promise<unknown>,
+  label: string
+): Promise<void> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`${label} did not return`)), 1500);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
