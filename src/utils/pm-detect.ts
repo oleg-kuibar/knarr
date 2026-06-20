@@ -15,6 +15,28 @@ const LOCKFILES: [string, PackageManager][] = [
   ["npm-shrinkwrap.json", "npm"],
 ];
 
+const YARN_PNP_MANIFESTS = [".pnp.cjs", ".pnp.js", ".pnp.loader.mjs"];
+
+interface PackageManagerSpec {
+  name: PackageManager;
+  version: string;
+}
+
+function parsePackageManagerSpec(value: unknown): PackageManagerSpec | null {
+  if (typeof value !== "string") return null;
+
+  const match = value.trim().match(/^([^@\s]+)(?:@(.+))?$/);
+  if (!match) return null;
+
+  const name = match[1];
+  if (!VALID_PMS.has(name)) return null;
+
+  return {
+    name: name as PackageManager,
+    version: match[2]?.trim() ?? "",
+  };
+}
+
 /**
  * Read the `packageManager` field from package.json (Corepack convention).
  * Parses values like "pnpm@9.0.0" or "bun@1.0.0+sha256.abc" → PackageManager.
@@ -23,15 +45,45 @@ const LOCKFILES: [string, PackageManager][] = [
 async function readPackageManagerField(
   dir: string
 ): Promise<PackageManager | null> {
+  const spec = await readPackageManagerSpec(dir);
+  return spec?.name ?? null;
+}
+
+async function readPackageManagerSpec(
+  dir: string
+): Promise<PackageManagerSpec | null> {
   try {
     const raw = await readFile(join(dir, "package.json"), "utf-8");
     const pkg = JSON.parse(raw);
-    if (typeof pkg.packageManager !== "string") return null;
-    const name = pkg.packageManager.split("@")[0];
-    return VALID_PMS.has(name) ? (name as PackageManager) : null;
+    return parsePackageManagerSpec(pkg.packageManager);
   } catch {
     return null;
   }
+}
+
+async function findPackageManagerSpec(
+  projectDir: string
+): Promise<PackageManagerSpec | null> {
+  let dir = projectDir;
+  for (;;) {
+    const spec = await readPackageManagerSpec(dir);
+    if (spec) return spec;
+
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+function yarnDefaultsToPnp(version: string): boolean {
+  const normalized = version.trim().replace(/^npm:/, "");
+  if (normalized === "classic") return false;
+
+  const major = normalized.match(/^v?(\d+)(?:[.+-]|$)/);
+  if (major) return Number(major[1]) >= 2;
+
+  // Corepack channels like stable/latest/berry point at modern Yarn.
+  return normalized.length > 0;
 }
 
 /**
@@ -128,4 +180,44 @@ export async function hasYarnrcYml(projectDir: string): Promise<boolean> {
       dir = parent;
     }
   }
+}
+
+/**
+ * Check whether a Yarn PnP manifest exists at or above the project directory.
+ */
+export async function hasYarnPnpManifest(projectDir: string): Promise<boolean> {
+  let dir = projectDir;
+  for (;;) {
+    const results = await Promise.all(
+      YARN_PNP_MANIFESTS.map(async (manifest) => {
+        try {
+          await stat(join(dir, manifest));
+          return true;
+        } catch {
+          return false;
+        }
+      })
+    );
+    if (results.some(Boolean)) return true;
+
+    const parent = dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
+}
+
+/**
+ * Detect whether a Yarn project is using, or will default to, Plug'n'Play.
+ * Knarr requires a node_modules-compatible linker for package injection.
+ */
+export async function isYarnPnpProject(projectDir: string): Promise<boolean> {
+  const linker = await detectYarnNodeLinker(projectDir);
+  if (linker === "pnp") return true;
+  if (linker === "node-modules" || linker === "pnpm") return false;
+
+  if (await hasYarnPnpManifest(projectDir)) return true;
+  if (await hasYarnrcYml(projectDir)) return true;
+
+  const spec = await findPackageManagerSpec(projectDir);
+  return spec?.name === "yarn" && yarnDefaultsToPnp(spec.version);
 }

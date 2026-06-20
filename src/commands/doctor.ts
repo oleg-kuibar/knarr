@@ -21,6 +21,8 @@ import {
   detectPackageManager,
   detectYarnNodeLinker,
   hasYarnrcYml,
+  hasYarnPnpManifest,
+  isYarnPnpProject,
 } from "../utils/pm-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { addPostinstall, ensureGitignore } from "../utils/init-helpers.js";
@@ -265,14 +267,10 @@ export async function runDoctorDiagnostics(
   if (pm === "yarn") {
     const linker = await detectYarnNodeLinker(consumerPath);
     const yarnrcExists = await hasYarnrcYml(consumerPath);
+    const pnpManifestExists = await hasYarnPnpManifest(consumerPath);
+    const isPnpProject = await isYarnPnpProject(consumerPath);
 
-    if (!yarnrcExists) {
-      await addCheck({
-        name: "Yarn linker",
-        status: "pass",
-        message: "Yarn Classic, node_modules mode",
-      });
-    } else if (linker === "node-modules") {
+    if (linker === "node-modules") {
       await addCheck({
         name: "Yarn linker",
         status: "pass",
@@ -284,11 +282,20 @@ export async function runDoctorDiagnostics(
         status: "pass",
         message: "Yarn pnpm linker mode (Knarr handles this)",
       });
-    } else if (linker === "pnp") {
+    } else if (isPnpProject) {
+      const reason = linker === "pnp" || pnpManifestExists
+        ? "Yarn PnP is not compatible."
+        : "Yarn Berry defaults to PnP.";
       await addCheck({
         name: "Yarn linker",
         status: "fail",
-        message: "Yarn PnP is not compatible. Set `nodeLinker: node-modules` in .yarnrc.yml",
+        message: `${reason} Set \`nodeLinker: node-modules\` in .yarnrc.yml`,
+      });
+    } else if (!yarnrcExists) {
+      await addCheck({
+        name: "Yarn linker",
+        status: "pass",
+        message: "Yarn Classic, node_modules mode",
       });
     } else {
       await addCheck({

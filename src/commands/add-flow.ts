@@ -8,7 +8,7 @@ import { publish } from "../core/publisher.js";
 import { inject, backupExisting, checkMissingDeps } from "../core/injector.js";
 import { addLink, registerConsumer, getLink } from "../core/tracker.js";
 import { exists } from "../utils/fs.js";
-import { detectPackageManager, detectYarnNodeLinker, hasYarnrcYml } from "../utils/pm-detect.js";
+import { detectPackageManager, isYarnPnpProject } from "../utils/pm-detect.js";
 import { detectBuildCommand } from "../utils/build-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { ensureConsumerInit } from "../utils/init-helpers.js";
@@ -103,8 +103,7 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
   consola.info(`Detected package manager: ${pm}`);
 
   if (pm === "yarn") {
-    const linker = await detectYarnNodeLinker(consumerPath);
-    if (linker === "pnp" || (linker === null && await hasYarnrcYml(consumerPath))) {
+    if (await isYarnPnpProject(consumerPath)) {
       consola.error(
         `Yarn PnP mode is not compatible with knarr.\n\n` +
         `knarr works by copying files into node_modules/, but PnP eliminates\n` +

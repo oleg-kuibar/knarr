@@ -92,6 +92,18 @@ describe("doctor --fix", () => {
     expect(result.results.find((r) => r.name === "Stale registry entries")?.fixed).toBe(true);
     expect(registry["test-lib"]).toBeUndefined();
   });
+
+  it("flags Yarn PnP projects as incompatible", async () => {
+    const { runDoctorDiagnostics } = await import("../commands/doctor.js");
+    await writeFile(join(testConsumer, "yarn.lock"), "");
+    await writeFile(join(testConsumer, ".pnp.cjs"), "");
+
+    const result = await runDoctorDiagnostics(testConsumer);
+    const yarnLinker = result.results.find((r) => r.name === "Yarn linker");
+
+    expect(yarnLinker?.status).toBe("fail");
+    expect(yarnLinker?.message).toContain("PnP");
+  });
 });
 
 describe("knarr explain", () => {

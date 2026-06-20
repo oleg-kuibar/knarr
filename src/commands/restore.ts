@@ -9,7 +9,7 @@ import { Timer } from "../utils/timer.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
-import { detectPackageManager, detectYarnNodeLinker, hasYarnrcYml } from "../utils/pm-detect.js";
+import { detectPackageManager, isYarnPnpProject } from "../utils/pm-detect.js";
 
 const restoreLimit = pLimit(4);
 
@@ -35,8 +35,7 @@ export default defineCommand({
     // Check for Yarn PnP incompatibility
     const pm = await detectPackageManager(consumerPath);
     if (pm === "yarn") {
-      const linker = await detectYarnNodeLinker(consumerPath);
-      if (linker === "pnp" || (linker === null && await hasYarnrcYml(consumerPath))) {
+      if (await isYarnPnpProject(consumerPath)) {
         consola.error(
           `Yarn PnP mode is not compatible with Knarr.\n\n` +
           `Knarr works by copying files into node_modules/, but PnP eliminates\n` +
