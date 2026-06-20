@@ -4,6 +4,7 @@ import {
   writeFile,
   readFile,
   lstat,
+  chmod,
   mkdir,
   rm,
   symlink,
@@ -87,6 +88,56 @@ describe("publish", () => {
     expect(meta.contentHash).toMatch(/^sha256(v2)?:/);
     expect(meta.sourcePath).toBe(testLib);
     expect(meta.buildId).toMatch(/^[a-f0-9]{8}$/);
+  });
+
+  it("runs lifecycle hooks with local node_modules/.bin on PATH", async () => {
+    const { publish } = await import("../core/publisher.js");
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({
+        name: "test-lib",
+        version: "1.0.0",
+        main: "dist/index.js",
+        files: ["dist"],
+        scripts: {
+          prepack: "local-build-helper",
+        },
+      })
+    );
+    await mkdir(join(testLib, "scripts"), { recursive: true });
+    await mkdir(join(testLib, "node_modules", ".bin"), { recursive: true });
+    await writeFile(
+      join(testLib, "scripts", "write-hook-output.cjs"),
+      [
+        'const fs = require("node:fs");',
+        'const path = require("node:path");',
+        'if (process.env.npm_lifecycle_event !== "prepack") process.exit(2);',
+        'if (process.env.npm_package_name !== "test-lib") process.exit(3);',
+        'fs.mkdirSync(path.join(process.cwd(), "dist"), { recursive: true });',
+        'fs.writeFileSync(path.join(process.cwd(), "dist", "from-hook.txt"), process.env.npm_lifecycle_script);',
+      ].join("\n")
+    );
+    await writeFile(
+      join(testLib, "node_modules", ".bin", "local-build-helper"),
+      '#!/bin/sh\nexec node "./scripts/write-hook-output.cjs" "$@"\n'
+    );
+    await chmod(join(testLib, "node_modules", ".bin", "local-build-helper"), 0o755);
+    await writeFile(
+      join(testLib, "node_modules", ".bin", "local-build-helper.cmd"),
+      '@ECHO off\r\nnode "%CD%\\scripts\\write-hook-output.cjs" %*\r\n'
+    );
+
+    await publish(testLib);
+
+    const storeFile = join(
+      testKNARRHome,
+      "store",
+      "test-lib@1.0.0",
+      "package",
+      "dist",
+      "from-hook.txt"
+    );
+    expect(await readFile(storeFile, "utf-8")).toBe("local-build-helper");
   });
 
   it("skips publish when content unchanged", async () => {

@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { join, relative, dirname, resolve } from "node:path";
+import { delimiter, join, relative, dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { consola } from "../utils/console.js";
@@ -293,6 +293,33 @@ export async function publish(
 
 const HOOK_TIMEOUT = parseInt(process.env.KNARR_HOOK_TIMEOUT ?? "30000", 10);
 
+function pathEnvKey(env: NodeJS.ProcessEnv): string {
+  if (platform() !== "win32") return "PATH";
+  return Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "Path";
+}
+
+function buildLifecycleEnv(
+  packageDir: string,
+  pkg: PackageJson,
+  hookName: string,
+  script: string
+): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  const key = pathEnvKey(env);
+  const existingPath = env[key] ?? "";
+  env[key] = [
+    join(packageDir, "node_modules", ".bin"),
+    existingPath,
+  ].filter(Boolean).join(delimiter);
+
+  env.INIT_CWD ??= packageDir;
+  env.npm_lifecycle_event = hookName;
+  env.npm_lifecycle_script = script;
+  env.npm_package_name = pkg.name;
+  env.npm_package_version = pkg.version;
+  return env;
+}
+
 /**
  * Run a lifecycle hook script if defined in package.json scripts.
  */
@@ -318,9 +345,11 @@ async function runLifecycleHook(
     const isWin = platform() === "win32";
     const shell = isWin ? "cmd" : "sh";
     const shellFlag = isWin ? "/c" : "-c";
+    const env = buildLifecycleEnv(packageDir, pkg, hookName, script);
 
     const child = spawn(shell, [shellFlag, script], {
       cwd: packageDir,
+      env,
       stdio: "inherit",
     });
 
