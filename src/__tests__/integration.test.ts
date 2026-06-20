@@ -462,6 +462,72 @@ describe("tracker", () => {
   });
 });
 
+describe("package manager state migrations", () => {
+  it("restore refreshes stale link package manager from explicit current evidence", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { addLink, readConsumerState } = await import("../core/tracker.js");
+    const restoreCommand = await import("../commands/restore.js");
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    await addLink(testConsumer, "test-lib", {
+      version: "1.0.0",
+      contentHash: "sha256:stale",
+      linkedAt: new Date().toISOString(),
+      sourcePath: testLib,
+      backupExists: false,
+      packageManager: "pnpm",
+      buildId: "",
+    });
+
+    const originalCwd = process.cwd();
+    process.chdir(testConsumer);
+    try {
+      await restoreCommand.default.run?.({ args: { silent: false } } as any);
+    } finally {
+      process.chdir(originalCwd);
+    }
+
+    const state = await readConsumerState(testConsumer);
+    expect(state.links["test-lib"]?.packageManager).toBe("npm");
+    expect(state.links["test-lib"]?.contentHash).toBe(entry!.meta.contentHash);
+    expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
+  });
+
+  it("update re-injects and refreshes state when only package manager changed", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { addLink, readConsumerState } = await import("../core/tracker.js");
+    const updateCommand = await import("../commands/update.js");
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    await addLink(testConsumer, "test-lib", {
+      version: "1.0.0",
+      contentHash: entry!.meta.contentHash,
+      linkedAt: new Date().toISOString(),
+      sourcePath: testLib,
+      backupExists: false,
+      packageManager: "pnpm",
+      buildId: entry!.meta.buildId ?? "",
+    });
+
+    const originalCwd = process.cwd();
+    process.chdir(testConsumer);
+    try {
+      await updateCommand.default.run?.({ args: {} } as any);
+    } finally {
+      process.chdir(originalCwd);
+    }
+
+    const state = await readConsumerState(testConsumer);
+    expect(state.links["test-lib"]?.packageManager).toBe("npm");
+    expect(state.links["test-lib"]?.contentHash).toBe(entry!.meta.contentHash);
+    expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
+  });
+});
+
 describe("incremental copy on push", () => {
   it("only copies changed files", async () => {
     const { publish } = await import("../core/publisher.js");

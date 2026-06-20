@@ -10,7 +10,7 @@ import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
 import {
-  detectPackageManager,
+  detectPackageManagerInfo,
   hasYarnPnpMarkers,
   isYarnPnpProject,
 } from "../utils/pm-detect.js";
@@ -37,10 +37,10 @@ export default defineCommand({
     const state = await readConsumerState(consumerPath);
 
     // Check for Yarn PnP incompatibility
-    const pm = await detectPackageManager(consumerPath);
+    const currentPm = await detectPackageManagerInfo(consumerPath);
     if (
       await hasYarnPnpMarkers(consumerPath) ||
-      (pm === "yarn" && await isYarnPnpProject(consumerPath))
+      (currentPm.packageManager === "yarn" && await isYarnPnpProject(consumerPath))
     ) {
       consola.error(
         `Yarn PnP mode is not compatible with Knarr.\n\n` +
@@ -79,12 +79,16 @@ export default defineCommand({
 
           try {
             const result = await inject(entry, consumerPath, link.packageManager);
+            const packageManager = currentPm.source === "default"
+              ? link.packageManager
+              : currentPm.packageManager;
             // Update state so contentHash and linkedAt stay current
             await addLink(consumerPath, packageName, {
               ...link,
               contentHash: entry.meta.contentHash,
               buildId: entry.meta.buildId ?? "",
               linkedAt: new Date().toISOString(),
+              packageManager,
             });
             verbose(`[restore] ${packageName}@${link.version}: ${result.copied} files`);
             return { packageName, success: true, copied: result.copied };

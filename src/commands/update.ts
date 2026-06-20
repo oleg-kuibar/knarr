@@ -10,6 +10,7 @@ import { suppressHumanOutput, output } from "../utils/output.js";
 import { errorWithSuggestion } from "../utils/errors.js";
 import { verbose } from "../utils/logger.js";
 import { warnVersionMismatch } from "../utils/validators.js";
+import { detectPackageManagerInfo } from "../utils/pm-detect.js";
 import type { LinkEntry } from "../types.js";
 
 const updateLimit = pLimit(4);
@@ -31,6 +32,7 @@ export default defineCommand({
     const timer = new Timer();
     const consumerPath = resolve(".");
     const state = await readConsumerState(consumerPath);
+    const currentPm = await detectPackageManagerInfo(consumerPath);
     const links = Object.entries(state.links);
 
     if (links.length === 0) {
@@ -64,8 +66,13 @@ export default defineCommand({
             return "missing" as const;
           }
 
+          const packageManager = currentPm.source === "default"
+            ? link.packageManager
+            : currentPm.packageManager;
+          const packageManagerChanged = packageManager !== link.packageManager;
+
           // Check if content hash has changed
-          if (entry.meta.contentHash === link.contentHash) {
+          if (entry.meta.contentHash === link.contentHash && !packageManagerChanged) {
             verbose(`[update] ${packageName}@${entry.version} already up to date`);
             return "skipped" as const;
           }
@@ -81,6 +88,7 @@ export default defineCommand({
               contentHash: entry.meta.contentHash,
               buildId: entry.meta.buildId ?? "",
               linkedAt: new Date().toISOString(),
+              packageManager,
             };
             await addLink(consumerPath, packageName, updatedLink);
 
