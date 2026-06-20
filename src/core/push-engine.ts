@@ -12,7 +12,8 @@ import type { KnarrConfig } from "../utils/config.js";
 import { Timer } from "../utils/timer.js";
 import { output } from "../utils/output.js";
 import { errorWithSuggestion } from "../utils/errors.js";
-import { verbose } from "../utils/logger.js";
+import { isDryRun, verbose } from "../utils/logger.js";
+import { recordMutation } from "../utils/dry-run.js";
 import { consola } from "../utils/console.js";
 import type { PackageJson, StoreEntry } from "../types.js";
 
@@ -380,6 +381,73 @@ export async function startWatchMode(
     process.once("SIGINT", cleanup);
     process.once("SIGTERM", cleanup);
   });
+}
+
+/**
+ * Run the watch-mode build command once before the initial publish/push.
+ * Returns false when a configured build fails, so callers can skip publishing
+ * stale output while still entering watch mode.
+ */
+export async function runInitialWatchBuild(
+  packageDir: string,
+  args: WatchArgs,
+  config?: KnarrConfig
+): Promise<boolean> {
+  const resolvedConfig = config ?? await loadKnarrConfig(packageDir);
+  const { buildCmd } = await resolveWatchConfig(packageDir, args, resolvedConfig);
+  if (!buildCmd) return true;
+
+  if (isDryRun()) {
+    recordMutation({ type: "command-skip", path: packageDir, detail: buildCmd });
+    return true;
+  }
+
+  const { runBuildCommand } = await import("./watcher.js");
+  const success = await runBuildCommand(buildCmd, packageDir);
+  if (!success) {
+    consola.warn("Initial build failed; skipping initial push. Watch mode will continue.");
+  }
+  return success;
+}
+
+/**
+ * Run initial watch builds for all publishable workspace packages in
+ * dependency-first order.
+ */
+export async function runInitialWorkspaceWatchBuilds(
+  startDir: string,
+  args: WatchArgs
+): Promise<boolean> {
+  const {
+    buildWorkspaceGraph,
+    filterPublishableWorkspaceGraph,
+  } = await import("../utils/workspace.js");
+  const { topoSort, CycleError } = await import("../utils/topo-sort.js");
+
+  const discovered = await buildWorkspaceGraph(startDir);
+  const graph = filterPublishableWorkspaceGraph(discovered);
+  if (graph.packages.length === 0) return true;
+
+  let ordered: string[];
+  try {
+    ordered = topoSort(graph.adjacency);
+  } catch (err) {
+    if (err instanceof CycleError) {
+      consola.error(`Cannot build workspace before watch: ${err.message}`);
+      return false;
+    }
+    throw err;
+  }
+
+  const nameToDir = new Map(graph.packages.map((p) => [p.name, p.dir]));
+  let ok = true;
+  for (const name of ordered) {
+    const dir = nameToDir.get(name);
+    if (!dir) continue;
+    const success = await runInitialWatchBuild(dir, args);
+    ok &&= success;
+  }
+  return ok;
 }
 
 /**
