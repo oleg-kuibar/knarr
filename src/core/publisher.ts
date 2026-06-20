@@ -16,6 +16,11 @@ import type { Catalogs } from "../utils/workspace.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
 import { validatePackageIdentity } from "../utils/validators.js";
+import {
+  detectPackageManagerInfo,
+  hasYarnPnpMarkers,
+  isYarnPnpProject,
+} from "../utils/pm-detect.js";
 
 export interface PublishOptions {
   allowPrivate?: boolean;
@@ -355,14 +360,15 @@ async function runLifecycleHook(
     return;
   }
 
-  verbose(`[lifecycle] Running ${hookName}: ${script}`);
+  const command = await resolveLifecycleCommand(packageDir, hookName, script);
+  verbose(`[lifecycle] Running ${hookName}: ${command}`);
   return new Promise((resolve, reject) => {
     const isWin = platform() === "win32";
     const shell = isWin ? "cmd" : "sh";
     const shellFlag = isWin ? "/c" : "-c";
     const env = buildLifecycleEnv(packageDir, pkg, hookName, script);
 
-    const child = spawn(shell, [shellFlag, script], {
+    const child = spawn(shell, [shellFlag, command], {
       cwd: packageDir,
       env,
       stdio: "inherit",
@@ -387,6 +393,21 @@ async function runLifecycleHook(
       reject(new Error(`${hookName} script error: ${err.message}`));
     });
   });
+}
+
+async function resolveLifecycleCommand(
+  packageDir: string,
+  hookName: string,
+  script: string
+): Promise<string> {
+  const shouldUseYarn =
+    await hasYarnPnpMarkers(packageDir) ||
+    (
+      (await detectPackageManagerInfo(packageDir)).packageManager === "yarn" &&
+      await isYarnPnpProject(packageDir)
+    );
+
+  return shouldUseYarn ? `yarn run ${hookName}` : script;
 }
 
 /** Fields from publishConfig that override the corresponding package.json fields */

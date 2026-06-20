@@ -9,7 +9,7 @@ import {
   rm,
   symlink,
 } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { delimiter, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { exists } from "../utils/fs.js";
 import { detectYarnNodeLinker } from "../utils/pm-detect.js";
@@ -215,6 +215,76 @@ describe("publish", () => {
       "from-hook.txt"
     );
     expect(await readFile(storeFile, "utf-8")).toBe("local-build-helper");
+  });
+
+  it("runs Yarn PnP lifecycle hooks through yarn run", async () => {
+    const { publish } = await import("../core/publisher.js");
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({
+        name: "test-lib",
+        version: "1.0.0",
+        packageManager: "yarn@4.6.0",
+        main: "dist/index.js",
+        files: ["dist"],
+        scripts: {
+          prepack: "pnp-build-helper",
+        },
+      })
+    );
+    await mkdir(join(testLib, "scripts"), { recursive: true });
+    await writeFile(
+      join(testLib, "scripts", "write-pnp-hook-output.cjs"),
+      [
+        'const fs = require("node:fs");',
+        'const path = require("node:path");',
+        'if (process.env.npm_lifecycle_event !== "prepack") process.exit(2);',
+        'if (process.env.npm_lifecycle_script !== "pnp-build-helper") process.exit(3);',
+        'fs.mkdirSync(path.join(process.cwd(), "dist"), { recursive: true });',
+        'fs.writeFileSync(path.join(process.cwd(), "dist", "from-pnp-hook.txt"), "yarn-run");',
+      ].join("\n")
+    );
+
+    const fakeBin = join(testKNARRHome, "fake-bin");
+    await mkdir(fakeBin, { recursive: true });
+    await writeFile(
+      join(fakeBin, "yarn"),
+      [
+        "#!/bin/sh",
+        'if [ "$1" != "run" ] || [ "$2" != "prepack" ]; then exit 13; fi',
+        'exec node "./scripts/write-pnp-hook-output.cjs"',
+        "",
+      ].join("\n")
+    );
+    await chmod(join(fakeBin, "yarn"), 0o755);
+    await writeFile(
+      join(fakeBin, "yarn.cmd"),
+      [
+        "@ECHO off",
+        'if "%1" NEQ "run" exit /B 13',
+        'if "%2" NEQ "prepack" exit /B 13',
+        'node "%CD%\\scripts\\write-pnp-hook-output.cjs"',
+        "",
+      ].join("\r\n")
+    );
+
+    const originalPath = process.env.PATH;
+    process.env.PATH = [fakeBin, originalPath].filter(Boolean).join(delimiter);
+    try {
+      await publish(testLib);
+    } finally {
+      process.env.PATH = originalPath;
+    }
+
+    const storeFile = join(
+      testKNARRHome,
+      "store",
+      "test-lib@1.0.0",
+      "package",
+      "dist",
+      "from-pnp-hook.txt"
+    );
+    expect(await readFile(storeFile, "utf-8")).toBe("yarn-run");
   });
 
   it("skips publish when content unchanged", async () => {
