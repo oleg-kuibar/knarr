@@ -106,6 +106,44 @@ export interface IncrementalCopyOptions {
   force?: boolean;
 }
 
+async function removeDestinationConflicts(
+  destDir: string,
+  relPath: string
+): Promise<void> {
+  const parts = relPath.split(/[\\/]/).filter(Boolean);
+  let current = destDir;
+
+  for (let i = 0; i < parts.length; i++) {
+    current = join(current, parts[i]);
+    try {
+      const s = await stat(current);
+      const isLeaf = i === parts.length - 1;
+      if (s.isDirectory()) {
+        if (isLeaf) {
+          if (isDryRun()) {
+            recordMutation({ type: "remove", path: current });
+          } else {
+            await rm(current, { recursive: true, force: true });
+          }
+        }
+        continue;
+      }
+
+      if (!isLeaf) {
+        if (isDryRun()) {
+          recordMutation({ type: "remove", path: current });
+          return;
+        } else {
+          await rm(current, { force: true });
+        }
+      }
+    } catch (err) {
+      if (isNodeError(err) && err.code === "ENOENT") return;
+      throw err;
+    }
+  }
+}
+
 /**
  * Incrementally copy files from src to dest directory.
  * Only copies files whose content has changed (stat size check + hash comparison).
@@ -170,7 +208,7 @@ export async function incrementalCopy(
               }
             }
           } catch (err) {
-            if (isNodeError(err) && err.code === "ENOENT") {
+            if (isNodeError(err) && (err.code === "ENOENT" || err.code === "ENOTDIR")) {
               verbose(`[copy] ${rel} (new file)`);
             } else {
               throw err;
@@ -179,7 +217,10 @@ export async function incrementalCopy(
         }
 
         if (needsCopy) {
+          await removeDestinationConflicts(destDir, rel);
           await copyWithCoW(srcFile, destFile);
+          if (isDryRun()) return "copied" as const;
+
           // Preserve source mtime so the mtime fast-path fires on subsequent checks
           if (!srcTimes) {
             const s = await stat(srcFile);
@@ -210,7 +251,20 @@ export async function incrementalCopy(
         if (isDryRun()) {
           recordMutation({ type: "remove", path: destFile });
         } else {
-          await rm(destFile);
+          await rm(destFile, { force: true }).catch((err: unknown) => {
+            if (
+              isNodeError(err) &&
+              (
+                err.code === "ENOENT" ||
+                err.code === "ENOTDIR" ||
+                err.code === "EISDIR" ||
+                err.code === "ERR_FS_EISDIR"
+              )
+            ) {
+              return;
+            }
+            throw err;
+          });
         }
       })
     )

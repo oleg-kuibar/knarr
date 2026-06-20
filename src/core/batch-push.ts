@@ -1,5 +1,5 @@
 import { consola } from "../utils/console.js";
-import { buildWorkspaceGraph } from "../utils/workspace.js";
+import { buildWorkspaceGraph, filterPublishableWorkspaceGraph } from "../utils/workspace.js";
 import { topoSort, CycleError } from "../utils/topo-sort.js";
 import { doPush } from "./push-engine.js";
 import type { PushOptions } from "./push-engine.js";
@@ -17,10 +17,15 @@ export async function doPushAll(
 ): Promise<void> {
   const timer = new Timer();
 
-  const graph = await buildWorkspaceGraph(startDir);
+  const discovered = await buildWorkspaceGraph(startDir);
+  const graph = filterPublishableWorkspaceGraph(discovered);
   if (graph.packages.length === 0) {
-    consola.warn("No workspace packages found");
+    consola.warn("No publishable workspace packages found");
     return;
+  }
+  const privateCount = discovered.packages.length - graph.packages.length;
+  if (privateCount > 0) {
+    consola.info(`Skipping ${privateCount} private workspace package(s)`);
   }
 
   let ordered: string[];
@@ -29,7 +34,7 @@ export async function doPushAll(
   } catch (err) {
     if (err instanceof CycleError) {
       consola.error(`Cannot push: ${err.message}`);
-      return;
+      throw err;
     }
     throw err;
   }
@@ -48,8 +53,12 @@ export async function doPushAll(
     if (!dir) continue;
 
     try {
-      await doPush(dir, options);
-      success++;
+      const summary = await doPush(dir, options);
+      if (summary.failedConsumers > 0) {
+        failed++;
+      } else {
+        success++;
+      }
     } catch (err) {
       consola.warn(
         `Failed to push ${name}: ${err instanceof Error ? err.message : String(err)}`
@@ -61,4 +70,7 @@ export async function doPushAll(
   consola.success(
     `Pushed ${success}/${ordered.length} packages in ${timer.elapsed()}${failed > 0 ? ` (${failed} failed)` : ""}`
   );
+  if (failed > 0) {
+    throw new Error(`Failed to push ${failed} workspace package(s)`);
+  }
 }

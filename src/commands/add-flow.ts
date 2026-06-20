@@ -126,8 +126,10 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
     }
   }
 
-  const hasBackup = await backupExisting(consumerPath, packageName, pm);
-  if (hasBackup) {
+  const hasBackup = existingLink
+    ? existingLink.backupExists
+    : await backupExisting(consumerPath, packageName, pm);
+  if (!existingLink && hasBackup) {
     consola.info(`Backed up existing ${packageName} installation`);
   }
 

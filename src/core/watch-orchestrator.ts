@@ -1,4 +1,3 @@
-import pLimit from "../utils/concurrency.js";
 import { consola } from "../utils/console.js";
 import { verbose } from "../utils/logger.js";
 import { loadKnarrConfig } from "../utils/config.js";
@@ -13,8 +12,6 @@ interface PackageEntry {
   state: PackageState;
   watcher: { close: () => Promise<void> };
 }
-
-const cascadeLimit = pLimit(2);
 
 /**
  * Orchestrates watch mode for all workspace packages with optional
@@ -43,16 +40,25 @@ export class WatchOrchestrator {
   ): Promise<void> {
     this.pushOptions = pushOptions;
 
-    const { buildWorkspaceGraph, buildReverseAdjacency } = await import(
+    const {
+      buildWorkspaceGraph,
+      buildReverseAdjacency,
+      filterPublishableWorkspaceGraph,
+    } = await import(
       "../utils/workspace.js"
     );
     const { topoSort, CycleError } = await import("../utils/topo-sort.js");
     const { startWatcher } = await import("./watcher.js");
 
-    const graph = await buildWorkspaceGraph(startDir);
+    const discovered = await buildWorkspaceGraph(startDir);
+    const graph = filterPublishableWorkspaceGraph(discovered);
     if (graph.packages.length === 0) {
-      consola.warn("No workspace packages found");
+      consola.warn("No publishable workspace packages found");
       return;
+    }
+    const privateCount = discovered.packages.length - graph.packages.length;
+    if (privateCount > 0) {
+      consola.info(`Skipping ${privateCount} private workspace package(s)`);
     }
 
     let ordered: string[];
@@ -82,8 +88,10 @@ export class WatchOrchestrator {
       const notify = args.notify ?? config.notify ?? false;
 
       const wrappedOnChange = async () => {
-        await doPush(dir, pushOptions);
-        await this.onPackagePushed(name);
+        await this.runExclusive(name, async () => {
+          await doPush(dir, pushOptions);
+          await this.onPackagePushed(name);
+        });
       };
 
       const parseMs = (v: string | undefined) => {
@@ -91,6 +99,14 @@ export class WatchOrchestrator {
         const n = parseInt(v, 10);
         return Number.isFinite(n) ? n : undefined;
       };
+
+      const entry: PackageEntry = {
+        dir,
+        buildCmd,
+        state: "idle",
+        watcher: { close: async () => {} },
+      };
+      this.packages.set(name, entry);
 
       const watcher = await startWatcher(
         dir,
@@ -104,7 +120,7 @@ export class WatchOrchestrator {
         wrappedOnChange
       );
 
-      this.packages.set(name, { dir, buildCmd, state: "idle", watcher });
+      entry.watcher = watcher;
     }
 
     consola.info(`Watching ${this.packages.size} workspace packages`);
@@ -128,13 +144,15 @@ export class WatchOrchestrator {
 
     verbose(`[cascade] ${name} pushed, triggering dependents: ${[...deps].join(", ")}`);
 
-    const tasks = [...deps].map((depName) =>
-      cascadeLimit(() => this.requestRebuild(depName))
-    );
-    await Promise.all(tasks);
+    for (const depName of deps) {
+      await this.requestRebuild(depName);
+    }
   }
 
-  private async requestRebuild(name: string): Promise<void> {
+  private async runExclusive(
+    name: string,
+    task: (entry: PackageEntry) => Promise<void>
+  ): Promise<void> {
     const entry = this.packages.get(name);
     if (!entry) return;
 
@@ -151,36 +169,41 @@ export class WatchOrchestrator {
 
     // idle → building
     entry.state = "building";
-    verbose(`[cascade] Rebuilding ${name}`);
 
     try {
+      await task(entry);
+    } finally {
+      // State may have been set to "queued" by a concurrent request while the
+      // async build/push was in progress — check before resetting.
+      const wasQueued = (entry.state as PackageState) === "queued";
+      entry.state = "idle";
+
+      if (wasQueued) {
+        await this.requestRebuild(name);
+      }
+    }
+  }
+
+  private async requestRebuild(name: string): Promise<void> {
+    await this.runExclusive(name, async (entry) => {
+      verbose(`[cascade] Rebuilding ${name}`);
+
       if (entry.buildCmd) {
         const { runBuildCommand } = await import("./watcher.js");
         const success = await runBuildCommand(entry.buildCmd, entry.dir);
         if (!success) {
           consola.warn(`[cascade] Build failed for ${name}, skipping dependents`);
-          entry.state = "idle";
           return;
         }
       }
 
       await doPush(entry.dir, this.pushOptions);
       await this.onPackagePushed(name);
-    } catch (err) {
+    }).catch((err) => {
       consola.warn(
         `[cascade] Push failed for ${name}: ${err instanceof Error ? err.message : String(err)}`
       );
-    } finally {
-      // State may have been set to "queued" by a concurrent requestRebuild call
-      // while async build/push was in progress — check before resetting
-      const wasQueued = (entry.state as PackageState) === "queued";
-      entry.state = "idle";
-
-      if (wasQueued) {
-        // Re-run since changes arrived during build
-        await this.requestRebuild(name);
-      }
-    }
+    });
   }
 
   async close(): Promise<void> {

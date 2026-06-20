@@ -363,6 +363,29 @@ export async function buildWorkspaceGraph(
 }
 
 /**
+ * Return a graph containing only publishable workspace packages.
+ * Private packages cannot be pushed by push/dev --all because those commands do
+ * not expose the publish --private override.
+ */
+export function filterPublishableWorkspaceGraph(
+  graph: WorkspaceGraph
+): WorkspaceGraph {
+  const packages = graph.packages.filter((pkg) => !pkg.pkg.private);
+  const names = new Set(packages.map((pkg) => pkg.name));
+  const adjacency = new Map<string, Set<string>>();
+
+  for (const pkg of packages) {
+    const deps = graph.adjacency.get(pkg.name) ?? new Set<string>();
+    adjacency.set(
+      pkg.name,
+      new Set([...deps].filter((dep) => names.has(dep)))
+    );
+  }
+
+  return { packages, adjacency };
+}
+
+/**
  * Build a reverse adjacency map: for each package, which packages depend on it.
  * Used by WatchOrchestrator to trigger cascading rebuilds.
  */

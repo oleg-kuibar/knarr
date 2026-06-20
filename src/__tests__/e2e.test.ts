@@ -704,6 +704,51 @@ describe("workspace protocol rewriting on publish", () => {
     // Content should be identical (not reformatted)
     expect(JSON.parse(storeContent)).toEqual(JSON.parse(sourceContent));
   });
+
+  it("re-publishes when only a rewritten workspace dependency version changes", async () => {
+    const { publish } = await import("../core/publisher.js");
+
+    const root = await mkdtemp(join(tmpdir(), "KNARR-ws-root-"));
+    const depDir = join(root, "packages", "dep-a");
+    const libDir = join(root, "packages", "lib");
+    await mkdir(join(depDir, "dist"), { recursive: true });
+    await mkdir(join(libDir, "dist"), { recursive: true });
+    await writeFile(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
+    await writeFile(
+      join(depDir, "package.json"),
+      JSON.stringify({ name: "dep-a", version: "1.0.0", files: ["dist"] })
+    );
+    await writeFile(join(depDir, "dist", "index.js"), "");
+    await writeFile(
+      join(libDir, "package.json"),
+      JSON.stringify({
+        name: "ws-skip-lib",
+        version: "1.0.0",
+        files: ["dist"],
+        dependencies: { "dep-a": "workspace:^" },
+      })
+    );
+    await writeFile(join(libDir, "dist", "index.js"), "");
+
+    await publish(libDir);
+    await writeFile(
+      join(depDir, "package.json"),
+      JSON.stringify({ name: "dep-a", version: "1.1.0", files: ["dist"] })
+    );
+
+    const second = await publish(libDir);
+    const storePkg = JSON.parse(
+      await readFile(
+        join(KNARRHome, "store", "ws-skip-lib@1.0.0", "package", "package.json"),
+        "utf-8"
+      )
+    );
+
+    expect(second.skipped).toBe(false);
+    expect(storePkg.dependencies["dep-a"]).toBe("^1.1.0");
+
+    await rm(root, { recursive: true, force: true });
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -736,6 +781,14 @@ describe("pnpm injection strategy", () => {
     const { inject } = await import("../core/injector.js");
 
     // Simulate pnpm virtual store structure
+    await writeFile(
+      join(consumer1, "package.json"),
+      JSON.stringify({
+        name: "consumer-one",
+        version: "1.0.0",
+        dependencies: { "@example/ui-kit": "1.0.0" },
+      })
+    );
     const pnpmTarget = join(
       consumer1,
       "node_modules",

@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, writeFile, readFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { initFlags } from "../logger.js";
+import { resetMutations } from "../dry-run.js";
 import {
   copyWithCoW,
   incrementalCopy,
@@ -11,6 +13,14 @@ import {
   ensurePrivateDir,
 } from "../fs.js";
 
+const originalArgv = [...process.argv];
+
+function setDryRun(enabled: boolean): void {
+  process.argv = enabled ? ["node", "knarr", "--dry-run"] : ["node", "knarr"];
+  initFlags();
+  resetMutations();
+}
+
 describe("copyWithCoW", () => {
   let tempDir: string;
 
@@ -19,6 +29,10 @@ describe("copyWithCoW", () => {
   });
 
   afterEach(async () => {
+    setDryRun(false);
+    process.argv = [...originalArgv];
+    initFlags();
+    resetMutations();
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -47,6 +61,10 @@ describe("incrementalCopy", () => {
   });
 
   afterEach(async () => {
+    setDryRun(false);
+    process.argv = [...originalArgv];
+    initFlags();
+    resetMutations();
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -136,6 +154,53 @@ describe("incrementalCopy", () => {
     const result = await incrementalCopy(src, dest);
     expect(result.removed).toBe(1);
     expect(await exists(join(dest, "old.txt"))).toBe(false);
+  });
+
+  it("does not touch destinations when copying new files in dry-run mode", async () => {
+    const src = join(tempDir, "src");
+    const dest = join(tempDir, "dest");
+    await mkdir(src, { recursive: true });
+    await mkdir(dest, { recursive: true });
+    await writeFile(join(src, "a.txt"), "aaa");
+    setDryRun(true);
+
+    const result = await incrementalCopy(src, dest);
+
+    expect(result.copied).toBe(1);
+    expect(await exists(join(dest, "a.txt"))).toBe(false);
+  });
+
+  it("handles a destination file becoming a source directory", async () => {
+    const src = join(tempDir, "src");
+    const dest = join(tempDir, "dest");
+    await mkdir(src, { recursive: true });
+    await writeFile(join(src, "entry"), "file");
+    await incrementalCopy(src, dest);
+
+    await rm(join(src, "entry"));
+    await mkdir(join(src, "entry"), { recursive: true });
+    await writeFile(join(src, "entry", "index.js"), "nested");
+
+    const result = await incrementalCopy(src, dest);
+
+    expect(result.copied).toBe(1);
+    expect(await readFile(join(dest, "entry", "index.js"), "utf-8")).toBe("nested");
+  });
+
+  it("handles a destination directory becoming a source file", async () => {
+    const src = join(tempDir, "src");
+    const dest = join(tempDir, "dest");
+    await mkdir(join(src, "entry"), { recursive: true });
+    await writeFile(join(src, "entry", "index.js"), "nested");
+    await incrementalCopy(src, dest);
+
+    await rm(join(src, "entry"), { recursive: true, force: true });
+    await writeFile(join(src, "entry"), "file");
+
+    const result = await incrementalCopy(src, dest);
+
+    expect(result.copied).toBe(1);
+    expect(await readFile(join(dest, "entry"), "utf-8")).toBe("file");
   });
 });
 

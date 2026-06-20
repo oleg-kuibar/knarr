@@ -22,10 +22,19 @@ export interface DryRunMutation {
 }
 
 const mutations: DryRunMutation[] = [];
+let jsonReportPrinted = false;
 
 /** Record a mutation that was skipped due to --dry-run */
 export function recordMutation(mutation: DryRunMutation): void {
   mutations.push(mutation);
+}
+
+export function getMutations(): DryRunMutation[] {
+  return [...mutations];
+}
+
+export function markDryRunJsonReportPrinted(): void {
+  jsonReportPrinted = true;
 }
 
 /** Print a summary of all recorded dry-run mutations */
@@ -36,7 +45,9 @@ export function printDryRunReport(): void {
   }
 
   if (isJsonOutput()) {
+    if (jsonReportPrinted) return;
     console.log(JSON.stringify({ dryRun: true, mutations }, null, 2));
+    jsonReportPrinted = true;
     return;
   }
 
@@ -83,4 +94,5 @@ export function printDryRunReport(): void {
 /** Reset recorded mutations (for testing) */
 export function resetMutations(): void {
   mutations.length = 0;
+  jsonReportPrinted = false;
 }

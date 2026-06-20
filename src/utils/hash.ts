@@ -49,7 +49,8 @@ const _contentCache = new Map<string, ContentCacheEntry>();
  */
 export async function computeContentHash(
   files: string[],
-  baseDir: string
+  baseDir: string,
+  contentOverrides: Map<string, string | Buffer> = new Map()
 ): Promise<string> {
   // Sort by relative path for determinism (normalize separators for cross-platform consistency)
   const sorted = [...files].sort((a, b) => {
@@ -66,6 +67,14 @@ export async function computeContentHash(
     sorted.map((file) =>
       limit(async () => {
         const rel = normalizePath(relative(baseDir, file));
+        const override = contentOverrides.get(rel);
+        if (override !== undefined) {
+          return {
+            rel,
+            content: Buffer.isBuffer(override) ? override : Buffer.from(override),
+          };
+        }
+
         const s = await stat(file);
         const cached = _contentCache.get(file);
 

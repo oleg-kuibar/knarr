@@ -127,6 +127,19 @@ describe("createBinLinks and removeBinLinks", () => {
     expect(count).toBe(0);
   });
 
+  it("skips unsafe bin command names that escape .bin", async () => {
+    const pkg: PackageJson = {
+      name: "my-cli",
+      version: "1.0.0",
+      bin: { "../../outside": "dist/cli.js" },
+    };
+
+    const count = await createBinLinks(tempDir, "my-cli", pkg);
+
+    expect(count).toBe(0);
+    expect(await exists(join(tempDir, "outside"))).toBe(false);
+  });
+
   it("removeBinLinks cleans up created links", async () => {
     const pkg: PackageJson = {
       name: "my-cli",
@@ -141,6 +154,38 @@ describe("createBinLinks and removeBinLinks", () => {
     expect(await exists(join(binDir, "my-cli"))).toBe(false);
     if (platform() === "win32") {
       expect(await exists(join(binDir, "my-cli.cmd"))).toBe(false);
+    }
+  });
+
+  it("removeBinLinks preserves bin entries claimed by another package", async () => {
+    const oldPkg: PackageJson = {
+      name: "my-cli",
+      version: "1.0.0",
+      bin: { "shared-bin": "dist/cli.js" },
+    };
+    await createBinLinks(tempDir, "my-cli", oldPkg);
+
+    await mkdir(join(tempDir, "node_modules", "other-cli", "dist"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(tempDir, "node_modules", "other-cli", "dist", "cli.js"),
+      '#!/usr/bin/env node\nconsole.log("other");'
+    );
+    const otherPkg: PackageJson = {
+      name: "other-cli",
+      version: "1.0.0",
+      bin: { "shared-bin": "dist/cli.js" },
+    };
+    await createBinLinks(tempDir, "other-cli", otherPkg);
+
+    await removeBinLinks(tempDir, oldPkg);
+
+    const binDir = join(tempDir, "node_modules", ".bin");
+    expect(await exists(join(binDir, "shared-bin"))).toBe(true);
+    if (platform() === "win32") {
+      expect(await exists(join(binDir, "shared-bin.cmd"))).toBe(true);
+      expect(await exists(join(binDir, "shared-bin.ps1"))).toBe(true);
     }
   });
 });

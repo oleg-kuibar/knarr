@@ -87,4 +87,18 @@ describe("computeContentHash", () => {
     const hash2 = await computeContentHash([file], tempDir);
     expect(hash1).not.toBe(hash2);
   });
+
+  it("uses content overrides when computing aggregate hashes", async () => {
+    const file = join(tempDir, "package.json");
+    await writeFile(file, '{"name":"pkg","version":"1.0.0"}');
+
+    const sourceHash = await computeContentHash([file], tempDir);
+    const overriddenHash = await computeContentHash(
+      [file],
+      tempDir,
+      new Map([["package.json", '{"name":"pkg","version":"1.0.1"}']])
+    );
+
+    expect(overriddenHash).not.toBe(sourceHash);
+  });
 });
