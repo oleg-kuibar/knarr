@@ -1268,10 +1268,10 @@ describe("pnpm injection", () => {
     expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
   });
 
-  it("honors pnpm global virtual store links from metadata", async () => {
+  it("refuses pnpm global virtual store links from metadata", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
-    const { inject } = await import("../core/injector.js");
+    const { inject, removeInjected } = await import("../core/injector.js");
 
     await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
     await writeFile(
@@ -1307,10 +1307,15 @@ describe("pnpm injection", () => {
 
     await publish(testLib);
     const entry = await getStoreEntry("test-lib", "1.0.0");
-    const result = await inject(entry!, testConsumer, "pnpm");
 
-    expect(result.copied).toBeGreaterThan(0);
-    expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
+    await expect(inject(entry!, testConsumer, "pnpm")).rejects.toThrow(
+      "resolves outside a configured pnpm virtual store"
+    );
+    expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(false);
+    await expect(removeInjected(testConsumer, "test-lib", "pnpm", "1.0.0")).rejects.toThrow(
+      "resolves outside a configured pnpm virtual store"
+    );
+    expect(await exists(join(pnpmPkgDir, "package.json"))).toBe(true);
   });
 
   it("handles scoped packages in .pnpm/", async () => {

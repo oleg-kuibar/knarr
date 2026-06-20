@@ -551,13 +551,23 @@ function isInside(root: string, target: string): boolean {
 
 async function getPnpmVirtualStoreDirs(consumerPath: string): Promise<string[]> {
   const nodeModulesDir = join(consumerPath, "node_modules");
-  const dirs = [join(nodeModulesDir, ".pnpm")];
+  const dirs: string[] = [];
+  const defaultDir = join(nodeModulesDir, ".pnpm");
+  if (await isLocalVirtualStoreDir(consumerPath, defaultDir)) {
+    dirs.push(defaultDir);
+  }
+
   const configured = await readConfiguredPnpmVirtualStoreDir(nodeModulesDir);
   if (!configured) return dirs;
 
   const configuredDir = isAbsolute(configured)
     ? configured
     : resolve(nodeModulesDir, configured);
+  if (!(await isLocalVirtualStoreDir(consumerPath, configuredDir))) {
+    verbose(`[inject] pnpm: ignoring external virtualStoreDir ${configuredDir}`);
+    return dirs;
+  }
+
   if (!dirs.some((dir) => resolve(dir) === resolve(configuredDir))) {
     dirs.push(configuredDir);
   }
@@ -566,17 +576,39 @@ async function getPnpmVirtualStoreDirs(consumerPath: string): Promise<string[]> 
 
 async function getYarnPnpmStoreDirs(consumerPath: string): Promise<string[]> {
   const nodeModulesDir = join(consumerPath, "node_modules");
-  const dirs = [join(nodeModulesDir, ".store")];
+  const dirs: string[] = [];
+  const defaultDir = join(nodeModulesDir, ".store");
+  if (await isLocalVirtualStoreDir(consumerPath, defaultDir)) {
+    dirs.push(defaultDir);
+  }
+
   const configured = await detectYarnPnpmStoreFolder(consumerPath);
   if (!configured) return dirs;
 
   const configuredDir = isAbsolute(configured)
     ? configured
     : resolve(consumerPath, configured);
+  if (!(await isLocalVirtualStoreDir(consumerPath, configuredDir))) {
+    verbose(`[inject] yarn-pnpm: ignoring external pnpmStoreFolder ${configuredDir}`);
+    return dirs;
+  }
+
   if (!dirs.some((dir) => resolve(dir) === resolve(configuredDir))) {
     dirs.push(configuredDir);
   }
   return dirs;
+}
+
+async function isLocalVirtualStoreDir(
+  consumerPath: string,
+  storeDir: string
+): Promise<boolean> {
+  const consumerRoot = await realpath(consumerPath).catch(() => resolve(consumerPath));
+  const storeRoot = await realpath(storeDir).catch((err: unknown) => {
+    if (isNodeError(err) && err.code === "ENOENT") return resolve(storeDir);
+    throw err;
+  });
+  return isInside(consumerRoot, storeRoot);
 }
 
 async function readConfiguredPnpmVirtualStoreDir(nodeModulesDir: string): Promise<string | null> {
