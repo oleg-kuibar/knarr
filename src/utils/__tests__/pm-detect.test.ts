@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import {
   detectPackageManager,
   detectYarnNodeLinker,
+  detectYarnPnpmStoreFolder,
   hasYarnPnpManifest,
   hasYarnrcYml,
   isYarnPnpProject,
@@ -155,6 +156,43 @@ describe("detectYarnNodeLinker", () => {
     await mkdir(nested, { recursive: true });
     await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnpm\n");
     expect(await detectYarnNodeLinker(nested)).toBe("pnpm");
+  });
+
+  it("walks past child .yarnrc.yml files without nodeLinker", async () => {
+    const nested = join(tempDir, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: node-modules\n");
+    await writeFile(join(nested, ".yarnrc.yml"), "yarnPath: .yarn/releases/yarn-4.0.0.cjs\n");
+    expect(await detectYarnNodeLinker(nested)).toBe("node-modules");
+  });
+});
+
+describe("detectYarnPnpmStoreFolder", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "KNARR-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("returns pnpmStoreFolder from .yarnrc.yml", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), 'pnpmStoreFolder: ".cache/.store" # yarn pnpm linker\n');
+    expect(await detectYarnPnpmStoreFolder(tempDir)).toBe(".cache/.store");
+  });
+
+  it("walks up to find pnpmStoreFolder in parent", async () => {
+    const nested = join(tempDir, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(tempDir, ".yarnrc.yml"), "pnpmStoreFolder: .cache/.store\n");
+    expect(await detectYarnPnpmStoreFolder(nested)).toBe(".cache/.store");
+  });
+
+  it("returns null when pnpmStoreFolder is absent", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+    expect(await detectYarnPnpmStoreFolder(tempDir)).toBeNull();
   });
 });
 

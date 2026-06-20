@@ -140,7 +140,7 @@ nodeLinker: node-modules
 
 Then run `yarn install` to recreate `node_modules/`.
 
-Note: Yarn Berry's `nodeLinker: pnpm` mode (symlink-based virtual store, same layout as pnpm) is also supported. Knarr detects this and follows the `.pnpm/` symlink chain automatically.
+Note: Yarn Berry's `nodeLinker: pnpm` mode is also supported. Knarr detects this and follows Yarn's `.store/` symlink chain automatically.
 
 ## Can I use Knarr with private packages?
 

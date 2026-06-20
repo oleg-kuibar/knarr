@@ -161,7 +161,7 @@ When yarn is detected, Knarr also reads `.yarnrc.yml` to determine the linker mo
 | `nodeLinker` value | Behavior |
 |---|---|
 | `node-modules` | Flat `node_modules/` — same as npm, works directly |
-| `pnpm` | `.pnpm/` virtual store with symlinks — Knarr follows the symlink chain (same as pnpm) |
+| `pnpm` | Yarn `.store/` virtual store with symlinks — Knarr follows the symlink chain |
 | `pnp` | No `node_modules/` — incompatible, Knarr exits with an error |
 | *(absent, `.yarnrc.yml` exists)* | Berry defaults to PnP — Knarr exits with an error |
 | *(no `.yarnrc.yml`)* | Yarn Classic — flat `node_modules/`, works directly |

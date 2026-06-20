@@ -124,44 +124,65 @@ export async function detectPackageManager(
 
 export type YarnNodeLinker = "node-modules" | "pnpm" | "pnp";
 
+function readYarnrcScalar(content: string, key: string): string | null {
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("#") || !trimmed.includes(key)) continue;
+    const match = trimmed.match(new RegExp(`^${key}:\\s*(.+)$`));
+    if (!match) continue;
+
+    const value = match[1]
+      .trim()
+      .replace(/\s+#.*$/, "")
+      .trim()
+      .replace(/^["']|["']$/g, "");
+    if (value) return value;
+  }
+  return null;
+}
+
+async function findYarnrcScalar(
+  projectDir: string,
+  key: string
+): Promise<string | null> {
+  let dir = projectDir;
+  for (;;) {
+    try {
+      const content = await readFile(join(dir, ".yarnrc.yml"), "utf-8");
+      const value = readYarnrcScalar(content, key);
+      if (value) return value;
+    } catch {
+      // Missing or unreadable yarnrc files are treated as absent.
+    }
+
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
 /**
  * Detect the Yarn Berry nodeLinker mode from .yarnrc.yml.
- * Walks up from projectDir to find the file.
+ * Walks up from projectDir to find the nearest configured value.
  * Returns null if the file is missing or the key is absent.
  */
 export async function detectYarnNodeLinker(
   projectDir: string
 ): Promise<YarnNodeLinker | null> {
-  let dir = projectDir;
-  for (;;) {
-    let content: string;
-    try {
-      content = await readFile(join(dir, ".yarnrc.yml"), "utf-8");
-    } catch {
-      const parent = dirname(dir);
-      if (parent === dir) return null;
-      dir = parent;
-      continue;
-    }
-
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("#") || !trimmed.includes("nodeLinker")) continue;
-      const match = trimmed.match(/^nodeLinker:\s*(.+)$/);
-      if (match) {
-        const value = match[1]
-          .trim()
-          .replace(/\s+#.*$/, "")
-          .trim()
-          .replace(/^["']|["']$/g, "");
-        if (value === "node-modules" || value === "pnpm" || value === "pnp") {
-          return value;
-        }
-      }
-    }
-
-    return null;
+  const value = await findYarnrcScalar(projectDir, "nodeLinker");
+  if (value === "node-modules" || value === "pnpm" || value === "pnp") {
+    return value;
   }
+  return null;
+}
+
+/**
+ * Detect the optional Yarn pnpm-linker store folder from .yarnrc.yml.
+ */
+export async function detectYarnPnpmStoreFolder(
+  projectDir: string
+): Promise<string | null> {
+  return findYarnrcScalar(projectDir, "pnpmStoreFolder");
 }
 
 /**

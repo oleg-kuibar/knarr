@@ -280,7 +280,7 @@ export async function runDoctorDiagnostics(
       await addCheck({
         name: "Yarn linker",
         status: "pass",
-        message: "Yarn pnpm linker mode (Knarr handles this)",
+        message: "Yarn pnpm linker mode (.store virtual store)",
       });
     } else if (isPnpProject) {
       const reason = linker === "pnp" || pnpManifestExists

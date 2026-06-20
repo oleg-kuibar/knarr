@@ -551,7 +551,7 @@ describe("add command backup preservation", () => {
 });
 
 describe("yarn support", () => {
-  it("injects into yarn pnpm-linker .pnpm/ virtual store", async () => {
+  it("injects into yarn pnpm-linker .store virtual store", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject } = await import("../core/injector.js");
@@ -568,17 +568,21 @@ describe("yarn support", () => {
       })
     );
 
-    // Create pnpm-style virtual store structure
-    const pnpmPkgDir = join(
+    // Yarn's pnpm linker points node_modules/<pkg> at .store/<entry>/package.
+    const yarnStorePkgDir = join(
       testConsumer,
       "node_modules",
-      ".pnpm",
-      "test-lib@1.0.0",
-      "node_modules",
-      "test-lib"
+      ".store",
+      "test-lib-npm-1.0.0-abcdef1234",
+      "package"
     );
-    await mkdir(pnpmPkgDir, { recursive: true });
-    await writeFile(join(pnpmPkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+    await mkdir(yarnStorePkgDir, { recursive: true });
+    await writeFile(join(yarnStorePkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+    await symlink(
+      join(".store", "test-lib-npm-1.0.0-abcdef1234", "package"),
+      join(testConsumer, "node_modules", "test-lib"),
+      "dir"
+    );
 
     await publish(testLib);
     const entry = await getStoreEntry("test-lib", "1.0.0");
@@ -587,9 +591,52 @@ describe("yarn support", () => {
     const result = await inject(entry!, testConsumer, "yarn");
     expect(result.copied).toBeGreaterThan(0);
 
-    // Files should be in the .pnpm/ virtual store, not the direct path
-    const injectedFile = join(pnpmPkgDir, "dist", "index.js");
+    const directEntry = await lstat(join(testConsumer, "node_modules", "test-lib"));
+    expect(directEntry.isSymbolicLink()).toBe(true);
+    const injectedFile = join(yarnStorePkgDir, "dist", "index.js");
     expect(await exists(injectedFile)).toBe(true);
+  });
+
+  it("honors yarn pnpmStoreFolder configuration", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "yarn.lock"), "");
+    await writeFile(
+      join(testConsumer, ".yarnrc.yml"),
+      "nodeLinker: pnpm\npnpmStoreFolder: .cache/.store\n"
+    );
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+
+    const yarnStorePkgDir = join(
+      testConsumer,
+      ".cache",
+      ".store",
+      "test-lib-npm-1.0.0-abcdef1234",
+      "package"
+    );
+    await mkdir(yarnStorePkgDir, { recursive: true });
+    await writeFile(join(yarnStorePkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+    await symlink(
+      join("..", ".cache", ".store", "test-lib-npm-1.0.0-abcdef1234", "package"),
+      join(testConsumer, "node_modules", "test-lib"),
+      "dir"
+    );
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "yarn");
+
+    expect(result.copied).toBeGreaterThan(0);
+    expect(await exists(join(yarnStorePkgDir, "dist", "index.js"))).toBe(true);
   });
 
   it("injects directly for yarn node-modules linker", async () => {
@@ -894,6 +941,32 @@ describe("pnpm injection", () => {
 
       expect(result.copied).toBeGreaterThan(0);
       expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
+    } finally {
+      await rm(aliasParent, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts direct package directories when the consumer path resolves through a symlink", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    const aliasParent = await mkdtemp(join(tmpdir(), "KNARR-consumer-alias-"));
+    const aliasConsumer = join(aliasParent, "consumer");
+    await symlink(testConsumer, aliasConsumer, "dir");
+
+    try {
+      await writeFile(join(aliasConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+      const installedDir = join(aliasConsumer, "node_modules", "test-lib");
+      await mkdir(installedDir, { recursive: true });
+      await writeFile(join(installedDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+
+      await publish(testLib);
+      const entry = await getStoreEntry("test-lib", "1.0.0");
+      const result = await inject(entry!, aliasConsumer, "pnpm");
+
+      expect(result.copied).toBeGreaterThan(0);
+      expect(await exists(join(installedDir, "dist", "index.js"))).toBe(true);
     } finally {
       await rm(aliasParent, { recursive: true, force: true });
     }
