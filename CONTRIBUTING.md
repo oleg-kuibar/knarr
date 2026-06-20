@@ -97,6 +97,34 @@ pnpm test
 4. Run `pnpm test` and `pnpm lint` to verify
 5. Open a pull request
 
+## Codex-assisted review
+
+Knarr keeps reusable Codex guidance in [AGENTS.md](AGENTS.md). Codex GitHub review reads that file, so keep repeated review feedback there instead of only in one-off comments.
+
+Recommended PR flow:
+
+1. Fill out the PR template with verification and any risky areas.
+2. Optionally run a local preflight review before opening the PR:
+
+   ```bash
+   codex review --uncommitted
+   ```
+
+3. Once maintainers have enabled Codex code review for the repository, request the standard GitHub review with `@codex review`, or rely on automatic Codex reviews if they are enabled.
+4. For broad or risky changes, run a separate Codex app or CLI review with the project agents:
+
+   ```text
+   Review this branch against master. Spawn knarr_pr_mapper, knarr_reviewer, and knarr_docs_checker, wait for all results, and summarize only actionable findings.
+   ```
+
+5. Treat Codex feedback as an additional maintainer signal. Human review and CI still decide whether a change is ready.
+
+Maintainer setup:
+
+- Set up Codex cloud for `oleg-kuibar/knarr`.
+- Enable Code review for the repository in Codex settings; enable automatic reviews there if the team wants every PR reviewed without a comment trigger.
+- Keep repeated review feedback in the `AGENTS.md` review guidelines so GitHub reviews and app/CLI agent reviews stay aligned.
+
 ## Releasing
 
 ### Stable Releases

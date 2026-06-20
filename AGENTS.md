@@ -100,6 +100,30 @@ src/types.ts         → shared interfaces
 - Use `import type` for type-only imports
 - Dynamic `import()` for heavy deps only loaded in some code paths (chokidar, vite-config)
 
+## Agent team
+
+Use project-scoped Codex agents in `.codex/agents/` for parallel maintenance and PR review:
+
+- `knarr_pr_mapper`: read-only exploration of changed code paths and ownership boundaries.
+- `knarr_reviewer`: correctness, regression, concurrency, cross-platform, and missing-test review.
+- `knarr_docs_checker`: docs, CLI help, README, and release-note consistency review.
+
+Project agent settings live in `.codex/config.toml`; keep `max_depth = 1` unless there is a deliberate reason to allow recursive delegation.
+
+Use `@codex review` on GitHub for the standard PR review pass guided by the review guidelines below. Use the project agents from the Codex app or CLI when a PR needs a broader parallel review. For broad PR review, ask Codex to compare the branch against `master`, spawn the three agents above, wait for all results, and consolidate only actionable findings.
+
+## Review guidelines
+
+Codex GitHub review should focus on P0/P1 risks, not style-only preferences:
+
+- Store, publish, inject, push, watch, rollback, and workspace changes need checks for data loss, stale state, accidental mutation outside the intended roots, and broken dry-run behavior.
+- File operations must preserve `KNARR_HOME`, package manager layouts, pnpm virtual store symlinks, bin links, lifecycle hook order, and cross-platform paths.
+- Watch and cascading rebuild changes need debounce/cooldown, race, process cleanup, and infinite-loop review.
+- Config rewriting changes need balanced bracket, string/comment, and complex-config fallback coverage.
+- Public CLI or API behavior changes need tests plus docs updates in `docs/commands.md`, `docs/api.md`, README, or changelog as appropriate.
+- JSON output must remain machine-readable on stdout; verbose or human diagnostics should not corrupt JSON mode.
+- Prefer focused tests near the touched behavior. Broaden to integration/e2e tests when changes cross publisher, injector, tracker, watcher, or workspace orchestration boundaries.
+
 ## Gotchas
 
 - `pnpm dev` (in the Commands section above) is `tsup --watch` for building Knarr itself — not the same as the `knarr dev` CLI command
