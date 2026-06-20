@@ -120,7 +120,14 @@ export async function publish(
   if (processedPkg !== pkg || publishDir !== packageDir) {
     contentOverrides.set("package.json", JSON.stringify(processedPkg, null, 2));
   }
-  const contentHash = await computeContentHash(files, publishDir, contentOverrides);
+  const hashFiles = [...files];
+  const hashFileRels = new Set(
+    files.map((file) => relative(publishDir, file).replace(/\\/g, "/"))
+  );
+  for (const rel of contentOverrides.keys()) {
+    if (!hashFileRels.has(rel)) hashFiles.push(join(publishDir, rel));
+  }
+  const contentHash = await computeContentHash(hashFiles, publishDir, contentOverrides);
 
   // 6. Fast path: check if already up to date (no lock needed)
   if (!options.force) {
