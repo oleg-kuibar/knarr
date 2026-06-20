@@ -164,7 +164,7 @@ knarr publish --dry-run
 knarr push --dry-run
 ```
 
-Knarr prints a grouped summary of all mutations it would perform: file copies, removals, directory creation, bin links, lock acquisitions, and lifecycle hooks. With `--json`, the summary is output as structured JSON.
+Knarr prints a grouped summary of all mutations it would perform: file copies, removals, directory creation, bin links, lock acquisitions, lifecycle hooks, and skipped commands. With `--json`, the summary is output as structured JSON.
 
 ## What happens when I run npm install / pnpm install?
 

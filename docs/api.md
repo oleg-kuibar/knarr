@@ -688,7 +688,8 @@ interface PreflightIssue {
 }
 
 type MutationType = "copy" | "remove" | "move" | "mkdir" | "write"
-  | "bin-link" | "bin-unlink" | "cache-invalidate" | "lock-skip" | "lifecycle-skip";
+  | "bin-link" | "bin-unlink" | "cache-invalidate" | "lock-skip"
+  | "lifecycle-skip" | "command-skip";
 
 interface DryRunMutation {
   type: MutationType;

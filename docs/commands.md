@@ -156,9 +156,9 @@ Flags:
 
 Without `--watch`, it runs once: publish, then copy changed files to all consumers. The summary includes the package version and build ID, consumers updated, failed or skipped consumers, copied/removed/unchanged file counts, bin links, cache invalidations, and elapsed time. With `--json`, the same summary includes per-consumer results.
 
-With `--watch`, it runs continuously using a "debounce effects, not detection" strategy: file changes are detected immediately, then coalesced — rapid saves within the debounce window collapse into a single push. If new changes arrive while a push is in progress, Knarr automatically re-pushes after it finishes so the final state is always pushed.
+With `--watch`, Knarr resolves the build command, runs it once before the initial publish + push, then enters continuous watch mode. If that initial build fails, Knarr skips the initial push so stale output is not published, but the watcher still starts. File changes are detected immediately, then coalesced — rapid saves within the debounce window collapse into a single push. If new changes arrive while a push is in progress, Knarr automatically re-pushes after it finishes so the final state is always pushed.
 
-**Build command auto-detection:** When no `--build` command is specified and `--skip-build` is not set, Knarr auto-detects the build command from `package.json` scripts (checks `build`, `compile`, `bundle`, `tsc` in order). If no build script is found, the watcher monitors paths from the `files` field (typically `dist/`). With a build command, it watches source directories (`src/`, `lib/`, `dist/`). Build failures get logged but don't kill the watcher.
+**Build command auto-detection:** When no `--build` command is specified and `--skip-build` is not set, Knarr auto-detects the build command from `package.json` scripts (checks `build`, `compile`, `bundle`, `tsc` in order). If no build script is found, the watcher monitors paths from the `files` field (typically `dist/`). With a build command, it watches source directories that exist (`src/`, `lib/`, `source/`, `app/`, `pages/`, `components/`), falling back to `src/` and `lib/` if none are present. Build failures get logged but don't kill the watcher.
 
 When watching output dirs directly (no build command), `awaitWriteFinish` is auto-enabled (200ms stability threshold) to avoid triggering on partially-written files.
 
@@ -221,9 +221,10 @@ Flags:
 On startup, `knarr dev`:
 
 1. Auto-detects the build command from `package.json` scripts (`build`, `compile`, `bundle`, `tsc`)
-2. Runs an initial publish + push to all consumers
-3. Starts watching for file changes
-4. On each change: coalesce → build → publish → push to all consumers
+2. Runs the build once when a build command is configured
+3. Runs an initial publish + push to all consumers if the build succeeds
+4. Starts watching for file changes
+5. On each change: coalesce → build → publish → push to all consumers
 
 Each watch cycle prints a compact start line and the shared push summary. Build failures do not stop the watcher; Knarr skips that push and shows when the last successful push completed.
 
