@@ -238,16 +238,17 @@ export async function resolveInjectionTarget(
   options: { warnOnFallback?: boolean; repairMissingLink?: boolean } = {}
 ): Promise<string> {
   const directPath = getNodeModulesPackagePath(consumerPath, packageName);
-  const currentPm = pm === "yarn" ? "yarn" : await detectPackageManager(consumerPath);
+  const currentPm = await detectPackageManager(consumerPath);
   if ((pm === "yarn" || currentPm === "yarn") && await isYarnPnpProject(consumerPath)) {
     throw new Error(
       "Yarn PnP mode is not compatible with Knarr. Set `nodeLinker: node-modules` or `nodeLinker: pnpm` in .yarnrc.yml, then run `yarn install`."
     );
   }
 
-  const yarnLinker = pm === "yarn" ? await detectYarnNodeLinker(consumerPath) : null;
-  const storeKind =
-    pm === "pnpm" ? "pnpm" : yarnLinker === "pnpm" ? "yarn-pnpm" : null;
+  const yarnLinker = pm === "yarn" || currentPm === "yarn"
+    ? await detectYarnNodeLinker(consumerPath)
+    : null;
+  const storeKind = getEffectiveStoreKind(pm, currentPm, yarnLinker);
 
   if (!storeKind) {
     return directPath;
@@ -375,6 +376,25 @@ export async function resolveInjectionTarget(
 
 function storeKindLabel(kind: "pnpm" | "yarn-pnpm"): string {
   return kind === "pnpm" ? "pnpm" : "Yarn pnpm-linker";
+}
+
+function getEffectiveStoreKind(
+  storedPm: PackageManager,
+  currentPm: PackageManager,
+  yarnLinker: "node-modules" | "pnpm" | "pnp" | null
+): "pnpm" | "yarn-pnpm" | null {
+  if (currentPm === "yarn") {
+    return yarnLinker === "pnpm" ? "yarn-pnpm" : null;
+  }
+  if (currentPm === "pnpm") return "pnpm";
+  if (currentPm === "bun") return null;
+
+  // npm is also the no-evidence fallback from detectPackageManager(), so keep
+  // the tracked package manager as a fallback for existing links.
+  if (storedPm === "yarn") {
+    return yarnLinker === "pnpm" ? "yarn-pnpm" : null;
+  }
+  return storedPm === "pnpm" ? "pnpm" : null;
 }
 
 async function resolvePackageEntrySymlink(

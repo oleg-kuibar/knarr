@@ -916,6 +916,46 @@ describe("yarn support", () => {
     expect(await exists(join(yarnStorePkgDir, "dist", "index.js"))).toBe(true);
   });
 
+  it("uses current yarn pnpm-linker layout when stored package manager is stale", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "yarn.lock"), "");
+    await writeFile(join(testConsumer, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        packageManager: "yarn@4.6.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+
+    const yarnStorePkgDir = join(
+      testConsumer,
+      "node_modules",
+      ".store",
+      "test-lib-npm-1.0.0-abcdef1234",
+      "package"
+    );
+    await mkdir(yarnStorePkgDir, { recursive: true });
+    await writeFile(
+      join(yarnStorePkgDir, "package.json"),
+      JSON.stringify({ name: "test-lib", version: "1.0.0" })
+    );
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "npm");
+
+    expect(result.copied).toBeGreaterThan(0);
+    const directEntry = await lstat(join(testConsumer, "node_modules", "test-lib"));
+    expect(directEntry.isSymbolicLink()).toBe(true);
+    expect(await exists(join(yarnStorePkgDir, "dist", "index.js"))).toBe(true);
+  });
+
   it("refuses stale yarn pnpm-linker symlinks to another package", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
@@ -1337,6 +1377,44 @@ describe("pnpm injection", () => {
     const directEntry = await lstat(join(testConsumer, "node_modules", "test-lib"));
     expect(directEntry.isSymbolicLink()).toBe(true);
     expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
+  });
+
+  it("uses current pnpm layout when stored package manager is stale", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+    const pnpmPkgDir = join(
+      testConsumer,
+      "node_modules",
+      ".pnpm",
+      "test-lib@1.0.0",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(pnpmPkgDir, { recursive: true });
+    await writeFile(
+      join(pnpmPkgDir, "package.json"),
+      JSON.stringify({ name: "test-lib", version: "1.0.0" })
+    );
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "npm");
+
+    expect(result.copied).toBeGreaterThan(0);
+    const directEntry = await lstat(join(testConsumer, "node_modules", "test-lib"));
+    expect(directEntry.isSymbolicLink()).toBe(true);
+    expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
   });
 
   it("accepts direct package directories when the consumer path resolves through a symlink", async () => {
