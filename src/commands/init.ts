@@ -7,7 +7,11 @@ import { exists, ensureDir, atomicWriteFile } from "../utils/fs.js";
 import { detectPackageManager } from "../utils/pm-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { detectBuildCommand as detectBuildCmd } from "../utils/build-detect.js";
-import { ensureGitignore, addPostinstall } from "../utils/init-helpers.js";
+import {
+  ensureGitignore,
+  addPostinstall,
+  POSTINSTALL_RESTORE_COMMAND,
+} from "../utils/init-helpers.js";
 import { Timer } from "../utils/timer.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun } from "../utils/logger.js";
@@ -125,7 +129,7 @@ export default defineCommand({
         const postinstallAdded = await addPostinstall(pkgPath);
         if (postinstallAdded) {
           consola.success(
-            'Added "postinstall": "knarr restore" to package.json scripts'
+            `Added "postinstall": "${POSTINSTALL_RESTORE_COMMAND}" to package.json scripts`
           );
         }
 

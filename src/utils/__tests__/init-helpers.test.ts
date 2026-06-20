@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { ensureGitignore, addPostinstall } from "../init-helpers.js";
+import {
+  ensureGitignore,
+  addPostinstall,
+  POSTINSTALL_RESTORE_COMMAND,
+} from "../init-helpers.js";
 import { exists } from "../fs.js";
 import { initFlags } from "../logger.js";
 import { resetMutations } from "../dry-run.js";
@@ -49,5 +53,52 @@ describe("init helpers dry-run", () => {
 
     expect(changed).toBe(true);
     expect(await readFile(pkgPath, "utf-8")).toBe(original);
+  });
+});
+
+describe("addPostinstall", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "KNARR-init-"));
+    setDryRun(false);
+  });
+
+  afterEach(async () => {
+    setDryRun(false);
+    process.argv = [...originalArgv];
+    initFlags();
+    resetMutations();
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("adds a package-manager-neutral restore hook", async () => {
+    const pkgPath = join(tempDir, "package.json");
+    await writeFile(pkgPath, JSON.stringify({ name: "app", version: "1.0.0" }, null, 2));
+
+    const changed = await addPostinstall(pkgPath);
+
+    const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
+    expect(changed).toBe(true);
+    expect(pkg.scripts.postinstall).toBe(POSTINSTALL_RESTORE_COMMAND);
+    expect(pkg.scripts.postinstall).not.toContain("npx");
+  });
+
+  it("does not overwrite an existing postinstall hook", async () => {
+    const pkgPath = join(tempDir, "package.json");
+    await writeFile(
+      pkgPath,
+      JSON.stringify(
+        { name: "app", version: "1.0.0", scripts: { postinstall: "echo done" } },
+        null,
+        2
+      )
+    );
+
+    const changed = await addPostinstall(pkgPath);
+
+    const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
+    expect(changed).toBe(false);
+    expect(pkg.scripts.postinstall).toBe("echo done");
   });
 });

@@ -581,7 +581,7 @@ async function detectPackageManager(
 ): Promise<PackageManager>  // "npm" | "pnpm" | "yarn" | "bun"
 ```
 
-Priority order: pnpm > bun > yarn > npm. Falls back to npm if no lockfile is found.
+Priority order: pnpm > bun > yarn > npm. npm is detected from `package-lock.json` or `npm-shrinkwrap.json`. Falls back to npm if no lockfile is found.
 
 ### `Timer`
 

@@ -150,7 +150,7 @@ Knarr resolves `node_modules/<pkg>` → follows the symlink into `.pnpm/` → re
 | `pnpm-lock.yaml` | pnpm |
 | `bun.lockb` or `bun.lock` | bun |
 | `yarn.lock` | yarn |
-| `package-lock.json` | npm |
+| `package-lock.json` or `npm-shrinkwrap.json` | npm |
 
 Detection checks in priority order (pnpm > bun > yarn > npm). Falls back to npm if no lockfile is found.
 
