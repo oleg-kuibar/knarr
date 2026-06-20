@@ -371,6 +371,45 @@ describe("push summaries", () => {
       await readFile(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"), "utf-8")
     ).toBe('module.exports = "v1";');
   });
+
+  it("refreshes stale package-manager state on changed pushes", async () => {
+    await linkPackage();
+    const { addLink, readConsumerState } = await import("../core/tracker.js");
+    const { doPush } = await import("../core/push-engine.js");
+    const state = await readConsumerState(testConsumer);
+    await addLink(testConsumer, "test-lib", {
+      ...state.links["test-lib"]!,
+      packageManager: "pnpm",
+    });
+    await writeFile(join(testLib, "dist", "index.js"), 'module.exports = "v2";');
+
+    const summary = await doPush(testLib);
+    const updatedState = await readConsumerState(testConsumer);
+
+    expect(summary.updatedConsumers).toBe(1);
+    expect(updatedState.links["test-lib"]?.packageManager).toBe("npm");
+    expect(
+      await readFile(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"), "utf-8")
+    ).toBe('module.exports = "v2";');
+  });
+
+  it("refreshes stale package-manager state on unchanged pushes", async () => {
+    await linkPackage();
+    const { addLink, readConsumerState } = await import("../core/tracker.js");
+    const { doPush } = await import("../core/push-engine.js");
+    const state = await readConsumerState(testConsumer);
+    await addLink(testConsumer, "test-lib", {
+      ...state.links["test-lib"]!,
+      packageManager: "pnpm",
+    });
+
+    const summary = await doPush(testLib);
+    const updatedState = await readConsumerState(testConsumer);
+
+    expect(summary.noChange).toBe(true);
+    expect(summary.updatedConsumers).toBe(1);
+    expect(updatedState.links["test-lib"]?.packageManager).toBe("npm");
+  });
 });
 
 describe("dry-run watch commands", () => {

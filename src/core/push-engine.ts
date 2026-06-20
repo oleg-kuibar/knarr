@@ -6,7 +6,7 @@ import { getStoreEntry } from "./store.js";
 import { inject } from "./injector.js";
 import { addLink, getConsumers, getLink } from "./tracker.js";
 import { detectBuildCommand } from "../utils/build-detect.js";
-import { detectPackageManager } from "../utils/pm-detect.js";
+import { detectPackageManager, detectPackageManagerInfo } from "../utils/pm-detect.js";
 import { loadKnarrConfig } from "../utils/config.js";
 import type { KnarrConfig } from "../utils/config.js";
 import { Timer } from "../utils/timer.js";
@@ -75,15 +75,26 @@ export async function doPush(
     historyLimit: options.historyLimit,
   });
   if (result.skipped) {
-    const summary = createEmptySummary(result.name, result.version, result.buildId, timer.elapsedMs());
-    summary.noChange = true;
-    summary.skippedReason = "content unchanged";
-    consola.info(
-      `No changes to push for ${result.name}@${result.version}` +
-        (result.buildId ? ` [${result.buildId}]` : "")
-    );
-    output(summary);
-    return summary;
+    const entry = await getStoreEntry(result.name, result.version);
+    if (entry) {
+      return pushStoreEntry(entry, {
+        force: options.force,
+        timer,
+        noConsumersStatus: "available",
+        noChange: true,
+        skippedReason: "content unchanged",
+      });
+    } else {
+      const summary = createEmptySummary(result.name, result.version, result.buildId, timer.elapsedMs());
+      summary.noChange = true;
+      summary.skippedReason = "content unchanged";
+      consola.info(
+        `No changes to push for ${result.name}@${result.version}` +
+          (result.buildId ? ` [${result.buildId}]` : "")
+      );
+      output(summary);
+      return summary;
+    }
   }
 
   if (isDryRun()) {
@@ -150,6 +161,10 @@ export interface PushStoreEntryOptions {
   noConsumersStatus?: "published" | "available";
   /** Emit structured output for this push summary (default: true) */
   emitOutput?: boolean;
+  /** Mark summary as a no-content-change push */
+  noChange?: boolean;
+  /** Optional no-change/skip reason for the summary */
+  skippedReason?: string;
 }
 
 /**
@@ -176,6 +191,8 @@ export async function pushStoreEntry(
       entry.meta.buildId ?? "",
       timer.elapsedMs()
     );
+    summary.noChange = options.noChange ?? false;
+    summary.skippedReason = options.skippedReason;
     if (options.emitOutput !== false) output(summary);
     return summary;
   }
@@ -210,10 +227,14 @@ export async function pushStoreEntry(
         }
 
         try {
+          const currentPm = await detectPackageManagerInfo(consumerPath);
+          const packageManager = currentPm.source === "default"
+            ? link.packageManager
+            : currentPm.packageManager;
           const injectResult = await inject(
             entry,
             consumerPath,
-            link.packageManager,
+            packageManager,
             { force: options.force }
           );
 
@@ -225,6 +246,7 @@ export async function pushStoreEntry(
             contentHash: entry.meta.contentHash,
             linkedAt: new Date().toISOString(),
             buildId: entry.meta.buildId ?? "",
+            packageManager,
           });
 
           return {
@@ -316,6 +338,8 @@ export async function pushStoreEntry(
     elapsed: timer.elapsedMs(),
     consumerResults: results,
   };
+  summary.noChange = options.noChange ?? false;
+  summary.skippedReason = options.skippedReason;
 
   if (options.emitOutput !== false) output(summary);
   return summary;
