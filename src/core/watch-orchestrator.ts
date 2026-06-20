@@ -91,6 +91,10 @@ export class WatchOrchestrator {
         await this.runExclusive(name, async () => {
           await doPush(dir, pushOptions);
           await this.onPackagePushed(name);
+        }).catch((err) => {
+          consola.warn(
+            `Push failed for ${name}: ${err instanceof Error ? err.message : String(err)}`
+          );
         });
       };
 

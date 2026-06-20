@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { relative } from "node:path";
+import { join, relative } from "node:path";
 import { availableParallelism } from "node:os";
 import pLimit from "./concurrency.js";
 import { verbose } from "./logger.js";
@@ -52,21 +52,26 @@ export async function computeContentHash(
   baseDir: string,
   contentOverrides: Map<string, string | Buffer> = new Map()
 ): Promise<string> {
-  // Sort by relative path for determinism (normalize separators for cross-platform consistency)
-  const sorted = [...files].sort((a, b) => {
-    const relA = normalizePath(relative(baseDir, a));
-    const relB = normalizePath(relative(baseDir, b));
-    return relA.localeCompare(relB);
-  });
+  // Sort by relative path for determinism (normalize separators for cross-platform consistency).
+  // Content overrides are hash inputs even when the generated file is not present
+  // in the physical file list.
+  const fileByRel = new Map(
+    files.map((file) => [normalizePath(relative(baseDir, file)), file])
+  );
+  for (const rel of contentOverrides.keys()) {
+    if (!fileByRel.has(rel)) fileByRel.set(rel, join(baseDir, rel));
+  }
+  const sorted = [...fileByRel.entries()].sort(([relA], [relB]) =>
+    relA.localeCompare(relB)
+  );
 
-  const currentFiles = new Set(sorted);
+  const currentFiles = new Set(fileByRel.values());
   let cacheHits = 0;
 
   // Stat + conditionally read files in parallel, maintaining sorted order
   const contents = await Promise.all(
-    sorted.map((file) =>
+    sorted.map(([rel, file]) =>
       limit(async () => {
-        const rel = normalizePath(relative(baseDir, file));
         const override = contentOverrides.get(rel);
         if (override !== undefined) {
           return {
@@ -95,7 +100,7 @@ export async function computeContentHash(
     if (!currentFiles.has(key)) _contentCache.delete(key);
   }
 
-  verbose(`[hash] Computing content hash for ${files.length} files (${cacheHits} cached)`);
+  verbose(`[hash] Computing content hash for ${sorted.length} files (${cacheHits} cached)`);
 
   // Use SHA-256 streaming for the aggregate content hash.
   // This is called once per publish (not per-file), and the deterministic

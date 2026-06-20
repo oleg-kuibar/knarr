@@ -29,7 +29,6 @@ describe("copyWithCoW", () => {
   });
 
   afterEach(async () => {
-    setDryRun(false);
     process.argv = [...originalArgv];
     initFlags();
     resetMutations();
@@ -61,7 +60,6 @@ describe("incrementalCopy", () => {
   });
 
   afterEach(async () => {
-    setDryRun(false);
     process.argv = [...originalArgv];
     initFlags();
     resetMutations();

@@ -14,6 +14,24 @@ import { isDryRun } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
 import type { PackageJson } from "../types.js";
 
+interface RollbackOutput {
+  rolledBack: boolean;
+  buildId: string | null;
+  pushed: boolean;
+  pushSummary: PushSummary | null;
+  pushError: string | null;
+}
+
+function outputRollback(result: Partial<RollbackOutput>): void {
+  output({
+    rolledBack: result.rolledBack ?? false,
+    buildId: result.buildId ?? null,
+    pushed: result.pushed ?? false,
+    pushSummary: result.pushSummary ?? null,
+    pushError: result.pushError ?? null,
+  });
+}
+
 export default defineCommand({
   meta: {
     name: "rollback",
@@ -51,7 +69,7 @@ export default defineCommand({
     const entries = await listHistory(pkg.name, pkg.version);
     if (entries.length === 0) {
       consola.info("No build history available");
-      output({ rolledBack: false });
+      outputRollback({ rolledBack: false });
       return;
     }
 
@@ -68,7 +86,7 @@ export default defineCommand({
             `  ${pc.cyan(entry.buildId)}  ${pc.dim(entry.publishedAt)}`
           );
         }
-        output({ rolledBack: false });
+        outputRollback({ rolledBack: false });
         return;
       }
     } else {
@@ -85,6 +103,7 @@ export default defineCommand({
       );
       if (!confirmed || typeof confirmed === "symbol") {
         consola.info("Cancelled");
+        outputRollback({ rolledBack: false, buildId: targetBuildId });
         return;
       }
     }
@@ -95,7 +114,7 @@ export default defineCommand({
 
     if (!restored) {
       consola.error(`Failed to restore build ${targetBuildId}`);
-      output({ rolledBack: false });
+      outputRollback({ rolledBack: false, buildId: targetBuildId });
       return;
     }
 
@@ -130,7 +149,7 @@ export default defineCommand({
       process.exitCode = 1;
     }
 
-    output({
+    outputRollback({
       rolledBack: true,
       buildId: targetBuildId,
       pushed: pushSummary ? pushSummary.failedConsumers === 0 : false,

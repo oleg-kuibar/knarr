@@ -101,4 +101,18 @@ describe("computeContentHash", () => {
 
     expect(overriddenHash).not.toBe(sourceHash);
   });
+
+  it("includes content overrides for files absent from the physical file list", async () => {
+    const file = join(tempDir, "index.js");
+    await writeFile(file, "export {};");
+
+    const sourceHash = await computeContentHash([file], tempDir);
+    const overriddenHash = await computeContentHash(
+      [file],
+      tempDir,
+      new Map([["package.json", '{"name":"pkg","version":"1.0.0"}']])
+    );
+
+    expect(overriddenHash).not.toBe(sourceHash);
+  });
 });

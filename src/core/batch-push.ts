@@ -67,10 +67,12 @@ export async function doPushAll(
     }
   }
 
-  consola.success(
-    `Pushed ${success}/${ordered.length} packages in ${timer.elapsed()}${failed > 0 ? ` (${failed} failed)` : ""}`
-  );
+  const summaryMessage =
+    `Pushed ${success}/${ordered.length} packages in ${timer.elapsed()}` +
+    (failed > 0 ? ` (${failed} failed)` : "");
   if (failed > 0) {
+    consola.warn(summaryMessage);
     throw new Error(`Failed to push ${failed} workspace package(s)`);
   }
+  consola.success(summaryMessage);
 }
