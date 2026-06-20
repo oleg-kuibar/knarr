@@ -743,6 +743,43 @@ describe("yarn support", () => {
     expect(await exists(join(yarnStorePkgDir, "dist", "index.js"))).toBe(true);
   });
 
+  it("recreates missing yarn pnpm-linker package symlinks", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "yarn.lock"), "");
+    await writeFile(join(testConsumer, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+
+    const yarnStorePkgDir = join(
+      testConsumer,
+      "node_modules",
+      ".store",
+      "test-lib-npm-1.0.0-abcdef1234",
+      "package"
+    );
+    await mkdir(yarnStorePkgDir, { recursive: true });
+    await writeFile(join(yarnStorePkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "yarn");
+
+    expect(result.copied).toBeGreaterThan(0);
+    const directEntry = await lstat(join(testConsumer, "node_modules", "test-lib"));
+    expect(directEntry.isSymbolicLink()).toBe(true);
+    expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
+    expect(await exists(join(yarnStorePkgDir, "dist", "index.js"))).toBe(true);
+  });
+
   it("injects directly for yarn node-modules linker", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
@@ -831,6 +868,9 @@ describe("pnpm injection", () => {
     const injectedFile = join(pnpmPkgDir, "dist", "index.js");
     expect(await exists(injectedFile)).toBe(true);
     expect(await readFile(injectedFile, "utf-8")).toBe('module.exports = "hello";');
+    const directEntry = await lstat(join(testConsumer, "node_modules", "test-lib"));
+    expect(directEntry.isSymbolicLink()).toBe(true);
+    expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
   });
 
   it("honors pnpm virtualStoreDir metadata outside node_modules", async () => {
@@ -964,6 +1004,9 @@ describe("pnpm injection", () => {
     const result = await inject(entry!, testConsumer, "pnpm");
     expect(result.copied).toBeGreaterThan(0);
     expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
+    const directEntry = await lstat(join(testConsumer, "node_modules", "@my-scope", "ui-kit"));
+    expect(directEntry.isSymbolicLink()).toBe(true);
+    expect(await exists(join(testConsumer, "node_modules", "@my-scope", "ui-kit", "dist", "index.js"))).toBe(true);
   });
 
   it("matches exact version when multiple versions exist in .pnpm/", async () => {
@@ -1045,9 +1088,48 @@ describe("pnpm injection", () => {
 
       expect(result.copied).toBeGreaterThan(0);
       expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
+      const directEntry = await lstat(join(aliasConsumer, "node_modules", "test-lib"));
+      expect(directEntry.isSymbolicLink()).toBe(true);
+      expect(await exists(join(aliasConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
     } finally {
       await rm(aliasParent, { recursive: true, force: true });
     }
+  });
+
+  it("repairs dangling pnpm package symlinks when the virtual store entry exists", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+    const pnpmPkgDir = join(
+      testConsumer,
+      "node_modules",
+      ".pnpm",
+      "test-lib@1.0.0",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(pnpmPkgDir, { recursive: true });
+    await writeFile(join(pnpmPkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+    await symlink("missing-target", join(testConsumer, "node_modules", "test-lib"), "dir");
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "pnpm");
+
+    expect(result.copied).toBeGreaterThan(0);
+    const directEntry = await lstat(join(testConsumer, "node_modules", "test-lib"));
+    expect(directEntry.isSymbolicLink()).toBe(true);
+    expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
   });
 
   it("accepts direct package directories when the consumer path resolves through a symlink", async () => {

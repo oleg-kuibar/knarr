@@ -1,5 +1,5 @@
-import { lstat, readFile, readdir, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { lstat, readFile, readdir, realpath, rm, symlink } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { consola } from "../utils/console.js";
 import type { PackageJson, PackageManager, StoreEntry } from "../types.js";
 import { getNodeModulesPackagePath, getConsumerBackupPath } from "../utils/paths.js";
@@ -12,7 +12,8 @@ import {
   isNodeError,
 } from "../utils/fs.js";
 import { createBinLinks, removeBinLinks } from "../utils/bin-linker.js";
-import { verbose } from "../utils/logger.js";
+import { isDryRun, verbose } from "../utils/logger.js";
+import { recordMutation } from "../utils/dry-run.js";
 import {
   detectYarnNodeLinker,
   detectYarnPnpmStoreFolder,
@@ -49,7 +50,8 @@ export async function inject(
     consumerPath,
     storeEntry.name,
     pm,
-    storeEntry.version
+    storeEntry.version,
+    { repairMissingLink: true }
   );
 
   verbose(`[inject] ${storeEntry.name}@${storeEntry.version} → ${targetDir}`);
@@ -185,7 +187,7 @@ export async function resolveInjectionTarget(
   packageName: string,
   pm: PackageManager,
   version?: string,
-  options: { warnOnFallback?: boolean } = {}
+  options: { warnOnFallback?: boolean; repairMissingLink?: boolean } = {}
 ): Promise<string> {
   const directPath = getNodeModulesPackagePath(consumerPath, packageName);
   const yarnLinker = pm === "yarn" ? await detectYarnNodeLinker(consumerPath) : null;
@@ -252,6 +254,9 @@ export async function resolveInjectionTarget(
         );
         if (candidate) {
           verbose(`[inject] yarn-pnpm: found in virtual store → ${candidate}`);
+          if (options.repairMissingLink) {
+            await repairMissingVirtualStoreLink(directPath, candidate, packageName, storeKind);
+          }
           return candidate;
         }
       }
@@ -273,6 +278,9 @@ export async function resolveInjectionTarget(
           );
           if (candidate) {
             verbose(`[inject] pnpm: exact version match in virtual store → ${candidate}`);
+            if (options.repairMissingLink) {
+              await repairMissingVirtualStoreLink(directPath, candidate, packageName, storeKind);
+            }
             return candidate;
           }
         }
@@ -288,6 +296,9 @@ export async function resolveInjectionTarget(
             );
             if (candidate) {
               verbose(`[inject] pnpm: found in virtual store → ${candidate}`);
+              if (options.repairMissingLink) {
+                await repairMissingVirtualStoreLink(directPath, candidate, packageName, storeKind);
+              }
               return candidate;
             }
           }
@@ -316,6 +327,48 @@ async function resolvePackageEntrySymlink(
   const linkStat = await lstat(linkPath);
   if (!linkStat.isSymbolicLink()) return null;
   return realpath(linkPath);
+}
+
+async function repairMissingVirtualStoreLink(
+  directPath: string,
+  targetDir: string,
+  packageName: string,
+  storeKind: "pnpm" | "yarn-pnpm"
+): Promise<void> {
+  let removeDanglingSymlink = false;
+  try {
+    const directStat = await lstat(directPath);
+    if (!directStat.isSymbolicLink()) return;
+    removeDanglingSymlink = true;
+  } catch (err) {
+    if (!isNodeError(err) || err.code !== "ENOENT") throw err;
+  }
+
+  const linkParent = dirname(directPath);
+  if (isDryRun()) {
+    const targetRelative = relative(linkParent, targetDir);
+    verbose(
+      `[inject] ${storeKindLabel(storeKind)}: would restore node_modules symlink for ${packageName} → ${targetRelative}`
+    );
+    recordMutation({
+      type: "write",
+      path: directPath,
+      dest: targetDir,
+      detail: `${storeKindLabel(storeKind)} package symlink`,
+    });
+    return;
+  }
+
+  await ensureDir(linkParent);
+  const linkParentReal = await realpath(linkParent).catch(() => linkParent);
+  const targetRelative = relative(linkParentReal, targetDir);
+  verbose(
+    `[inject] ${storeKindLabel(storeKind)}: restoring node_modules symlink for ${packageName} → ${targetRelative}`
+  );
+  if (removeDanglingSymlink) {
+    await rm(directPath, { force: true });
+  }
+  await symlink(targetRelative, directPath, "dir");
 }
 
 async function resolvePnpmCandidate(
