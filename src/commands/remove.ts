@@ -121,13 +121,11 @@ export async function removeSinglePackage(
 ): Promise<void> {
   verbose(`[remove] Removing ${packageName}`);
 
-  // Remove from node_modules
-  await removeInjected(consumerPath, packageName, link.packageManager);
-
   // Restore backup if it exists
+  let restored = false;
   if (link.backupExists) {
     try {
-      const restored = await restoreBackup(
+      restored = await restoreBackup(
         consumerPath,
         packageName,
         link.packageManager
@@ -141,6 +139,11 @@ export async function removeSinglePackage(
         `Run your package manager's install command to restore it.`
       );
     }
+  }
+
+  // Remove from node_modules when there is no original package to restore.
+  if (!restored) {
+    await removeInjected(consumerPath, packageName, link.packageManager);
   }
 
   // Auto-update bundler configs

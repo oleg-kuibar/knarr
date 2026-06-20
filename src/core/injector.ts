@@ -110,8 +110,19 @@ export async function restoreBackup(
   if (!(await exists(backupDir))) return false;
 
   const targetDir = await resolveInjectionTarget(consumerPath, packageName, pm);
+  const currentPkg = await readPackageJson(targetDir);
+  if (currentPkg) {
+    await removeBinLinks(consumerPath, currentPkg);
+  }
   await removeDir(targetDir);
   await copyDir(backupDir, targetDir);
+  const restoredPkg = await readPackageJson(targetDir);
+  if (restoredPkg) {
+    const binLinks = await createBinLinks(consumerPath, packageName, restoredPkg);
+    if (binLinks > 0) {
+      verbose(`[restore] Restored ${binLinks} original bin link(s) for ${packageName}`);
+    }
+  }
   await removeDir(backupDir);
   return true;
 }

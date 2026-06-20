@@ -328,6 +328,59 @@ describe("backup and restore", () => {
     expect(restored).toBe(true);
     expect(await readFile(join(nmDir, "index.js"), "utf-8")).toBe("original");
   });
+
+  it("restores original bin links when restoring a backup", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject, backupExisting, restoreBackup } = await import(
+      "../core/injector.js"
+    );
+    const { createBinLinks } = await import("../utils/bin-linker.js");
+
+    const nmDir = join(testConsumer, "node_modules", "test-lib");
+    await mkdir(join(nmDir, "bin"), { recursive: true });
+    await writeFile(
+      join(nmDir, "package.json"),
+      JSON.stringify({
+        name: "test-lib",
+        version: "1.0.0",
+        bin: { "orig-cli": "bin/orig.js" },
+      })
+    );
+    await writeFile(join(nmDir, "bin", "orig.js"), '#!/usr/bin/env node\nconsole.log("original");');
+    await createBinLinks(testConsumer, "test-lib", {
+      name: "test-lib",
+      version: "1.0.0",
+      bin: { "orig-cli": "bin/orig.js" },
+    });
+
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({
+        name: "test-lib",
+        version: "1.0.0",
+        main: "dist/index.js",
+        files: ["dist"],
+        bin: { "knarr-cli": "dist/cli.js" },
+      })
+    );
+    await writeFile(join(testLib, "dist", "cli.js"), '#!/usr/bin/env node\nconsole.log("knarr");');
+
+    const hasBackup = await backupExisting(testConsumer, "test-lib", "npm");
+    expect(hasBackup).toBe(true);
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    await inject(entry!, testConsumer, "npm");
+
+    expect(await exists(join(testConsumer, "node_modules", ".bin", "orig-cli"))).toBe(false);
+    expect(await exists(join(testConsumer, "node_modules", ".bin", "knarr-cli"))).toBe(true);
+
+    const restored = await restoreBackup(testConsumer, "test-lib", "npm");
+    expect(restored).toBe(true);
+    expect(await exists(join(testConsumer, "node_modules", ".bin", "orig-cli"))).toBe(true);
+    expect(await exists(join(testConsumer, "node_modules", ".bin", "knarr-cli"))).toBe(false);
+  });
 });
 
 describe("rollback", () => {
@@ -1109,6 +1162,58 @@ describe("pnpm injection", () => {
     // Should fall back to direct node_modules path
     const directFile = join(testConsumer, "node_modules", "test-lib", "dist", "index.js");
     expect(await exists(directFile)).toBe(true);
+  });
+
+  it("remove restores backups into pnpm virtual store without replacing the top-level symlink", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject, backupExisting } = await import("../core/injector.js");
+    const { removeSinglePackage } = await import("../commands/remove.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+
+    const pnpmPkgDir = join(
+      testConsumer,
+      "node_modules",
+      ".pnpm",
+      "test-lib@1.0.0",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(pnpmPkgDir, { recursive: true });
+    await writeFile(join(pnpmPkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+    await writeFile(join(pnpmPkgDir, "index.js"), "original");
+    await symlink(
+      join(".pnpm", "test-lib@1.0.0", "node_modules", "test-lib"),
+      join(testConsumer, "node_modules", "test-lib"),
+      "dir"
+    );
+
+    const hasBackup = await backupExisting(testConsumer, "test-lib", "pnpm");
+    expect(hasBackup).toBe(true);
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    await inject(entry!, testConsumer, "pnpm");
+    expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
+
+    await removeSinglePackage(testConsumer, "test-lib", {
+      backupExists: true,
+      packageManager: "pnpm",
+    });
+
+    const topLevelEntry = await lstat(join(testConsumer, "node_modules", "test-lib"));
+    expect(topLevelEntry.isSymbolicLink()).toBe(true);
+    expect(await readFile(join(pnpmPkgDir, "index.js"), "utf-8")).toBe("original");
+    expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(false);
   });
 });
 
