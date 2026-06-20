@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+enable_free_tier: true
+focus: "high"
+tone_instructions: "Prioritize correctness, data safety, cross-platform behavior, and actionable fixes. Avoid nitpicks unless they prevent real bugs or maintainer confusion."
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  review_details: false
+  poem: false
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 2
+    base_branches:
+      - "master"
+    ignore_title_keywords:
+      - "WIP"
+      - "[skip review]"
+      - "DO NOT MERGE"
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "github-actions[bot]"
+  path_filters:
+    - "!dist/**"
+    - "!coverage/**"
+    - "!bench-results.json"
+    - "!docs/assets/**"
+    - "!examples/**/dist/**"
+    - "!examples/**/node_modules/**"
+    - "!examples/**/package-lock.json"
+    - "!examples/**/bun.lock"
+  path_instructions:
+    - path: "src/core/**"
+      instructions: |
+        Focus on store, publish, inject, push, watch, rollback, and tracker correctness.
+        Flag data loss risks, stale state, mutation outside intended roots, broken dry-run behavior,
+        lifecycle hook ordering regressions, watch-mode races, and missing integration coverage.
+    - path: "src/utils/**"
+      instructions: |
+        Check filesystem, hashing, package-manager detection, workspace graph, config rewriting,
+        bin-linking, and bundler cache changes for cross-platform path handling and edge cases.
+        Config rewriting should preserve strings, comments, nested brackets, and complex-config fallbacks.
+    - path: "src/commands/**"
+      instructions: |
+        Verify CLI behavior, JSON stdout stability, human-readable logging, dry-run mutation summaries,
+        and clear error suggestions. Public flags or output changes should have docs updates.
+    - path: "docs/**"
+      instructions: |
+        Check docs for accuracy against current CLI/API behavior and keep examples consistent with
+        pnpm for this repo unless they intentionally demonstrate npm, yarn, or bun consumers.
+    - path: "examples/**"
+      instructions: |
+        Treat examples as executable fixtures. Flag changes that break e2e setup, package-manager
+        isolation, or the built package outputs expected by tests.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+
+chat:
+  allow_non_org_members: true
+  auto_reply: true
+  art: false
