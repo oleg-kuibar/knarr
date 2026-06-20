@@ -11,7 +11,7 @@ export async function detectBuildCommand(
   packageDir: string,
   pm: PackageManager,
 ): Promise<string | null> {
-  const runPrefix = pm === "npm" ? "npm run " : `${pm} `;
+  const runPrefix = pm === "npm" || pm === "bun" ? `${pm} run ` : `${pm} `;
   try {
     const pkg = JSON.parse(
       await readFile(join(packageDir, "package.json"), "utf-8"),

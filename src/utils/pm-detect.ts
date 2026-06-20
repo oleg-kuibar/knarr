@@ -12,6 +12,7 @@ const LOCKFILES: [string, PackageManager][] = [
   ["bun.lock", "bun"],
   ["yarn.lock", "yarn"],
   ["package-lock.json", "npm"],
+  ["npm-shrinkwrap.json", "npm"],
 ];
 
 /**
@@ -96,7 +97,11 @@ export async function detectYarnNodeLinker(
       if (trimmed.startsWith("#") || !trimmed.includes("nodeLinker")) continue;
       const match = trimmed.match(/^nodeLinker:\s*(.+)$/);
       if (match) {
-        const value = match[1].trim().replace(/^["']|["']$/g, "");
+        const value = match[1]
+          .trim()
+          .replace(/\s+#.*$/, "")
+          .trim()
+          .replace(/^["']|["']$/g, "");
         if (value === "node-modules" || value === "pnpm" || value === "pnp") {
           return value;
         }

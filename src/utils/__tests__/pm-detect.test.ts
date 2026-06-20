@@ -20,6 +20,11 @@ describe("detectPackageManager", () => {
     expect(await detectPackageManager(tempDir)).toBe("npm");
   });
 
+  it("detects npm from npm-shrinkwrap.json", async () => {
+    await writeFile(join(tempDir, "npm-shrinkwrap.json"), "{}");
+    expect(await detectPackageManager(tempDir)).toBe("npm");
+  });
+
   it("detects pnpm from pnpm-lock.yaml", async () => {
     await writeFile(join(tempDir, "pnpm-lock.yaml"), "");
     expect(await detectPackageManager(tempDir)).toBe("pnpm");
@@ -111,6 +116,14 @@ describe("detectYarnNodeLinker", () => {
 
   it("handles quoted values", async () => {
     await writeFile(join(tempDir, ".yarnrc.yml"), 'nodeLinker: "node-modules"\n');
+    expect(await detectYarnNodeLinker(tempDir)).toBe("node-modules");
+  });
+
+  it("handles inline comments after nodeLinker values", async () => {
+    await writeFile(
+      join(tempDir, ".yarnrc.yml"),
+      'nodeLinker: "node-modules" # required for knarr\n'
+    );
     expect(await detectYarnNodeLinker(tempDir)).toBe("node-modules");
   });
 
