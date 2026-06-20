@@ -1674,6 +1674,41 @@ describe("pnpm injection", () => {
     }
   });
 
+  it("refuses .pnpm fallback candidates with the wrong package identity", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+    const wrongPackageDir = join(
+      testConsumer,
+      "node_modules",
+      ".pnpm",
+      "test-lib@1.0.0",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(wrongPackageDir, { recursive: true });
+    await writeFile(
+      join(wrongPackageDir, "package.json"),
+      JSON.stringify({ name: "other-lib", version: "1.0.0" })
+    );
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+
+    await expect(inject(entry!, testConsumer, "pnpm")).rejects.toThrow("other-lib");
+    expect(await exists(join(wrongPackageDir, "dist", "index.js"))).toBe(false);
+  });
+
   it("does not fall back to a different .pnpm version for declared packages", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");

@@ -343,6 +343,7 @@ export async function resolveInjectionTarget(
           const candidate = await resolvePnpmCandidate(
             pnpmDir,
             packageName,
+            version,
             join(pnpmDir, exactEntry, "node_modules", packageName)
           );
           if (candidate) {
@@ -361,6 +362,7 @@ export async function resolveInjectionTarget(
             const candidate = await resolvePnpmCandidate(
               pnpmDir,
               packageName,
+              version,
               join(pnpmDir, entry, "node_modules", packageName)
             );
             if (candidate) {
@@ -484,6 +486,7 @@ async function repairMissingVirtualStoreLink(
 async function resolvePnpmCandidate(
   pnpmDir: string,
   packageName: string,
+  version: string | undefined,
   candidatePath: string
 ): Promise<string | null> {
   if (!isPnpmVirtualStorePackagePathFromRoot(pnpmDir, packageName, candidatePath)) {
@@ -500,6 +503,7 @@ async function resolvePnpmCandidate(
         `Refusing to inject ${packageName}: virtual store candidate resolves outside a configured pnpm virtual store (${realPath})`
       );
     }
+    await validateResolvedPackageIdentity(realPath, packageName, version, "pnpm");
     return realPath;
   } catch (err) {
     if (isNodeError(err) && err.code === "ENOENT") return null;
