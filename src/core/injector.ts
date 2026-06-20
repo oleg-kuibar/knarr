@@ -17,6 +17,7 @@ import { recordMutation } from "../utils/dry-run.js";
 import {
   detectYarnNodeLinker,
   detectYarnPnpmStoreFolder,
+  isYarnPnpProject,
 } from "../utils/pm-detect.js";
 import { invalidateBundlerCache } from "../utils/bundler-cache.js";
 
@@ -106,19 +107,20 @@ export async function backupExisting(
 export async function restoreBackup(
   consumerPath: string,
   packageName: string,
-  pm: PackageManager
+  pm: PackageManager,
+  version?: string
 ): Promise<boolean> {
   const backupDir = getConsumerBackupPath(consumerPath, packageName);
   if (!(await exists(backupDir))) return false;
 
-  const targetDir = await resolveInjectionTarget(consumerPath, packageName, pm);
+  const targetDir = await resolveInjectionTarget(consumerPath, packageName, pm, version);
   const currentPkg = await readPackageJson(targetDir);
   if (currentPkg) {
     await removeBinLinks(consumerPath, currentPkg);
   }
   await removeDir(targetDir);
   await copyDir(backupDir, targetDir);
-  const restoredPkg = await readPackageJson(targetDir);
+  const restoredPkg = await readPackageJson(isDryRun() ? backupDir : targetDir);
   if (restoredPkg) {
     const binLinks = await createBinLinks(consumerPath, packageName, restoredPkg);
     if (binLinks > 0) {
@@ -135,9 +137,10 @@ export async function restoreBackup(
 export async function removeInjected(
   consumerPath: string,
   packageName: string,
-  pm: PackageManager
+  pm: PackageManager,
+  version?: string
 ): Promise<void> {
-  const targetDir = await resolveInjectionTarget(consumerPath, packageName, pm);
+  const targetDir = await resolveInjectionTarget(consumerPath, packageName, pm, version);
   const pkg = await readPackageJson(targetDir);
   if (pkg) {
     await removeBinLinks(consumerPath, pkg);
@@ -152,7 +155,8 @@ export async function removeInjected(
  */
 export async function checkMissingDeps(
   storeEntry: StoreEntry,
-  consumerPath: string
+  consumerPath: string,
+  pm?: PackageManager
 ): Promise<string[]> {
   const pkg = await readPackageJson(storeEntry.packageDir);
   if (!pkg) return [];
@@ -172,10 +176,53 @@ export async function checkMissingDeps(
   const results = await Promise.all(
     depNames.map(async (dep) => ({
       dep,
-      installed: await exists(join(consumerPath, "node_modules", dep)),
+      installed: await isDependencyInstalledForPackage(dep, storeEntry, consumerPath, pm),
     }))
   );
   return results.filter((r) => !r.installed).map((r) => r.dep);
+}
+
+async function isDependencyInstalledForPackage(
+  dependencyName: string,
+  storeEntry: StoreEntry,
+  consumerPath: string,
+  pm?: PackageManager
+): Promise<boolean> {
+  if (await exists(join(consumerPath, "node_modules", dependencyName))) {
+    return true;
+  }
+
+  if (!pm) return false;
+
+  const targetDir = await resolveInjectionTarget(
+    consumerPath,
+    storeEntry.name,
+    pm,
+    storeEntry.version,
+    { warnOnFallback: false }
+  );
+  return dependencyVisibleFromDirectory(targetDir, dependencyName);
+}
+
+async function dependencyVisibleFromDirectory(
+  startDir: string,
+  dependencyName: string
+): Promise<boolean> {
+  const realStart = await realpath(startDir).catch((err: unknown) => {
+    if (isNodeError(err) && err.code === "ENOENT") return startDir;
+    throw err;
+  });
+
+  let dir = realStart;
+  for (;;) {
+    if (await exists(join(dir, "node_modules", dependencyName))) {
+      return true;
+    }
+
+    const parent = dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
 }
 
 /**
@@ -190,6 +237,12 @@ export async function resolveInjectionTarget(
   options: { warnOnFallback?: boolean; repairMissingLink?: boolean } = {}
 ): Promise<string> {
   const directPath = getNodeModulesPackagePath(consumerPath, packageName);
+  if (pm === "yarn" && await isYarnPnpProject(consumerPath)) {
+    throw new Error(
+      "Yarn PnP mode is not compatible with Knarr. Set `nodeLinker: node-modules` or `nodeLinker: pnpm` in .yarnrc.yml, then run `yarn install`."
+    );
+  }
+
   const yarnLinker = pm === "yarn" ? await detectYarnNodeLinker(consumerPath) : null;
   const storeKind =
     pm === "pnpm" ? "pnpm" : yarnLinker === "pnpm" ? "yarn-pnpm" : null;
@@ -214,6 +267,7 @@ export async function resolveInjectionTarget(
           `Refusing to inject ${packageName}: node_modules entry resolves outside a configured ${storeKindLabel(storeKind)} virtual store (${realPath})`
         );
       }
+      await validateResolvedPackageIdentity(realPath, packageName, version, storeKind);
       verbose(`[inject] ${storeKindLabel(storeKind)}: resolved symlink → ${realPath}`);
       return realPath;
     }
@@ -327,6 +381,26 @@ async function resolvePackageEntrySymlink(
   const linkStat = await lstat(linkPath);
   if (!linkStat.isSymbolicLink()) return null;
   return realpath(linkPath);
+}
+
+async function validateResolvedPackageIdentity(
+  targetDir: string,
+  packageName: string,
+  version: string | undefined,
+  storeKind: "pnpm" | "yarn-pnpm"
+): Promise<void> {
+  const pkg = await readPackageJson(targetDir);
+  if (!pkg) return;
+  if (pkg.name && pkg.name !== packageName) {
+    throw new Error(
+      `Refusing to inject ${packageName}: ${storeKindLabel(storeKind)} target contains package "${pkg.name}"`
+    );
+  }
+  if (version && pkg.version && pkg.version !== version) {
+    throw new Error(
+      `Refusing to inject ${packageName}@${version}: ${storeKindLabel(storeKind)} target contains version ${pkg.version}`
+    );
+  }
 }
 
 async function repairMissingVirtualStoreLink(

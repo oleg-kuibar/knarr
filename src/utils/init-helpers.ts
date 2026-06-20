@@ -7,7 +7,7 @@ import { getConsumerStatePath, getConsumerKnarrDir } from "./paths.js";
 import { readConsumerState, writeConsumerState } from "../core/tracker.js";
 import type { PackageManager } from "../types.js";
 
-export const POSTINSTALL_RESTORE_COMMAND = "knarr restore --silent || true";
+export const POSTINSTALL_RESTORE_COMMAND = 'knarr restore --silent || node -e "process.exit(0)"';
 
 /**
  * Ensure .knarr/ is in .gitignore. Returns true if it was added.

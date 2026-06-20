@@ -1,5 +1,3 @@
-import { spawn } from "node:child_process";
-import { platform } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
@@ -12,13 +10,18 @@ import { detectPackageManager, isYarnPnpProject } from "../utils/pm-detect.js";
 import { detectBuildCommand } from "../utils/build-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { ensureConsumerInit } from "../utils/init-helpers.js";
+import {
+  buildDevInstallCommand,
+  buildInstallCommand,
+  runShellCommand,
+} from "../utils/pm-commands.js";
 import { addToTranspilePackages } from "../utils/nextjs-config.js";
 import { getConsumerStatePath } from "../utils/paths.js";
 import { Timer } from "../utils/timer.js";
 import { output } from "../utils/output.js";
 import { errorWithSuggestion } from "../utils/errors.js";
 import { isDryRun, verbose, isJsonOutput } from "../utils/logger.js";
-import { printDryRunReport, recordMutation } from "../utils/dry-run.js";
+import { printDryRunReport } from "../utils/dry-run.js";
 import { warnVersionMismatch } from "../utils/validators.js";
 import {
   validatePackageName as validatePackageNameStrict,
@@ -68,6 +71,21 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
     }
   }
 
+  const pm = await detectPackageManager(consumerPath);
+  if (pm === "yarn") {
+    if (await isYarnPnpProject(consumerPath)) {
+      consola.error(
+        `Yarn PnP mode is not compatible with knarr.\n\n` +
+        `knarr works by copying files into node_modules/, but PnP eliminates\n` +
+        `node_modules/ entirely. To use knarr with Yarn Berry, add this to\n` +
+        `.yarnrc.yml:\n\n` +
+        `  nodeLinker: node-modules\n\n` +
+        `Then run: yarn install`
+      );
+      process.exit(1);
+    }
+  }
+
   if (options.from) {
     const fromPath = resolve(options.from);
     sourcePath = fromPath;
@@ -95,26 +113,11 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
   }
 
   const needsInit = !(await exists(getConsumerStatePath(consumerPath)));
-  const pm = await detectPackageManager(consumerPath);
   if (needsInit) {
     await ensureConsumerInit(consumerPath, pm);
     consola.success("Auto-initialized knarr (consumer mode)");
   }
   consola.info(`Detected package manager: ${pm}`);
-
-  if (pm === "yarn") {
-    if (await isYarnPnpProject(consumerPath)) {
-      consola.error(
-        `Yarn PnP mode is not compatible with knarr.\n\n` +
-        `knarr works by copying files into node_modules/, but PnP eliminates\n` +
-        `node_modules/ entirely. To use knarr with Yarn Berry, add this to\n` +
-        `.yarnrc.yml:\n\n` +
-        `  nodeLinker: node-modules\n\n` +
-        `Then run: yarn install`
-      );
-      process.exit(1);
-    }
-  }
 
   const existingLink = await getLink(consumerPath, packageName);
   if (existingLink) {
@@ -305,13 +308,8 @@ async function handleMissingDeps(
   pm: PackageManager,
   yes: boolean,
 ): Promise<void> {
-  const missing = await checkMissingDeps(entry, consumerPath);
+  const missing = await checkMissingDeps(entry, consumerPath, pm);
   if (missing.length === 0) return;
-
-  if (isJsonOutput()) {
-    verbose(`[add] Missing transitive deps (json mode): ${missing.join(", ")}`);
-    return;
-  }
 
   if (yes) {
     const cmd = buildInstallCommand(pm, missing);
@@ -326,6 +324,11 @@ async function handleMissingDeps(
     } else if (!ok) {
       consola.warn(`Install failed. Run manually: ${cmd}`);
     }
+    return;
+  }
+
+  if (isJsonOutput()) {
+    verbose(`[add] Missing transitive deps (json mode): ${missing.join(", ")}`);
     return;
   }
 
@@ -405,55 +408,6 @@ async function configureBundler(
   }
 }
 
-function buildInstallCommand(pm: PackageManager, deps: string[]): string {
-  for (const dep of deps) validatePackageNameStrict(dep);
-  const joined = deps.join(" ");
-  switch (pm) {
-    case "pnpm":
-      return `pnpm add ${joined}`;
-    case "yarn":
-      return `yarn add ${joined}`;
-    case "bun":
-      return `bun add ${joined}`;
-    default:
-      return `npm install ${joined}`;
-  }
-}
-
-function buildDevInstallCommand(pm: PackageManager, dep: string): string {
-  switch (pm) {
-    case "pnpm":
-      return `pnpm add -D ${dep}`;
-    case "yarn":
-      return `yarn add -D ${dep}`;
-    case "bun":
-      return `bun add -d ${dep}`;
-    default:
-      return `npm install -D ${dep}`;
-  }
-}
-
 function runInstallCommand(cmd: string, cwd: string): Promise<boolean> {
   return runShellCommand(cmd, cwd);
-}
-
-function runShellCommand(cmd: string, cwd: string): Promise<boolean> {
-  if (isDryRun()) {
-    recordMutation({ type: "command-skip", path: cwd, detail: cmd });
-    return Promise.resolve(true);
-  }
-
-  return new Promise((resolve) => {
-    const isWin = platform() === "win32";
-    const shell = isWin ? "cmd" : "sh";
-    const shellFlag = isWin ? "/c" : "-c";
-
-    const child = spawn(shell, [shellFlag, cmd], {
-      cwd,
-      stdio: "inherit",
-    });
-
-    child.on("close", (code) => resolve(code === 0));
-    child.on("error", () => resolve(false));
-  });
 }

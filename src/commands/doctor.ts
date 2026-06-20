@@ -420,7 +420,7 @@ export async function runDoctorDiagnostics(
   if (await exists(pkgPath)) {
     const pkg = await readJsonFile(pkgPath);
     const postinstall = pkg?.scripts?.postinstall;
-    if (typeof postinstall === "string" && postinstall.includes("knarr")) {
+    if (typeof postinstall === "string" && usesKnarrRestoreCommand(postinstall)) {
       if (await canVerifyKnarrForPostinstall(consumerPath, pkg, postinstall)) {
         await addCheck({
           name: "Postinstall restore",
@@ -645,7 +645,11 @@ function declaresKnarrDependency(pkg: Record<string, any> | null): boolean {
 }
 
 function usesSelfResolvingKnarrCommand(postinstall: string): boolean {
-  return /\b(?:npx(?:\s+--yes|\s+-y)?|pnpm\s+dlx|yarn\s+dlx|bunx)\s+knarr\b/.test(postinstall);
+  return /\b(?:npx(?:\s+--yes|\s+-y)?|pnpm\s+dlx|yarn\s+dlx|bunx)\s+knarr\s+restore(?:\s|$)/.test(postinstall);
+}
+
+function usesKnarrRestoreCommand(postinstall: string): boolean {
+  return /(?:^|[;&|()\s])(?:(?:npx(?:\s+(?:--yes|-y))?|pnpm\s+dlx|yarn\s+dlx|bunx)\s+)?knarr\s+restore(?:\s|$)/.test(postinstall);
 }
 
 async function readJsonFile(path: string): Promise<Record<string, any> | null> {

@@ -216,7 +216,7 @@ knarr doctor
 
 ### After pnpm install
 
-Running `pnpm install` in a workspace can wipe `node_modules/` overrides. If `knarr init` was run in each consumer, the `postinstall` hook (`knarr restore --silent || true`) will re-inject automatically when `knarr` is available on the install script `PATH`.
+Running `pnpm install` in a workspace can wipe `node_modules/` overrides. If `knarr init` was run in each consumer, the `postinstall` hook (`knarr restore --silent || node -e "process.exit(0)"`) will re-inject automatically when `knarr` is available on the install script `PATH`.
 
 If you need to re-inject manually:
 

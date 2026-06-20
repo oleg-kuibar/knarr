@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "bun run src/main.ts",
-    "postinstall": "knarr restore --silent || true",
+    "postinstall": "knarr restore --silent || node -e \"process.exit(0)\"",
     "knarr:add": "knarr add @example/ui-kit"
   },
   "devDependencies": {

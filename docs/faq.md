@@ -49,7 +49,7 @@ No. Knarr never modifies the consumer's `package.json` or lockfile. The only pro
 
 - `.knarr/state.json` -- tracks which packages are linked (gitignored)
 - `.knarr/backups/` -- backup of original npm-installed packages (gitignored)
-- A `postinstall` script entry (`knarr restore --silent || true`) added by `knarr init`
+- A `postinstall` script entry (`knarr restore --silent || node -e "process.exit(0)"`) added by `knarr init`
 
 The `postinstall` script is the only change to `package.json`, and it is opt-in via `knarr init`. It does not affect dependency resolution or version specifiers.
 
@@ -171,4 +171,4 @@ Running `npm install` or `pnpm install` replaces files in `node_modules/`, which
 knarr restore
 ```
 
-If you ran `knarr init`, this can happen automatically via the `postinstall` hook. The hook runs `knarr restore --silent || true`, which re-injects all linked packages when `knarr` is available on the install script `PATH` (for example, installed globally or as a devDependency). The `|| true` ensures the install does not fail if Knarr is not available.
+If you ran `knarr init`, this can happen automatically via the `postinstall` hook. The hook runs `knarr restore --silent || node -e "process.exit(0)"`, which re-injects all linked packages when `knarr` is available on the install script `PATH` (for example, installed globally or as a devDependency). The Node fallback ensures the install does not fail if Knarr is not available.

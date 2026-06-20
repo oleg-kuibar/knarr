@@ -100,7 +100,7 @@ describe("doctor --fix", () => {
       JSON.stringify({
         name: "test-app",
         version: "1.0.0",
-        scripts: { postinstall: "knarr restore --silent || true" },
+        scripts: { postinstall: 'knarr restore --silent || node -e "process.exit(0)"' },
       })
     );
 
@@ -118,8 +118,44 @@ describe("doctor --fix", () => {
       JSON.stringify({
         name: "test-app",
         version: "1.0.0",
-        scripts: { postinstall: "knarr restore --silent || true" },
+        scripts: { postinstall: 'knarr restore --silent || node -e "process.exit(0)"' },
         devDependencies: { knarr: "^0.0.3" },
+      })
+    );
+
+    const result = await runDoctorDiagnostics(testConsumer);
+    const postinstall = result.results.find((r) => r.name === "Postinstall restore");
+
+    expect(postinstall?.status).toBe("pass");
+  });
+
+  it("does not treat unrelated knarr postinstall commands as restore hooks", async () => {
+    const { runDoctorDiagnostics } = await import("../commands/doctor.js");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        scripts: { postinstall: "knarr --version" },
+        devDependencies: { knarr: "^0.0.3" },
+      })
+    );
+
+    const result = await runDoctorDiagnostics(testConsumer);
+    const postinstall = result.results.find((r) => r.name === "Postinstall restore");
+
+    expect(postinstall?.status).toBe("warn");
+    expect(postinstall?.message).toContain("does not run knarr restore");
+  });
+
+  it("passes self-resolving postinstall restore commands", async () => {
+    const { runDoctorDiagnostics } = await import("../commands/doctor.js");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        scripts: { postinstall: "pnpm dlx knarr restore --silent" },
       })
     );
 

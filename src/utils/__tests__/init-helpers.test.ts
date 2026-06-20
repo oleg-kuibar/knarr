@@ -82,6 +82,8 @@ describe("addPostinstall", () => {
     expect(changed).toBe(true);
     expect(pkg.scripts.postinstall).toBe(POSTINSTALL_RESTORE_COMMAND);
     expect(pkg.scripts.postinstall).not.toContain("npx");
+    expect(pkg.scripts.postinstall).not.toContain("|| true");
+    expect(pkg.scripts.postinstall).toContain("node -e");
   });
 
   it("does not overwrite an existing postinstall hook", async () => {

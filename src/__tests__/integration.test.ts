@@ -90,6 +90,83 @@ describe("publish", () => {
     expect(meta.buildId).toMatch(/^[a-f0-9]{8}$/);
   });
 
+  it("stores the publishConfig.directory manifest", async () => {
+    const { publish } = await import("../core/publisher.js");
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({
+        name: "test-lib",
+        version: "1.0.0",
+        main: "src/index.js",
+        publishConfig: { directory: "dist" },
+      })
+    );
+    await writeFile(
+      join(testLib, "dist", "package.json"),
+      JSON.stringify({
+        name: "test-lib",
+        version: "1.0.0",
+        main: "index.js",
+        exports: { ".": "./index.js" },
+      })
+    );
+
+    await publish(testLib);
+
+    const storePkg = JSON.parse(
+      await readFile(
+        join(testKNARRHome, "store", "test-lib@1.0.0", "package", "package.json"),
+        "utf-8"
+      )
+    );
+    expect(storePkg.main).toBe("index.js");
+    expect(storePkg.exports["."]).toBe("./index.js");
+    expect(storePkg.publishConfig).toBeUndefined();
+  });
+
+  it("rewrites workspace versions from package.json workspaces", async () => {
+    const { publish } = await import("../core/publisher.js");
+
+    const root = await mkdtemp(join(tmpdir(), "KNARR-npm-ws-root-"));
+    const depDir = join(root, "packages", "dep-a");
+    const libDir = join(root, "packages", "lib");
+    await mkdir(join(depDir, "dist"), { recursive: true });
+    await mkdir(join(libDir, "dist"), { recursive: true });
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({ private: true, workspaces: ["packages/*"] })
+    );
+    await writeFile(
+      join(depDir, "package.json"),
+      JSON.stringify({ name: "dep-a", version: "2.3.4", files: ["dist"] })
+    );
+    await writeFile(join(depDir, "dist", "index.js"), "");
+    await writeFile(
+      join(libDir, "package.json"),
+      JSON.stringify({
+        name: "npm-ws-lib",
+        version: "1.0.0",
+        files: ["dist"],
+        dependencies: { "dep-a": "workspace:^" },
+      })
+    );
+    await writeFile(join(libDir, "dist", "index.js"), "");
+
+    try {
+      await publish(libDir);
+      const storePkg = JSON.parse(
+        await readFile(
+          join(testKNARRHome, "store", "npm-ws-lib@1.0.0", "package", "package.json"),
+          "utf-8"
+        )
+      );
+
+      expect(storePkg.dependencies["dep-a"]).toBe("^2.3.4");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("runs lifecycle hooks with local node_modules/.bin on PATH", async () => {
     const { publish } = await import("../core/publisher.js");
     await writeFile(
@@ -780,6 +857,39 @@ describe("yarn support", () => {
     expect(await exists(join(yarnStorePkgDir, "dist", "index.js"))).toBe(true);
   });
 
+  it("refuses stale yarn pnpm-linker symlinks to another package", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "yarn.lock"), "");
+    await writeFile(join(testConsumer, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+
+    const wrongStorePkgDir = join(
+      testConsumer,
+      "node_modules",
+      ".store",
+      "other-lib-npm-1.0.0-abcdef1234",
+      "package"
+    );
+    await mkdir(wrongStorePkgDir, { recursive: true });
+    await writeFile(
+      join(wrongStorePkgDir, "package.json"),
+      JSON.stringify({ name: "other-lib", version: "1.0.0" })
+    );
+    await symlink(
+      join(".store", "other-lib-npm-1.0.0-abcdef1234", "package"),
+      join(testConsumer, "node_modules", "test-lib"),
+      "dir"
+    );
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+
+    await expect(inject(entry!, testConsumer, "yarn")).rejects.toThrow("other-lib");
+    expect(await exists(join(wrongStorePkgDir, "dist", "index.js"))).toBe(false);
+  });
+
   it("injects directly for yarn node-modules linker", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
@@ -816,6 +926,21 @@ describe("yarn support", () => {
 
     const injectedFile = join(testConsumer, "node_modules", "test-lib", "dist", "index.js");
     expect(await exists(injectedFile)).toBe(true);
+  });
+
+  it("rejects yarn pnp before creating node_modules packages", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "yarn.lock"), "");
+    await writeFile(join(testConsumer, ".yarnrc.yml"), "nodeLinker: pnp\n");
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+
+    await expect(inject(entry!, testConsumer, "yarn")).rejects.toThrow("Yarn PnP");
+    expect(await exists(join(testConsumer, "node_modules", "test-lib"))).toBe(false);
   });
 
   it("detectYarnNodeLinker returns correct values in integration context", async () => {
@@ -1379,6 +1504,128 @@ describe("missing transitive deps", () => {
     });
 
     const missing = await checkMissingDeps(entry!, testConsumer);
+    expect(missing).toContain("not-installed");
+    expect(missing).not.toContain("lodash");
+  });
+
+  it("plans dependency install when --yes and --json are both set", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { addPackageToConsumer } = await import("../commands/add-flow.js");
+    const { getMutations, resetMutations } = await import("../utils/dry-run.js");
+    const originalCwd = process.cwd();
+    const originalArgv = [...process.argv];
+    const originalLog = console.log;
+
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({
+        name: "test-lib",
+        version: "1.0.0",
+        files: ["dist"],
+        dependencies: {
+          lodash: "^4.0.0",
+        },
+      })
+    );
+    await publish(testLib);
+
+    process.argv = ["node", "knarr", "--json", "--dry-run"];
+    initFlags();
+    resetMutations();
+    console.log = () => {};
+    process.chdir(testConsumer);
+    try {
+      await addPackageToConsumer({
+        packageArg: "test-lib",
+        yes: true,
+        emitOutput: false,
+      });
+
+      expect(getMutations()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "command-skip",
+            detail: "npm install lodash",
+          }),
+        ])
+      );
+    } finally {
+      process.chdir(originalCwd);
+      console.log = originalLog;
+      process.argv = originalArgv;
+      initFlags();
+      resetMutations();
+    }
+  });
+
+  it("recognizes deps installed in a pnpm virtual-store package context", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { checkMissingDeps } = await import("../core/injector.js");
+
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({
+        name: "test-lib",
+        version: "1.0.0",
+        files: ["dist"],
+        dependencies: {
+          lodash: "^4.0.0",
+          "not-installed": "^1.0.0",
+        },
+      })
+    );
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+
+    const packageRoot = join(
+      testConsumer,
+      "node_modules",
+      ".pnpm",
+      "test-lib@1.0.0",
+      "node_modules"
+    );
+    const testLibTarget = join(packageRoot, "test-lib");
+    const lodashTarget = join(
+      testConsumer,
+      "node_modules",
+      ".pnpm",
+      "lodash@4.17.21",
+      "node_modules",
+      "lodash"
+    );
+    await mkdir(testLibTarget, { recursive: true });
+    await mkdir(lodashTarget, { recursive: true });
+    await writeFile(
+      join(testLibTarget, "package.json"),
+      JSON.stringify({ name: "test-lib", version: "1.0.0" })
+    );
+    await writeFile(
+      join(lodashTarget, "package.json"),
+      JSON.stringify({ name: "lodash", version: "4.17.21" })
+    );
+    await symlink(
+      "../../lodash@4.17.21/node_modules/lodash",
+      join(packageRoot, "lodash"),
+      "dir"
+    );
+    await symlink(
+      join(".pnpm", "test-lib@1.0.0", "node_modules", "test-lib"),
+      join(testConsumer, "node_modules", "test-lib"),
+      "dir"
+    );
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+
+    const missing = await checkMissingDeps(entry!, testConsumer, "pnpm");
     expect(missing).toContain("not-installed");
     expect(missing).not.toContain("lodash");
   });

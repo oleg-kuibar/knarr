@@ -102,22 +102,31 @@ export async function publish(
   const filePkg = publishDir !== packageDir
     ? JSON.parse(await readFile(join(publishDir, "package.json"), "utf-8").catch(() => JSON.stringify(pkg))) as PackageJson
     : pkg;
+  if (!filePkg.name) throw new Error("publish package.json missing 'name' field");
+  if (!filePkg.version) throw new Error("publish package.json missing 'version' field");
+  validatePackageIdentity(filePkg.name, filePkg.version);
+  if (filePkg.private && !options.allowPrivate) {
+    throw new Error(
+      `Package "${filePkg.name}" is private. Use --private flag to publish private packages.`
+    );
+  }
+
   const files = await resolvePackFiles(publishDir, filePkg);
   if (files.length === 0) {
     throw new Error("No publishable files found");
   }
-  verbose(`[publish] Resolved ${files.length} files for ${pkg.name}@${pkg.version}`);
+  verbose(`[publish] Resolved ${files.length} files for ${filePkg.name}@${filePkg.version}`);
 
   // 4. Pre-load workspace versions and catalog definitions
-  await preloadWorkspaceVersions(pkg, packageDir);
-  await preloadCatalogs(pkg, packageDir);
+  await preloadWorkspaceVersions(filePkg, packageDir);
+  await preloadCatalogs(filePkg, packageDir);
 
   // 5. Compute the content hash from the exact package.json that will land in
   // the store, including workspace/catalog rewrites and publishConfig overrides.
-  let processedPkg = rewriteProtocolVersions(pkg);
+  let processedPkg = rewriteProtocolVersions(filePkg);
   processedPkg = applyPublishConfig(processedPkg);
   const contentOverrides = new Map<string, string | Buffer>();
-  if (processedPkg !== pkg || publishDir !== packageDir) {
+  if (processedPkg !== filePkg) {
     contentOverrides.set("package.json", JSON.stringify(processedPkg, null, 2));
   }
   const hashFiles = [...files];
@@ -131,12 +140,12 @@ export async function publish(
 
   // 6. Fast path: check if already up to date (no lock needed)
   if (!options.force) {
-    const existingMeta = await readMeta(pkg.name, pkg.version);
+    const existingMeta = await readMeta(filePkg.name, filePkg.version);
     if (existingMeta && existingMeta.contentHash === contentHash) {
-      consola.info(`${pkg.name}@${pkg.version} already up to date (no changes since last publish)`);
+      consola.info(`${filePkg.name}@${filePkg.version} already up to date (no changes since last publish)`);
       return {
-        name: pkg.name,
-        version: pkg.version,
+        name: filePkg.name,
+        version: filePkg.version,
         fileCount: files.length,
         skipped: true,
         contentHash,
@@ -146,19 +155,19 @@ export async function publish(
   }
 
   // 7. Acquire lock and copy files to store (prevents concurrent publish corruption)
-  const storeEntryDir = getStoreEntryPath(pkg.name, pkg.version);
+  const storeEntryDir = getStoreEntryPath(filePkg.name, filePkg.version);
 
   const result = await withFileLock(
     storeEntryDir + ".lock",
     async () => {
       // Re-check hash under lock — another process may have published while we waited
       if (!options.force) {
-        const metaUnderLock = await readMeta(pkg.name, pkg.version);
+        const metaUnderLock = await readMeta(filePkg.name, filePkg.version);
         if (metaUnderLock && metaUnderLock.contentHash === contentHash) {
-          consola.info(`${pkg.name}@${pkg.version} already up to date (no changes since last publish)`);
+          consola.info(`${filePkg.name}@${filePkg.version} already up to date (no changes since last publish)`);
           return {
-            name: pkg.name,
-            version: pkg.version,
+            name: filePkg.name,
+            version: filePkg.version,
             fileCount: files.length,
             skipped: true,
             contentHash,
@@ -190,7 +199,7 @@ export async function publish(
               const rel = relative(publishDir, file);
               const dest = join(tmpPackageDir, rel);
 
-              if (rel === "package.json" && processedPkg !== pkg) {
+              if (rel === "package.json" && processedPkg !== filePkg) {
                 // Write the rewritten package.json
                 await atomicWriteFile(dest, JSON.stringify(processedPkg, null, 2));
               } else {
@@ -201,9 +210,9 @@ export async function publish(
           )
         );
 
-        // If publishDir != packageDir, ensure we always write the processed package.json
-        // (the files list from publishDir may have its own package.json or none)
-        if (publishDir !== packageDir) {
+        // If the manifest was generated or rewritten, ensure it lands in the store
+        // even when the file list did not include package.json.
+        if (contentOverrides.has("package.json")) {
           await atomicWriteFile(
             join(tmpPackageDir, "package.json"),
             JSON.stringify(processedPkg, null, 2)
@@ -248,7 +257,7 @@ export async function publish(
         if (hadOld && !isDryRun()) {
           try {
             const { captureHistory } = await import("./history.js");
-            await captureHistory(pkg.name, pkg.version, oldDir, options.historyLimit);
+            await captureHistory(filePkg.name, filePkg.version, oldDir, options.historyLimit);
           } catch (err) {
             verbose(`[publish] History capture failed: ${err instanceof Error ? err.message : String(err)}`);
           }
@@ -263,8 +272,8 @@ export async function publish(
       }
 
       return {
-        name: pkg.name,
-        version: pkg.version,
+        name: filePkg.name,
+        version: filePkg.version,
         fileCount: files.length,
         skipped: false,
         contentHash,
@@ -285,7 +294,7 @@ export async function publish(
   await runLifecycleHook(packageDir, pkg, "postknarr");
 
   consola.success(
-    `Published ${pkg.name}@${pkg.version} (${files.length} files) [${result.buildId}]`
+    `Published ${filePkg.name}@${filePkg.version} (${files.length} files) [${result.buildId}]`
   );
 
   return result;
@@ -486,8 +495,8 @@ let _cachedWorkspaceRoot: { dir: string; root: string | null } | null = null;
 
 async function getWorkspaceRoot(packageDir: string): Promise<string | null> {
   if (_cachedWorkspaceRoot?.dir === packageDir) return _cachedWorkspaceRoot.root;
-  const { findWorkspaceRoot } = await import("../utils/workspace.js");
-  const root = await findWorkspaceRoot(packageDir);
+  const { findWorkspacePackageRoot } = await import("../utils/workspace.js");
+  const root = await findWorkspacePackageRoot(packageDir);
   _cachedWorkspaceRoot = { dir: packageDir, root };
   return root;
 }

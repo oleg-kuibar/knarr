@@ -150,7 +150,7 @@ Knarr never touches `package.json`. The real version from the registry stays in 
 
 ### postinstall hook
 
-knarr uses a `postinstall` script (`knarr restore --silent || true`) to automatically re-inject linked packages after installs when `knarr` is available on the install script `PATH` (for example, installed globally or as a devDependency). The `|| true` ensures it does not break installs if Knarr is not available.
+knarr uses a `postinstall` script (`knarr restore --silent || node -e "process.exit(0)"`) to automatically re-inject linked packages after installs when `knarr` is available on the install script `PATH` (for example, installed globally or as a devDependency). The Node fallback ensures it does not break installs if Knarr is not available.
 
 ### Verify with doctor
 

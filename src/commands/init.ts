@@ -4,9 +4,10 @@ import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
 import pc from "picocolors";
 import { exists, ensureDir, atomicWriteFile } from "../utils/fs.js";
-import { detectPackageManager } from "../utils/pm-detect.js";
+import { detectPackageManager, isYarnPnpProject } from "../utils/pm-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { detectBuildCommand as detectBuildCmd } from "../utils/build-detect.js";
+import { buildDevInstallCommand, runShellCommand } from "../utils/pm-commands.js";
 import {
   ensureGitignore,
   addPostinstall,
@@ -103,6 +104,18 @@ export default defineCommand({
 
     consola.success(`Project role: ${pc.cyan(role)}`);
 
+    if (role === "consumer" && pm === "yarn" && await isYarnPnpProject(projectDir)) {
+      consola.error(
+        `Yarn PnP mode is not compatible with Knarr.\n\n` +
+        `Knarr works by copying files into node_modules/, but PnP eliminates\n` +
+        `node_modules/ entirely. To use Knarr with Yarn Berry, add this to\n` +
+        `.yarnrc.yml:\n\n` +
+        `  nodeLinker: node-modules\n\n` +
+        `Then run: yarn install`
+      );
+      process.exit(1);
+    }
+
     // 3. Add .knarr/ to .gitignore
     const gitignorePath = join(projectDir, ".gitignore");
     const gitignoreUpdated = await ensureGitignore(gitignorePath);
@@ -188,6 +201,18 @@ export default defineCommand({
         const viteResult = await addKnarrVitePlugin(bundler.configFile);
         if (viteResult.modified) {
           consola.success(`Added knarr plugin to ${basename(bundler.configFile)}`);
+          const installCmd = buildDevInstallCommand(pm, "knarr");
+          consola.info(
+            isDryRun()
+              ? "[dry-run] Would install knarr as devDependency"
+              : "Installing knarr as devDependency..."
+          );
+          const ok = await runShellCommand(installCmd, projectDir);
+          if (ok && !isDryRun()) {
+            consola.success("Installed knarr");
+          } else if (!ok) {
+            consola.warn(`Install failed. Run manually: ${installCmd}`);
+          }
         } else if (viteResult.error) {
           consola.info(
             `Add the Vite plugin for automatic dev server restarts:\n` +

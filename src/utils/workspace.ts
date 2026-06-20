@@ -40,6 +40,14 @@ export async function findWorkspaceRoot(startDir: string): Promise<string | null
 }
 
 /**
+ * Find a workspace root for package discovery. Prefer pnpm-workspace.yaml, then
+ * fall back to npm/Yarn-style package.json#workspaces.
+ */
+export async function findWorkspacePackageRoot(startDir: string): Promise<string | null> {
+  return (await findWorkspaceRoot(startDir)) ?? await findPackageJsonWorkspaceRoot(startDir);
+}
+
+/**
  * Parse pnpm-workspace.yaml for catalog definitions.
  * Handles the flat key-value structure that catalogs use:
  *
@@ -415,9 +423,24 @@ function parseKeyValue(line: string): [string, string] | null {
   const colonIdx = trimmed.indexOf(":");
   if (colonIdx <= 0) return null;
   const key = trimmed.slice(0, colonIdx).trim();
-  const value = trimmed.slice(colonIdx + 1).trim();
+  const value = stripYamlInlineComment(trimmed.slice(colonIdx + 1)).trim();
   if (!key || !value) return null;
   // Remove optional quotes around value
   const unquoted = value.replace(/^["']|["']$/g, "");
   return [key, unquoted];
+}
+
+function stripYamlInlineComment(value: string): string {
+  let quote: "\"" | "'" | null = null;
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i];
+    if ((char === "\"" || char === "'") && value[i - 1] !== "\\") {
+      quote = quote === char ? null : quote ?? char;
+      continue;
+    }
+    if (!quote && char === "#" && (i === 0 || /\s/.test(value[i - 1]))) {
+      return value.slice(0, i);
+    }
+  }
+  return value;
 }

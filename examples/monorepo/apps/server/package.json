@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node --import tsx src/main.ts",
-    "postinstall": "knarr restore --silent || true"
+    "postinstall": "knarr restore --silent || node -e \"process.exit(0)\""
   },
   "dependencies": {
     "@mono/shared-utils": "workspace:*"

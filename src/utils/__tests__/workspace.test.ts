@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { filterPublishableWorkspaceGraph } from "../workspace.js";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { filterPublishableWorkspaceGraph, parseCatalogs } from "../workspace.js";
 import type { WorkspaceGraph } from "../workspace.js";
 
 describe("filterPublishableWorkspaceGraph", () => {
@@ -29,5 +32,35 @@ describe("filterPublishableWorkspaceGraph", () => {
 
     expect(filtered.packages.map((pkg) => pkg.name)).toEqual(["public-lib"]);
     expect([...filtered.adjacency.get("public-lib")!]).toEqual([]);
+  });
+});
+
+describe("parseCatalogs", () => {
+  it("strips inline comments from catalog versions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "KNARR-workspace-"));
+    try {
+      await writeFile(
+        join(root, "pnpm-workspace.yaml"),
+        [
+          "packages:",
+          "  - packages/*",
+          "catalog:",
+          "  react: ^19.0.0 # default catalog comment",
+          "  hashy: \"npm:pkg#tag\" # keep quoted hash",
+          "catalogs:",
+          "  legacy:",
+          "    react: ^18.0.0 # named catalog comment",
+          "",
+        ].join("\n")
+      );
+
+      const catalogs = await parseCatalogs(root);
+
+      expect(catalogs.default.react).toBe("^19.0.0");
+      expect(catalogs.default.hashy).toBe("npm:pkg#tag");
+      expect(catalogs.named.legacy.react).toBe("^18.0.0");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
