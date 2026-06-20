@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import {
   ensureGitignore,
   addPostinstall,
+  removePostinstall,
   POSTINSTALL_RESTORE_COMMAND,
+  usesKnarrRestoreCommand,
+  usesSelfResolvingKnarrCommand,
 } from "../init-helpers.js";
 import { exists } from "../fs.js";
 import { initFlags } from "../logger.js";
@@ -102,5 +105,66 @@ describe("addPostinstall", () => {
     const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
     expect(changed).toBe(false);
     expect(pkg.scripts.postinstall).toBe("echo done");
+  });
+
+  it("does not treat unrelated knarr postinstall commands as restore hooks", async () => {
+    const pkgPath = join(tempDir, "package.json");
+    await writeFile(
+      pkgPath,
+      JSON.stringify(
+        { name: "app", version: "1.0.0", scripts: { postinstall: "knarr --version" } },
+        null,
+        2
+      )
+    );
+
+    const changed = await addPostinstall(pkgPath);
+    const removed = await removePostinstall(pkgPath);
+
+    const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
+    expect(changed).toBe(false);
+    expect(removed).toBe(false);
+    expect(pkg.scripts.postinstall).toBe("knarr --version");
+  });
+
+  it.each([
+    "knarr restore --silent",
+    "npx --yes knarr restore --silent",
+    "pnpm dlx knarr restore --silent",
+    "yarn dlx knarr restore --silent",
+    "bunx knarr restore --silent",
+  ])("detects restore hook command: %s", (command) => {
+    expect(usesKnarrRestoreCommand(command)).toBe(true);
+  });
+
+  it.each([
+    "npx --yes knarr restore --silent",
+    "pnpm dlx knarr restore --silent",
+    "yarn dlx knarr restore --silent",
+    "bunx knarr restore --silent",
+  ])("detects self-resolving restore command: %s", (command) => {
+    expect(usesSelfResolvingKnarrCommand(command)).toBe(true);
+  });
+
+  it("removes restore hooks but not other scripts", async () => {
+    const pkgPath = join(tempDir, "package.json");
+    await writeFile(
+      pkgPath,
+      JSON.stringify(
+        {
+          name: "app",
+          version: "1.0.0",
+          scripts: { postinstall: "pnpm dlx knarr restore --silent" },
+        },
+        null,
+        2
+      )
+    );
+
+    const removed = await removePostinstall(pkgPath);
+
+    const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
+    expect(removed).toBe(true);
+    expect(pkg.scripts).toBeUndefined();
   });
 });

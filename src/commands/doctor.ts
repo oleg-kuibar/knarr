@@ -26,7 +26,12 @@ import {
   isYarnPnpProject,
 } from "../utils/pm-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
-import { addPostinstall, ensureGitignore } from "../utils/init-helpers.js";
+import {
+  addPostinstall,
+  ensureGitignore,
+  usesKnarrRestoreCommand,
+  usesSelfResolvingKnarrCommand,
+} from "../utils/init-helpers.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, isJsonOutput } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
@@ -645,14 +650,6 @@ function declaresKnarrDependency(pkg: Record<string, any> | null): boolean {
     pkg.optionalDependencies,
     pkg.peerDependencies,
   ].some((deps) => deps && typeof deps === "object" && "knarr" in deps);
-}
-
-function usesSelfResolvingKnarrCommand(postinstall: string): boolean {
-  return /\b(?:npx(?:\s+--yes|\s+-y)?|pnpm\s+dlx|yarn\s+dlx|bunx)\s+knarr\s+restore(?:\s|$)/.test(postinstall);
-}
-
-function usesKnarrRestoreCommand(postinstall: string): boolean {
-  return /(?:^|[;&|()\s])(?:(?:npx(?:\s+(?:--yes|-y))?|pnpm\s+dlx|yarn\s+dlx|bunx)\s+)?knarr\s+restore(?:\s|$)/.test(postinstall);
 }
 
 async function readJsonFile(path: string): Promise<Record<string, any> | null> {

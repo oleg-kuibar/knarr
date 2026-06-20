@@ -9,6 +9,14 @@ import type { PackageManager } from "../types.js";
 
 export const POSTINSTALL_RESTORE_COMMAND = 'knarr restore --silent || node -e "process.exit(0)"';
 
+export function usesSelfResolvingKnarrCommand(postinstall: string): boolean {
+  return /\b(?:npx(?:\s+--yes|\s+-y)?|pnpm\s+dlx|yarn\s+dlx|bunx)\s+knarr\s+restore(?:\s|$)/.test(postinstall);
+}
+
+export function usesKnarrRestoreCommand(postinstall: string): boolean {
+  return /(?:^|[;&|()\s])(?:(?:npx(?:\s+(?:--yes|-y))?|pnpm\s+dlx|yarn\s+dlx|bunx)\s+)?knarr\s+restore(?:\s|$)/.test(postinstall);
+}
+
 /**
  * Ensure .knarr/ is in .gitignore. Returns true if it was added.
  */
@@ -52,7 +60,7 @@ export async function addPostinstall(pkgPath: string): Promise<boolean> {
   const pkg = JSON.parse(content);
 
   if (pkg.scripts?.postinstall) {
-    if (pkg.scripts.postinstall.includes("knarr")) return false;
+    if (usesKnarrRestoreCommand(pkg.scripts.postinstall)) return false;
     consola.warn(
       `Existing postinstall script found. Add ${pc.cyan(POSTINSTALL_RESTORE_COMMAND)} manually if needed.`,
     );
@@ -79,7 +87,12 @@ export async function removePostinstall(pkgPath: string): Promise<boolean> {
     return false;
   }
   const pkg = JSON.parse(content);
-  if (!pkg.scripts?.postinstall?.includes("knarr")) return false;
+  if (
+    !pkg.scripts?.postinstall ||
+    !usesKnarrRestoreCommand(pkg.scripts.postinstall)
+  ) {
+    return false;
+  }
 
   delete pkg.scripts.postinstall;
   // Clean up empty scripts object
