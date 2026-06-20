@@ -109,7 +109,7 @@ When `publishConfig.directory` is set in `package.json`, Knarr reads files from 
 
 ## Injection
 
-knarr checks your lockfile to figure out the package manager, then uses the right copy strategy.
+knarr checks `package.json#packageManager` and then lockfiles to figure out the package manager, then uses the right copy strategy.
 
 ### npm / yarn / bun
 
@@ -145,6 +145,8 @@ Knarr resolves `node_modules/<pkg>` → follows the symlink into `.pnpm/` → re
 
 ### Detection
 
+The `packageManager` field in `package.json` takes precedence when present, including Corepack-style values such as `pnpm@10.0.0` or `yarn@4.0.0`. If it is missing, Knarr falls back to lockfiles:
+
 | Lockfile | Package manager |
 |---|---|
 | `pnpm-lock.yaml` | pnpm |
@@ -152,7 +154,7 @@ Knarr resolves `node_modules/<pkg>` → follows the symlink into `.pnpm/` → re
 | `yarn.lock` | yarn |
 | `package-lock.json` or `npm-shrinkwrap.json` | npm |
 
-Detection checks in priority order (pnpm > bun > yarn > npm). Falls back to npm if no lockfile is found.
+Lockfiles are checked in priority order within the nearest matching directory (pnpm > bun > yarn > npm). Falls back to npm if no `packageManager` field or lockfile is found.
 
 #### Yarn Berry `nodeLinker` modes
 

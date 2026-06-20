@@ -121,7 +121,7 @@ The `buildId` is `contentHash.slice(9, 17)` — the first 8 hex characters after
 | `src/utils/hash.ts` | `computeContentHash()` (SHA-256 aggregate), `hashFile()` (xxHash64 per-file) |
 | `src/utils/fs.ts` | `copyWithCoW()`, `incrementalCopy()`, `ensureDir()`, `isNodeError()` |
 | `src/utils/pack-list.ts` | `resolvePackFiles()` — npm-pack-compatible file resolution from `files` field |
-| `src/utils/pm-detect.ts` | `detectPackageManager()` — lockfile-based PM detection |
+| `src/utils/pm-detect.ts` | `detectPackageManager()` — `packageManager` field + lockfile-based PM detection |
 | `src/utils/lockfile.ts` | `withFileLock()` — directory-based lock with retry and stale detection |
 | `src/utils/workspace.ts` | Workspace root detection, package enumeration, catalog parsing, reverse adjacency |
 | `src/utils/concurrency.ts` | Minimal `pLimit()` reimplementation |

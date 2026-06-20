@@ -97,7 +97,7 @@ knarr restore
 knarr doctor
 ```
 
-It reports the detected package manager. If it shows the wrong one, check that your lockfile (`pnpm-lock.yaml`) is present.
+It reports the detected package manager. If it shows the wrong one, check `package.json#packageManager` first, then verify that the expected lockfile (`pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, or `package-lock.json`) is present.
 
 ---
 

@@ -53,18 +53,7 @@ export default defineCommand({
 
     // 1. Detect and confirm package manager
     const detectedPm = await detectPackageManager(projectDir);
-    const lockfileNames: Record<string, string> = {
-      pnpm: "pnpm-lock.yaml",
-      bun: "bun.lockb",
-      yarn: "yarn.lock",
-      npm: "package-lock.json",
-    };
-    consola.success(
-      `Detected package manager: ${pc.cyan(detectedPm)}` +
-        (lockfileNames[detectedPm]
-          ? ` (from ${lockfileNames[detectedPm]})`
-          : "")
-    );
+    consola.success(`Detected package manager: ${pc.cyan(detectedPm)}`);
 
     let pm = detectedPm;
     if (!skipPrompts) {

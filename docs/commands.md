@@ -10,7 +10,7 @@ npx knarr init
 
 What it does:
 
-1. **Detects package manager** from lockfiles (pnpm, bun, yarn, npm) and confirms with you
+1. **Detects package manager** from `package.json#packageManager` or lockfiles (pnpm, bun, yarn, npm) and confirms with you
 2. **Adds `.knarr/` to `.gitignore`**
 3. **Wires up `"postinstall": "knarr restore --silent || true"`** in `package.json`
 4. **Creates `.knarr/` state directory** and stores the confirmed package manager
@@ -115,7 +115,7 @@ Flags:
 Under the hood:
 
 1. **Auto-initializes** the consumer if `.knarr/state.json` is missing (creates state, adds `.knarr/` to `.gitignore`, wires up `postinstall` hook) — no need to run `knarr init` first
-2. Detects your package manager from lockfiles
+2. Detects your package manager from `package.json#packageManager` or lockfiles
 3. Backs up the existing npm-installed version to `.knarr/backups/`
 4. Copies files from store into `node_modules/`
 5. Creates `.bin/` entries if the package has a `bin` field
@@ -398,7 +398,7 @@ Checks performed:
 | Store entries | Each linked package has a matching store entry |
 | Content hash | Store and consumer hashes are in sync |
 | node_modules | Linked packages are present in `node_modules/` |
-| Package manager | Detected from lockfile |
+| Package manager | Detected manager and supported linker mode |
 | Bundler | Detected from config files |
 | .gitignore | `.knarr/` is listed |
 | Postinstall restore | `package.json` restores links after installs |

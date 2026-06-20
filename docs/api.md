@@ -573,7 +573,8 @@ function isComplexConfig(
 
 ### `detectPackageManager(projectDir)`
 
-Detect the package manager by walking up the filesystem looking for lockfiles.
+Detect the package manager by walking up the filesystem. The `packageManager`
+field in `package.json` is checked first, then lockfiles are used as a fallback.
 
 ```typescript
 async function detectPackageManager(
@@ -581,7 +582,9 @@ async function detectPackageManager(
 ): Promise<PackageManager>  // "npm" | "pnpm" | "yarn" | "bun"
 ```
 
-Priority order: pnpm > bun > yarn > npm. npm is detected from `package-lock.json` or `npm-shrinkwrap.json`. Falls back to npm if no lockfile is found.
+Within a directory, lockfile priority is pnpm > bun > yarn > npm. npm is detected
+from `package-lock.json` or `npm-shrinkwrap.json`. Falls back to npm if no
+`packageManager` field or lockfile is found.
 
 ### `Timer`
 
