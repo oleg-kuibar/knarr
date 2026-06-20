@@ -18,6 +18,37 @@ import { normalizePath } from "./paths.js";
 import { recordMutation } from "./dry-run.js";
 
 const CONTROL_CHARS_RE = /[\x00-\x1F\x7F]/;
+const SAFE_INTERPRETER_RE = /^[A-Za-z0-9._+-]+$/;
+
+function safeInterpreter(value: string | undefined): string {
+  return value && SAFE_INTERPRETER_RE.test(value) ? value : "node";
+}
+
+export function parseShebangInterpreter(content: string): string {
+  const firstLine = content.split(/\r?\n/, 1)[0]?.trim();
+  if (!firstLine?.startsWith("#!")) return "node";
+
+  const command = firstLine.slice(2).trim();
+  const parts = command.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "node";
+
+  const executable = parts[0].replace(/\\/g, "/").split("/").pop();
+  if (executable === "env") {
+    const args = parts.slice(1);
+    const interpreter = args[0] === "-S" ? args[1] : args[0];
+    return safeInterpreter(interpreter);
+  }
+
+  return safeInterpreter(executable);
+}
+
+async function readBinInterpreter(targetAbsolute: string): Promise<string> {
+  try {
+    return parseShebangInterpreter(await readFile(targetAbsolute, "utf-8"));
+  } catch {
+    return "node";
+  }
+}
 
 function resolveBinPath(binDir: string, binName: string, suffix = ""): string | null {
   if (
@@ -131,19 +162,20 @@ export async function createBinLinks(
   for (const { binName, binPath, linkPath, cmdPath, ps1Path } of validEntries) {
     const targetAbsolute = join(packageRoot, binPath);
     const targetRelative = normalizePath(relative(binDir, targetAbsolute));
+    const interpreter = await readBinInterpreter(targetAbsolute);
 
     if (isWindows) {
       // Create .cmd wrapper
       const targetWindows = targetRelative.replace(/\//g, "\\");
-      const cmdContent = `@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nCALL :find_dp0\r\nnode "%dp0%\\${targetWindows}" %*\r\n`;
+      const cmdContent = `@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nCALL :find_dp0\r\n${interpreter} "%dp0%\\${targetWindows}" %*\r\n`;
       await writeFile(cmdPath, cmdContent);
 
       // Create .ps1 wrapper for PowerShell
-      const ps1Content = `#!/usr/bin/env pwsh\n$basedir=Split-Path $MyInvocation.MyCommand.Definition -Parent\n& node "$basedir/${targetRelative}" $args\nexit $LASTEXITCODE\n`;
+      const ps1Content = `#!/usr/bin/env pwsh\n$basedir=Split-Path $MyInvocation.MyCommand.Definition -Parent\n& ${interpreter} "$basedir/${targetRelative}" $args\nexit $LASTEXITCODE\n`;
       await writeFile(ps1Path, ps1Content);
 
       // Also create a shell script for Git Bash/WSL
-      const shContent = `#!/bin/sh\nexec node "${targetRelative}" "$@"\n`;
+      const shContent = `#!/bin/sh\nbasedir=$(dirname "$0")\nexec ${interpreter} "$basedir/${targetRelative}" "$@"\n`;
       await writeFile(linkPath, shContent);
     } else {
       // Unix: create symlink
@@ -160,7 +192,7 @@ export async function createBinLinks(
         if (isNodeError(err) && (err.code === "EPERM" || err.code === "EACCES")) {
           // Symlink not permitted — fall back to shell wrapper script
           verbose(`[bin-linker] Symlink failed (${err.code}), using shell wrapper for ${binName}`);
-          const shContent = `#!/bin/sh\nexec node "${targetRelative}" "$@"\n`;
+          const shContent = `#!/bin/sh\nbasedir=$(dirname "$0")\nexec ${interpreter} "$basedir/${targetRelative}" "$@"\n`;
           await writeFile(linkPath, shContent);
           await chmod(linkPath, 0o755);
         } else {
