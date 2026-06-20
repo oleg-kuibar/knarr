@@ -421,11 +421,20 @@ export async function runDoctorDiagnostics(
     const pkg = await readJsonFile(pkgPath);
     const postinstall = pkg?.scripts?.postinstall;
     if (typeof postinstall === "string" && postinstall.includes("knarr")) {
-      await addCheck({
-        name: "Postinstall restore",
-        status: "pass",
-        message: "postinstall runs knarr restore",
-      });
+      if (await canVerifyKnarrForPostinstall(consumerPath, pkg, postinstall)) {
+        await addCheck({
+          name: "Postinstall restore",
+          status: "pass",
+          message: "postinstall runs knarr restore",
+        });
+      } else {
+        await addCheck({
+          name: "Postinstall restore",
+          status: "warn",
+          message: "postinstall runs knarr restore, but no local knarr dependency or binary was found.",
+          unfixableReason: "Install knarr as a devDependency for reliable auto-restore, or ensure a global knarr binary is available during installs.",
+        });
+      }
     } else if (typeof postinstall === "string") {
       await addCheck({
         name: "Postinstall restore",
@@ -610,6 +619,33 @@ async function pathKind(path: string): Promise<"missing" | "file" | "dir"> {
     }
     return "file";
   }
+}
+
+async function canVerifyKnarrForPostinstall(
+  consumerPath: string,
+  pkg: Record<string, any> | null,
+  postinstall: string
+): Promise<boolean> {
+  if (usesSelfResolvingKnarrCommand(postinstall)) return true;
+  if (declaresKnarrDependency(pkg)) return true;
+  return (
+    await exists(join(consumerPath, "node_modules", ".bin", "knarr")) ||
+    await exists(join(consumerPath, "node_modules", ".bin", "knarr.cmd"))
+  );
+}
+
+function declaresKnarrDependency(pkg: Record<string, any> | null): boolean {
+  if (!pkg) return false;
+  return [
+    pkg.dependencies,
+    pkg.devDependencies,
+    pkg.optionalDependencies,
+    pkg.peerDependencies,
+  ].some((deps) => deps && typeof deps === "object" && "knarr" in deps);
+}
+
+function usesSelfResolvingKnarrCommand(postinstall: string): boolean {
+  return /\b(?:npx(?:\s+--yes|\s+-y)?|pnpm\s+dlx|yarn\s+dlx|bunx)\s+knarr\b/.test(postinstall);
 }
 
 async function readJsonFile(path: string): Promise<Record<string, any> | null> {

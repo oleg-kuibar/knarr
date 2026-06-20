@@ -93,6 +93,42 @@ describe("doctor --fix", () => {
     expect(registry["test-lib"]).toBeUndefined();
   });
 
+  it("warns when postinstall restore cannot verify a knarr binary", async () => {
+    const { runDoctorDiagnostics } = await import("../commands/doctor.js");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        scripts: { postinstall: "knarr restore --silent || true" },
+      })
+    );
+
+    const result = await runDoctorDiagnostics(testConsumer);
+    const postinstall = result.results.find((r) => r.name === "Postinstall restore");
+
+    expect(postinstall?.status).toBe("warn");
+    expect(postinstall?.message).toContain("no local knarr");
+  });
+
+  it("passes postinstall restore when knarr is declared locally", async () => {
+    const { runDoctorDiagnostics } = await import("../commands/doctor.js");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        scripts: { postinstall: "knarr restore --silent || true" },
+        devDependencies: { knarr: "^0.0.3" },
+      })
+    );
+
+    const result = await runDoctorDiagnostics(testConsumer);
+    const postinstall = result.results.find((r) => r.name === "Postinstall restore");
+
+    expect(postinstall?.status).toBe("pass");
+  });
+
   it("flags Yarn PnP projects as incompatible", async () => {
     const { runDoctorDiagnostics } = await import("../commands/doctor.js");
     await writeFile(join(testConsumer, "yarn.lock"), "");

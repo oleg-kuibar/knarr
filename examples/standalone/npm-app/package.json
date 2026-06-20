@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node --import tsx src/main.ts",
-    "postinstall": "knarr restore || true"
+    "postinstall": "knarr restore --silent || true"
   },
   "devDependencies": {
     "tsx": "^4.22.4",

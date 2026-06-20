@@ -171,4 +171,4 @@ Running `npm install` or `pnpm install` replaces files in `node_modules/`, which
 knarr restore
 ```
 
-If you ran `knarr init`, this happens automatically via the `postinstall` hook. The hook runs `knarr restore --silent || true`, which re-injects all linked packages. The `|| true` ensures the install does not fail if Knarr is not globally available.
+If you ran `knarr init`, this can happen automatically via the `postinstall` hook. The hook runs `knarr restore --silent || true`, which re-injects all linked packages when `knarr` is available on the install script `PATH` (for example, installed globally or as a devDependency). The `|| true` ensures the install does not fail if Knarr is not available.

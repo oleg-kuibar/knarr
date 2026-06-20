@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "postinstall": "knarr restore || true"
+    "postinstall": "knarr restore --silent || true"
   },
   "dependencies": {
     "@mono/shared-utils": "workspace:*"

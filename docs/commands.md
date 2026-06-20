@@ -12,7 +12,7 @@ What it does:
 
 1. **Detects package manager** from `package.json#packageManager` or lockfiles (pnpm, bun, yarn, npm) and confirms with you
 2. **Adds `.knarr/` to `.gitignore`**
-3. **Wires up `"postinstall": "knarr restore --silent || true"`** in `package.json`
+3. **Wires up `"postinstall": "knarr restore --silent || true"`** in `package.json` for safe auto-restore when `knarr` is available on the install script `PATH`
 4. **Creates `.knarr/` state directory** and stores the confirmed package manager
 5. **Detects bundler** — if Vite, auto-injects the Knarr Vite plugin into your config. Other bundlers (Webpack, Turbopack, etc.) need no config.
 
