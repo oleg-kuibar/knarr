@@ -15,6 +15,7 @@ import { createBinLinks, removeBinLinks } from "../utils/bin-linker.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
 import {
+  detectPackageManager,
   detectYarnNodeLinker,
   detectYarnPnpmStoreFolder,
   isYarnPnpProject,
@@ -237,7 +238,8 @@ export async function resolveInjectionTarget(
   options: { warnOnFallback?: boolean; repairMissingLink?: boolean } = {}
 ): Promise<string> {
   const directPath = getNodeModulesPackagePath(consumerPath, packageName);
-  if (pm === "yarn" && await isYarnPnpProject(consumerPath)) {
+  const currentPm = pm === "yarn" ? "yarn" : await detectPackageManager(consumerPath);
+  if ((pm === "yarn" || currentPm === "yarn") && await isYarnPnpProject(consumerPath)) {
     throw new Error(
       "Yarn PnP mode is not compatible with Knarr. Set `nodeLinker: node-modules` or `nodeLinker: pnpm` in .yarnrc.yml, then run `yarn install`."
     );

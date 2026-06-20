@@ -1002,6 +1002,29 @@ describe("yarn support", () => {
     expect(await exists(join(testConsumer, "node_modules", "test-lib"))).toBe(false);
   });
 
+  it("rejects yarn pnp even when stored package manager is stale", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "yarn.lock"), "");
+    await writeFile(join(testConsumer, ".yarnrc.yml"), "nodeLinker: pnp\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        packageManager: "yarn@4.6.0",
+      })
+    );
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+
+    await expect(inject(entry!, testConsumer, "npm")).rejects.toThrow("Yarn PnP");
+    expect(await exists(join(testConsumer, "node_modules", "test-lib"))).toBe(false);
+  });
+
   it("detectYarnNodeLinker returns correct values in integration context", async () => {
     await writeFile(join(testConsumer, ".yarnrc.yml"), "nodeLinker: pnpm\n");
     expect(await detectYarnNodeLinker(testConsumer)).toBe("pnpm");
