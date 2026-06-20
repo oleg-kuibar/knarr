@@ -15,11 +15,13 @@ import { createBinLinks, removeBinLinks } from "../utils/bin-linker.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
 import {
-  detectPackageManager,
+  detectPackageManagerInfo,
   detectYarnNodeLinker,
   detectYarnPnpmStoreFolder,
+  hasYarnPnpMarkers,
   isYarnPnpProject,
 } from "../utils/pm-detect.js";
+import type { PackageManagerDetectionSource } from "../utils/pm-detect.js";
 import { invalidateBundlerCache } from "../utils/bundler-cache.js";
 
 export interface InjectResult {
@@ -238,17 +240,27 @@ export async function resolveInjectionTarget(
   options: { warnOnFallback?: boolean; repairMissingLink?: boolean } = {}
 ): Promise<string> {
   const directPath = getNodeModulesPackagePath(consumerPath, packageName);
-  const currentPm = await detectPackageManager(consumerPath);
-  if ((pm === "yarn" || currentPm === "yarn") && await isYarnPnpProject(consumerPath)) {
+  const currentPm = await detectPackageManagerInfo(consumerPath);
+  const useTrackedPm = currentPm.source === "default";
+  const effectiveYarn = currentPm.packageManager === "yarn" || (useTrackedPm && pm === "yarn");
+  if (
+    await hasYarnPnpMarkers(consumerPath) ||
+    (effectiveYarn && await isYarnPnpProject(consumerPath))
+  ) {
     throw new Error(
       "Yarn PnP mode is not compatible with Knarr. Set `nodeLinker: node-modules` or `nodeLinker: pnpm` in .yarnrc.yml, then run `yarn install`."
     );
   }
 
-  const yarnLinker = pm === "yarn" || currentPm === "yarn"
+  const yarnLinker = effectiveYarn
     ? await detectYarnNodeLinker(consumerPath)
     : null;
-  const storeKind = getEffectiveStoreKind(pm, currentPm, yarnLinker);
+  const storeKind = getEffectiveStoreKind(
+    pm,
+    currentPm.packageManager,
+    currentPm.source,
+    yarnLinker
+  );
 
   if (!storeKind) {
     return directPath;
@@ -381,16 +393,18 @@ function storeKindLabel(kind: "pnpm" | "yarn-pnpm"): string {
 function getEffectiveStoreKind(
   storedPm: PackageManager,
   currentPm: PackageManager,
+  currentSource: PackageManagerDetectionSource,
   yarnLinker: "node-modules" | "pnpm" | "pnp" | null
 ): "pnpm" | "yarn-pnpm" | null {
-  if (currentPm === "yarn") {
-    return yarnLinker === "pnpm" ? "yarn-pnpm" : null;
+  if (currentSource !== "default") {
+    if (currentPm === "yarn") {
+      return yarnLinker === "pnpm" ? "yarn-pnpm" : null;
+    }
+    return currentPm === "pnpm" ? "pnpm" : null;
   }
-  if (currentPm === "pnpm") return "pnpm";
-  if (currentPm === "bun") return null;
 
-  // npm is also the no-evidence fallback from detectPackageManager(), so keep
-  // the tracked package manager as a fallback for existing links.
+  // No local evidence was found, so keep the tracked package manager as a
+  // fallback for existing links.
   if (storedPm === "yarn") {
     return yarnLinker === "pnpm" ? "yarn-pnpm" : null;
   }

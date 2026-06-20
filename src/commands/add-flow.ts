@@ -6,7 +6,11 @@ import { publish } from "../core/publisher.js";
 import { inject, backupExisting, checkMissingDeps } from "../core/injector.js";
 import { addLink, registerConsumer, getLink } from "../core/tracker.js";
 import { exists } from "../utils/fs.js";
-import { detectPackageManager, isYarnPnpProject } from "../utils/pm-detect.js";
+import {
+  detectPackageManager,
+  hasYarnPnpMarkers,
+  isYarnPnpProject,
+} from "../utils/pm-detect.js";
 import { detectBuildCommand } from "../utils/build-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { ensureConsumerInit } from "../utils/init-helpers.js";
@@ -72,18 +76,20 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
   }
 
   const pm = await detectPackageManager(consumerPath);
-  if (pm === "yarn") {
-    if (await isYarnPnpProject(consumerPath)) {
-      consola.error(
-        `Yarn PnP mode is not compatible with knarr.\n\n` +
-        `knarr works by copying files into node_modules/, but PnP eliminates\n` +
-        `node_modules/ entirely. To use knarr with Yarn Berry, add this to\n` +
-        `.yarnrc.yml:\n\n` +
-        `  nodeLinker: node-modules\n\n` +
-        `Then run: yarn install`
-      );
-      process.exit(1);
-    }
+  if (
+    await hasYarnPnpMarkers(consumerPath) ||
+    (pm === "yarn" && await isYarnPnpProject(consumerPath))
+  ) {
+    consola.error(
+      `Yarn PnP mode is not compatible with knarr.\n\n` +
+      `knarr works by copying files into node_modules/, but PnP eliminates\n` +
+      `node_modules/ entirely. To use knarr with Yarn Berry, add one of these\n` +
+      `to .yarnrc.yml:\n\n` +
+      `  nodeLinker: node-modules\n` +
+      `  nodeLinker: pnpm\n\n` +
+      `Then run: yarn install`
+    );
+    process.exit(1);
   }
 
   if (options.from) {

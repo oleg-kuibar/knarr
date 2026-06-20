@@ -20,6 +20,7 @@ import {
 import {
   detectPackageManager,
   detectYarnNodeLinker,
+  hasYarnPnpMarkers,
   hasYarnrcYml,
   hasYarnPnpManifest,
   isYarnPnpProject,
@@ -264,11 +265,13 @@ export async function runDoctorDiagnostics(
     message: pm,
   });
 
-  if (pm === "yarn") {
+  const yarnrcExists = await hasYarnrcYml(consumerPath);
+  const pnpManifestExists = await hasYarnPnpManifest(consumerPath);
+  const hardPnpMarkers = await hasYarnPnpMarkers(consumerPath);
+  if (pm === "yarn" || yarnrcExists || pnpManifestExists) {
     const linker = await detectYarnNodeLinker(consumerPath);
-    const yarnrcExists = await hasYarnrcYml(consumerPath);
-    const pnpManifestExists = await hasYarnPnpManifest(consumerPath);
-    const isPnpProject = await isYarnPnpProject(consumerPath);
+    const isPnpProject =
+      hardPnpMarkers || (pm === "yarn" && await isYarnPnpProject(consumerPath));
 
     if (linker === "node-modules") {
       await addCheck({
@@ -289,7 +292,7 @@ export async function runDoctorDiagnostics(
       await addCheck({
         name: "Yarn linker",
         status: "fail",
-        message: `${reason} Set \`nodeLinker: node-modules\` in .yarnrc.yml`,
+        message: `${reason} Set \`nodeLinker: node-modules\` or \`nodeLinker: pnpm\` in .yarnrc.yml`,
       });
     } else if (!yarnrcExists) {
       await addCheck({
@@ -301,7 +304,7 @@ export async function runDoctorDiagnostics(
       await addCheck({
         name: "Yarn linker",
         status: "warn",
-        message: "Yarn Berry defaults to PnP. Add `nodeLinker: node-modules` to .yarnrc.yml",
+        message: "Yarn Berry defaults to PnP. Add `nodeLinker: node-modules` or `nodeLinker: pnpm` to .yarnrc.yml",
       });
     }
   }

@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   detectPackageManager,
+  detectPackageManagerInfo,
   detectYarnNodeLinker,
   detectYarnPnpmStoreFolder,
+  hasYarnPnpMarkers,
   hasYarnPnpManifest,
   hasYarnrcYml,
   isYarnPnpProject,
@@ -62,6 +64,67 @@ describe("detectPackageManager", () => {
       JSON.stringify({ packageManager: "pnpm" })
     );
     expect(await detectPackageManager(tempDir)).toBe("pnpm");
+  });
+
+  it("reports packageManager field detection details", async () => {
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ packageManager: "yarn@4.6.0" })
+    );
+    await expect(detectPackageManagerInfo(tempDir)).resolves.toEqual({
+      packageManager: "yarn",
+      source: "packageManager",
+      dir: tempDir,
+      file: join(tempDir, "package.json"),
+    });
+  });
+
+  it("reports lockfile detection details", async () => {
+    await writeFile(join(tempDir, "bun.lock"), "");
+    await expect(detectPackageManagerInfo(tempDir)).resolves.toEqual({
+      packageManager: "bun",
+      source: "lockfile",
+      dir: tempDir,
+      file: join(tempDir, "bun.lock"),
+    });
+  });
+
+  it("detects yarn from .yarnrc.yml without a lockfile", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+    await expect(detectPackageManagerInfo(tempDir)).resolves.toEqual({
+      packageManager: "yarn",
+      source: "yarnArtifact",
+      dir: tempDir,
+      file: join(tempDir, ".yarnrc.yml"),
+    });
+  });
+
+  it("detects yarn from PnP manifests without a lockfile", async () => {
+    await writeFile(join(tempDir, ".pnp.cjs"), "");
+    await expect(detectPackageManagerInfo(tempDir)).resolves.toEqual({
+      packageManager: "yarn",
+      source: "yarnArtifact",
+      dir: tempDir,
+      file: join(tempDir, ".pnp.cjs"),
+    });
+  });
+
+  it("prefers local lockfiles over yarn artifacts in the same directory", async () => {
+    await writeFile(join(tempDir, "package-lock.json"), "{}");
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+    await expect(detectPackageManagerInfo(tempDir)).resolves.toMatchObject({
+      packageManager: "npm",
+      source: "lockfile",
+      file: join(tempDir, "package-lock.json"),
+    });
+  });
+
+  it("reports default detection details", async () => {
+    await expect(detectPackageManagerInfo(tempDir)).resolves.toEqual({
+      packageManager: "npm",
+      source: "default",
+      dir: tempDir,
+    });
   });
 
   it("defaults to npm when no lockfile", async () => {
@@ -249,6 +312,33 @@ describe("hasYarnPnpManifest", () => {
 
   it("returns false when PnP manifests are missing", async () => {
     expect(await hasYarnPnpManifest(tempDir)).toBe(false);
+  });
+});
+
+describe("hasYarnPnpMarkers", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "KNARR-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("returns true for PnP manifests", async () => {
+    await writeFile(join(tempDir, ".pnp.cjs"), "");
+    expect(await hasYarnPnpMarkers(tempDir)).toBe(true);
+  });
+
+  it("returns true for explicit pnp nodeLinker", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnp\n");
+    expect(await hasYarnPnpMarkers(tempDir)).toBe(true);
+  });
+
+  it("returns false for yarn pnpm-linker", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+    expect(await hasYarnPnpMarkers(tempDir)).toBe(false);
   });
 });
 

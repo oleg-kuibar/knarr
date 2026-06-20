@@ -175,6 +175,21 @@ describe("doctor --fix", () => {
 
     expect(yarnLinker?.status).toBe("fail");
     expect(yarnLinker?.message).toContain("PnP");
+    expect(yarnLinker?.message).toContain("nodeLinker: node-modules");
+    expect(yarnLinker?.message).toContain("nodeLinker: pnpm");
+  });
+
+  it("flags Yarn PnP manifests even when npm lockfiles are present", async () => {
+    const { runDoctorDiagnostics } = await import("../commands/doctor.js");
+    await writeFile(join(testConsumer, ".pnp.cjs"), "");
+
+    const result = await runDoctorDiagnostics(testConsumer);
+    const packageManager = result.results.find((r) => r.name === "Package manager");
+    const yarnLinker = result.results.find((r) => r.name === "Yarn linker");
+
+    expect(packageManager?.message).toBe("npm");
+    expect(yarnLinker?.status).toBe("fail");
+    expect(yarnLinker?.message).toContain("PnP");
   });
 });
 

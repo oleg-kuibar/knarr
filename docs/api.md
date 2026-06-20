@@ -584,7 +584,28 @@ async function detectPackageManager(
 
 Within a directory, lockfile priority is pnpm > bun > yarn > npm. npm is detected
 from `package-lock.json` or `npm-shrinkwrap.json`. Falls back to npm if no
-`packageManager` field or lockfile is found.
+`packageManager` field, lockfile, or Yarn artifact is found. Yarn can also be
+detected from `.yarnrc.yml` or `.pnp.*` when no closer lockfile is present.
+
+### `detectPackageManagerInfo(projectDir)`
+
+Detect the package manager and return the evidence used for the decision. This
+distinguishes an explicit npm project from the no-evidence npm fallback.
+
+```typescript
+async function detectPackageManagerInfo(
+  projectDir: string
+): Promise<PackageManagerDetection>
+```
+
+```typescript
+interface PackageManagerDetection {
+  packageManager: PackageManager;
+  source: "packageManager" | "lockfile" | "yarnArtifact" | "default";
+  dir: string;
+  file?: string;
+}
+```
 
 ### `Timer`
 

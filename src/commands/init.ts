@@ -4,7 +4,11 @@ import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
 import pc from "picocolors";
 import { exists, ensureDir, atomicWriteFile } from "../utils/fs.js";
-import { detectPackageManager, isYarnPnpProject } from "../utils/pm-detect.js";
+import {
+  detectPackageManager,
+  hasYarnPnpMarkers,
+  isYarnPnpProject,
+} from "../utils/pm-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { detectBuildCommand as detectBuildCmd } from "../utils/build-detect.js";
 import { buildDevInstallCommand, runShellCommand } from "../utils/pm-commands.js";
@@ -104,13 +108,20 @@ export default defineCommand({
 
     consola.success(`Project role: ${pc.cyan(role)}`);
 
-    if (role === "consumer" && pm === "yarn" && await isYarnPnpProject(projectDir)) {
+    if (
+      role === "consumer" &&
+      (
+        await hasYarnPnpMarkers(projectDir) ||
+        (pm === "yarn" && await isYarnPnpProject(projectDir))
+      )
+    ) {
       consola.error(
         `Yarn PnP mode is not compatible with Knarr.\n\n` +
         `Knarr works by copying files into node_modules/, but PnP eliminates\n` +
-        `node_modules/ entirely. To use Knarr with Yarn Berry, add this to\n` +
-        `.yarnrc.yml:\n\n` +
-        `  nodeLinker: node-modules\n\n` +
+        `node_modules/ entirely. To use Knarr with Yarn Berry, add one of these\n` +
+        `to .yarnrc.yml:\n\n` +
+        `  nodeLinker: node-modules\n` +
+        `  nodeLinker: pnpm\n\n` +
         `Then run: yarn install`
       );
       process.exit(1);

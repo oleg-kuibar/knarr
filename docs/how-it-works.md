@@ -145,7 +145,7 @@ Knarr resolves `node_modules/<pkg>` → follows the symlink into `.pnpm/` → re
 
 ### Detection
 
-The `packageManager` field in `package.json` takes precedence when present, including Corepack-style values such as `pnpm@10.0.0` or `yarn@4.0.0`. If it is missing, Knarr falls back to lockfiles:
+Knarr walks up from the project directory and uses the closest package-manager evidence it finds. Within a directory, the `packageManager` field in `package.json` takes precedence when present, including Corepack-style values such as `pnpm@10.0.0` or `yarn@4.0.0`. If it is missing, Knarr falls back to lockfiles:
 
 | Lockfile | Package manager |
 |---|---|
@@ -154,7 +154,9 @@ The `packageManager` field in `package.json` takes precedence when present, incl
 | `yarn.lock` | yarn |
 | `package-lock.json` or `npm-shrinkwrap.json` | npm |
 
-Lockfiles are checked in priority order within the nearest matching directory (pnpm > bun > yarn > npm). Falls back to npm if no `packageManager` field or lockfile is found.
+Lockfiles are checked in priority order within the nearest matching directory (pnpm > bun > yarn > npm). If no `packageManager` field or lockfile is present in a directory, `.yarnrc.yml` and `.pnp.*` files are treated as Yarn evidence before walking upward. Falls back to npm if no package-manager evidence is found.
+
+Knarr keeps track of whether npm came from explicit evidence (`packageManager`, `package-lock.json`, or `npm-shrinkwrap.json`) or from the no-evidence fallback. This lets current npm projects override stale pnpm/Yarn link metadata, while projects with no package-manager evidence can still use their tracked link layout.
 
 #### Yarn Berry `nodeLinker` modes
 

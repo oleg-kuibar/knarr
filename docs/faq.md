@@ -124,10 +124,11 @@ Knarr detects this automatically and exits early with a clear error message:
 Error: Yarn PnP mode is not compatible with Knarr.
 
 Knarr works by copying files into node_modules/, but PnP eliminates
-node_modules/ entirely. To use Knarr with Yarn Berry, add this to
-.yarnrc.yml:
+node_modules/ entirely. To use Knarr with Yarn Berry, add one of these
+to .yarnrc.yml:
 
   nodeLinker: node-modules
+  nodeLinker: pnpm
 
 Then run: yarn install
 ```
@@ -136,11 +137,13 @@ If you use Yarn Berry, set the linker mode in `.yarnrc.yml`:
 
 ```yaml
 nodeLinker: node-modules
+# or use Yarn's pnpm linker:
+# nodeLinker: pnpm
 ```
 
 Then run `yarn install` to recreate `node_modules/`.
 
-Note: Yarn Berry's `nodeLinker: pnpm` mode is also supported. Knarr detects this and follows Yarn's `.store/` symlink chain automatically.
+With `nodeLinker: pnpm`, Knarr follows Yarn's `.store/` symlink chain automatically.
 
 ## Can I use Knarr with private packages?
 

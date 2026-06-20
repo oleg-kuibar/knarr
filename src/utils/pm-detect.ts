@@ -16,10 +16,24 @@ const LOCKFILES: [string, PackageManager][] = [
 ];
 
 const YARN_PNP_MANIFESTS = [".pnp.cjs", ".pnp.js", ".pnp.loader.mjs"];
+const YARN_PROJECT_ARTIFACTS = [".yarnrc.yml", ...YARN_PNP_MANIFESTS];
 
 interface PackageManagerSpec {
   name: PackageManager;
   version: string;
+}
+
+export type PackageManagerDetectionSource =
+  | "packageManager"
+  | "lockfile"
+  | "yarnArtifact"
+  | "default";
+
+export interface PackageManagerDetection {
+  packageManager: PackageManager;
+  source: PackageManagerDetectionSource;
+  dir: string;
+  file?: string;
 }
 
 function parsePackageManagerSpec(value: unknown): PackageManagerSpec | null {
@@ -42,13 +56,6 @@ function parsePackageManagerSpec(value: unknown): PackageManagerSpec | null {
  * Parses values like "pnpm@9.0.0" or "bun@1.0.0+sha256.abc" → PackageManager.
  * Returns null if the field is missing, empty, or not a recognized PM.
  */
-async function readPackageManagerField(
-  dir: string
-): Promise<PackageManager | null> {
-  const spec = await readPackageManagerSpec(dir);
-  return spec?.name ?? null;
-}
-
 async function readPackageManagerSpec(
   dir: string
 ): Promise<PackageManagerSpec | null> {
@@ -96,30 +103,85 @@ function yarnDefaultsToPnp(version: string): boolean {
 export async function detectPackageManager(
   projectDir: string
 ): Promise<PackageManager> {
+  return (await detectPackageManagerInfo(projectDir)).packageManager;
+}
+
+/**
+ * Detect the package manager and return where the decision came from.
+ * Useful for distinguishing an explicit npm project from the npm fallback.
+ */
+export async function detectPackageManagerInfo(
+  projectDir: string
+): Promise<PackageManagerDetection> {
   let dir = projectDir;
   for (;;) {
     // Check packageManager field first (Corepack convention)
-    const fromField = await readPackageManagerField(dir);
-    if (fromField) return fromField;
+    const fromField = await readPackageManagerSpec(dir);
+    if (fromField) {
+      return {
+        packageManager: fromField.name,
+        source: "packageManager",
+        dir,
+        file: join(dir, "package.json"),
+      };
+    }
 
     // Check lockfiles
     const results = await Promise.all(
-      LOCKFILES.map(async ([lockfile, pm]) => {
+      LOCKFILES.map(async ([lockfile, packageManager]) => {
         try {
           await stat(join(dir, lockfile));
-          return pm;
+          return { lockfile, packageManager };
         } catch {
           return null;
         }
       })
     );
-    const found = results.find((pm) => pm !== null);
-    if (found) return found;
+    const found = results.find((result) => result !== null);
+    if (found) {
+      return {
+        packageManager: found.packageManager,
+        source: "lockfile",
+        dir,
+        file: join(dir, found.lockfile),
+      };
+    }
+
+    const yarnArtifact = await findExistingFile(dir, YARN_PROJECT_ARTIFACTS);
+    if (yarnArtifact) {
+      return {
+        packageManager: "yarn",
+        source: "yarnArtifact",
+        dir,
+        file: join(dir, yarnArtifact),
+      };
+    }
 
     const parent = dirname(dir);
-    if (parent === dir) return "npm"; // filesystem root
+    if (parent === dir) {
+      return {
+        packageManager: "npm",
+        source: "default",
+        dir: projectDir,
+      };
+    }
     dir = parent;
   }
+}
+
+async function findExistingFile(
+  dir: string,
+  filenames: readonly string[]
+): Promise<string | null> {
+  for (const filename of filenames) {
+    try {
+      await stat(join(dir, filename));
+      return filename;
+    } catch {
+      // Missing or unreadable files are treated as absent.
+    }
+  }
+  return null;
 }
 
 export type YarnNodeLinker = "node-modules" | "pnpm" | "pnp";
@@ -225,6 +287,14 @@ export async function hasYarnPnpManifest(projectDir: string): Promise<boolean> {
     if (parent === dir) return false;
     dir = parent;
   }
+}
+
+/**
+ * Check for explicit Yarn PnP artifacts regardless of package-manager detection.
+ */
+export async function hasYarnPnpMarkers(projectDir: string): Promise<boolean> {
+  if (await hasYarnPnpManifest(projectDir)) return true;
+  return (await detectYarnNodeLinker(projectDir)) === "pnp";
 }
 
 /**

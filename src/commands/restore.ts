@@ -9,7 +9,11 @@ import { Timer } from "../utils/timer.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
-import { detectPackageManager, isYarnPnpProject } from "../utils/pm-detect.js";
+import {
+  detectPackageManager,
+  hasYarnPnpMarkers,
+  isYarnPnpProject,
+} from "../utils/pm-detect.js";
 
 const restoreLimit = pLimit(4);
 
@@ -34,18 +38,20 @@ export default defineCommand({
 
     // Check for Yarn PnP incompatibility
     const pm = await detectPackageManager(consumerPath);
-    if (pm === "yarn") {
-      if (await isYarnPnpProject(consumerPath)) {
-        consola.error(
-          `Yarn PnP mode is not compatible with Knarr.\n\n` +
-          `Knarr works by copying files into node_modules/, but PnP eliminates\n` +
-          `node_modules/ entirely. To use Knarr with Yarn Berry, add this to\n` +
-          `.yarnrc.yml:\n\n` +
-          `  nodeLinker: node-modules\n\n` +
-          `Then run: yarn install`
-        );
-        process.exit(1);
-      }
+    if (
+      await hasYarnPnpMarkers(consumerPath) ||
+      (pm === "yarn" && await isYarnPnpProject(consumerPath))
+    ) {
+      consola.error(
+        `Yarn PnP mode is not compatible with Knarr.\n\n` +
+        `Knarr works by copying files into node_modules/, but PnP eliminates\n` +
+        `node_modules/ entirely. To use Knarr with Yarn Berry, add one of these\n` +
+        `to .yarnrc.yml:\n\n` +
+        `  nodeLinker: node-modules\n` +
+        `  nodeLinker: pnpm\n\n` +
+        `Then run: yarn install`
+      );
+      process.exit(1);
     }
 
     const links = Object.entries(state.links);
