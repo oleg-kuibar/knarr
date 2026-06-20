@@ -182,13 +182,15 @@ export async function resolveInjectionTarget(
     return directPath;
   }
 
-  // pnpm / yarn pnpm-linker: follow symlink into .pnpm/ virtual store
+  const pnpmDirs = await getPnpmVirtualStoreDirs(consumerPath);
+
+  // pnpm / yarn pnpm-linker: follow symlink into the configured virtual store
   try {
     const realPath = await resolveRealPath(directPath);
     if (realPath !== resolve(directPath)) {
-      if (!(await isPnpmVirtualStorePackageRealPath(consumerPath, packageName, realPath))) {
+      if (!(await isPnpmVirtualStorePackageRealPath(pnpmDirs, packageName, realPath))) {
         throw new Error(
-          `Refusing to inject ${packageName}: node_modules entry resolves outside this project's .pnpm virtual store (${realPath})`
+          `Refusing to inject ${packageName}: node_modules entry resolves outside a configured pnpm virtual store (${realPath})`
         );
       }
       verbose(`[inject] pnpm: resolved symlink → ${realPath}`);
@@ -205,45 +207,54 @@ export async function resolveInjectionTarget(
     }
   }
 
-  // If no existing pnpm structure, try to find in .pnpm/
-  const pnpmDir = join(consumerPath, "node_modules", ".pnpm");
-  if (await exists(pnpmDir)) {
+  // If no direct symlink exists, try to find the package in known pnpm virtual stores.
+  const existingPnpmDirs: string[] = [];
+  for (const pnpmDir of pnpmDirs) {
+    if (await exists(pnpmDir)) {
+      existingPnpmDirs.push(pnpmDir);
+    }
+  }
+
+  if (existingPnpmDirs.length > 0) {
     if (!(await isDeclaredConsumerDependency(consumerPath, packageName))) {
       verbose(
-        `[inject] pnpm: ${packageName} is not declared by the consumer, skipping .pnpm scan`
+        `[inject] pnpm: ${packageName} is not declared by the consumer, skipping virtual store scan`
       );
       return directPath;
     }
 
-    verbose(`[inject] pnpm: scanning .pnpm/ for ${packageName}`);
     const encodedName = packageName.replaceAll("/", "+");
 
-    // Try exact version match first
-    if (version) {
-      const exactEntry = `${encodedName}@${version}`;
-      const candidate = await resolvePnpmCandidate(
-        consumerPath,
-        packageName,
-        join(pnpmDir, exactEntry, "node_modules", packageName)
-      );
-      if (candidate) {
-        verbose(`[inject] pnpm: exact version match in .pnpm/ → ${candidate}`);
-        return candidate;
-      }
-    }
+    for (const pnpmDir of existingPnpmDirs) {
+      verbose(`[inject] pnpm: scanning ${relative(consumerPath, pnpmDir) || "."} for ${packageName}`);
 
-    // Fall back to a peer-suffixed match for the requested version, if present.
-    const entries = await readdir(pnpmDir);
-    for (const entry of entries) {
-      if (matchesPnpmPackageEntry(encodedName, version, entry)) {
+      // Try exact version match first
+      if (version) {
+        const exactEntry = `${encodedName}@${version}`;
         const candidate = await resolvePnpmCandidate(
-          consumerPath,
+          pnpmDir,
           packageName,
-          join(pnpmDir, entry, "node_modules", packageName)
+          join(pnpmDir, exactEntry, "node_modules", packageName)
         );
         if (candidate) {
-          verbose(`[inject] pnpm: found in .pnpm/ → ${candidate}`);
+          verbose(`[inject] pnpm: exact version match in virtual store → ${candidate}`);
           return candidate;
+        }
+      }
+
+      // Fall back to a peer-suffixed match for the requested version, if present.
+      const entries = await readdir(pnpmDir);
+      for (const entry of entries) {
+        if (matchesPnpmPackageEntry(encodedName, version, entry)) {
+          const candidate = await resolvePnpmCandidate(
+            pnpmDir,
+            packageName,
+            join(pnpmDir, entry, "node_modules", packageName)
+          );
+          if (candidate) {
+            verbose(`[inject] pnpm: found in virtual store → ${candidate}`);
+            return candidate;
+          }
         }
       }
     }
@@ -252,7 +263,7 @@ export async function resolveInjectionTarget(
   // Fall back to direct path
   if (options.warnOnFallback !== false) {
     consola.warn(
-      `pnpm: Could not find ${packageName} in .pnpm/ virtual store, using direct node_modules path. ` +
+      `pnpm: Could not find ${packageName} in a configured virtual store, using direct node_modules path. ` +
       `If this causes issues, run 'pnpm install' to rebuild the virtual store, then 'knarr add' again.`
     );
   }
@@ -260,19 +271,22 @@ export async function resolveInjectionTarget(
 }
 
 async function resolvePnpmCandidate(
-  consumerPath: string,
+  pnpmDir: string,
   packageName: string,
   candidatePath: string
 ): Promise<string | null> {
-  if (!isPnpmVirtualStorePackagePath(consumerPath, packageName, candidatePath)) {
+  if (!isPnpmVirtualStorePackagePathFromRoot(pnpmDir, packageName, candidatePath)) {
     return null;
   }
 
   try {
-    const realPath = await realpath(candidatePath);
-    if (!(await isPnpmVirtualStorePackageRealPath(consumerPath, packageName, realPath))) {
+    const [pnpmRoot, realPath] = await Promise.all([
+      realpath(pnpmDir),
+      realpath(candidatePath),
+    ]);
+    if (!isPnpmVirtualStorePackagePathFromRoot(pnpmRoot, packageName, realPath)) {
       throw new Error(
-        `Refusing to inject ${packageName}: .pnpm candidate resolves outside this project's .pnpm virtual store (${realPath})`
+        `Refusing to inject ${packageName}: virtual store candidate resolves outside a configured pnpm virtual store (${realPath})`
       );
     }
     return realPath;
@@ -311,35 +325,71 @@ function isInside(root: string, target: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
-function isPnpmVirtualStorePackagePath(
-  consumerPath: string,
-  packageName: string,
-  targetPath: string
-): boolean {
-  const pnpmDir = join(consumerPath, "node_modules", ".pnpm");
-  return isPnpmVirtualStorePackagePathFromRoot(pnpmDir, packageName, targetPath);
+async function getPnpmVirtualStoreDirs(consumerPath: string): Promise<string[]> {
+  const nodeModulesDir = join(consumerPath, "node_modules");
+  const dirs = [join(nodeModulesDir, ".pnpm")];
+  const configured = await readConfiguredPnpmVirtualStoreDir(nodeModulesDir);
+  if (!configured) return dirs;
+
+  const configuredDir = isAbsolute(configured)
+    ? configured
+    : resolve(nodeModulesDir, configured);
+  if (!dirs.some((dir) => resolve(dir) === resolve(configuredDir))) {
+    dirs.push(configuredDir);
+  }
+  return dirs;
+}
+
+async function readConfiguredPnpmVirtualStoreDir(nodeModulesDir: string): Promise<string | null> {
+  try {
+    const content = await readFile(join(nodeModulesDir, ".modules.yaml"), "utf-8");
+    return parsePnpmVirtualStoreDir(content);
+  } catch (err) {
+    if (isNodeError(err) && err.code === "ENOENT") return null;
+    throw err;
+  }
+}
+
+function parsePnpmVirtualStoreDir(content: string): string | null {
+  try {
+    const parsed = JSON.parse(content) as { virtualStoreDir?: unknown };
+    if (typeof parsed.virtualStoreDir === "string" && parsed.virtualStoreDir.trim()) {
+      return parsed.virtualStoreDir.trim();
+    }
+  } catch {
+    // pnpm has used YAML-compatible metadata; fall back to a top-level scalar scan.
+  }
+
+  const match = content.match(/^virtualStoreDir:\s*(.+?)\s*$/m);
+  if (!match) return null;
+
+  let value = match[1].trim().replace(/\s+#.*$/, "");
+  if (
+    (value.startsWith("\"") && value.endsWith("\"")) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1);
+  }
+  return value || null;
 }
 
 async function isPnpmVirtualStorePackageRealPath(
-  consumerPath: string,
+  pnpmDirs: string[],
   packageName: string,
   targetPath: string
 ): Promise<boolean> {
-  const pnpmDir = join(consumerPath, "node_modules", ".pnpm");
-  let consumerRoot: string;
-  let pnpmRoot: string;
-  try {
-    [consumerRoot, pnpmRoot] = await Promise.all([
-      realpath(consumerPath),
-      realpath(pnpmDir),
-    ]);
-  } catch (err) {
-    if (isNodeError(err) && err.code === "ENOENT") return false;
-    throw err;
+  for (const pnpmDir of pnpmDirs) {
+    try {
+      const pnpmRoot = await realpath(pnpmDir);
+      if (isPnpmVirtualStorePackagePathFromRoot(pnpmRoot, packageName, targetPath)) {
+        return true;
+      }
+    } catch (err) {
+      if (isNodeError(err) && err.code === "ENOENT") continue;
+      throw err;
+    }
   }
-
-  if (!isInside(join(consumerRoot, "node_modules"), pnpmRoot)) return false;
-  return isPnpmVirtualStorePackagePathFromRoot(pnpmRoot, packageName, targetPath);
+  return false;
 }
 
 function isPnpmVirtualStorePackagePathFromRoot(

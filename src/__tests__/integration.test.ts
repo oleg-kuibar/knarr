@@ -8,7 +8,7 @@ import {
   rm,
   symlink,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { exists } from "../utils/fs.js";
 import { detectYarnNodeLinker } from "../utils/pm-detect.js";
@@ -682,6 +682,93 @@ describe("pnpm injection", () => {
     expect(await readFile(injectedFile, "utf-8")).toBe('module.exports = "hello";');
   });
 
+  it("honors pnpm virtualStoreDir metadata outside node_modules", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+    await writeFile(
+      join(testConsumer, "node_modules", ".modules.yaml"),
+      JSON.stringify({ virtualStoreDir: "../.pnpm" })
+    );
+
+    const pnpmPkgDir = join(
+      testConsumer,
+      ".pnpm",
+      "test-lib@1.0.0",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(pnpmPkgDir, { recursive: true });
+    await writeFile(join(pnpmPkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+    await symlink(
+      join("..", ".pnpm", "test-lib@1.0.0", "node_modules", "test-lib"),
+      join(testConsumer, "node_modules", "test-lib"),
+      "dir"
+    );
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "pnpm");
+
+    expect(result.copied).toBeGreaterThan(0);
+    expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
+  });
+
+  it("honors pnpm global virtual store links from metadata", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        dependencies: { "test-lib": "1.0.0" },
+      })
+    );
+
+    const nodeModulesDir = join(testConsumer, "node_modules");
+    const globalVirtualStore = join(testKNARRHome, "store", "v10", "links");
+    await writeFile(
+      join(nodeModulesDir, ".modules.yaml"),
+      JSON.stringify({
+        virtualStoreDir: relative(nodeModulesDir, globalVirtualStore).replace(/\\/g, "/"),
+      })
+    );
+
+    const pnpmPkgDir = join(
+      globalVirtualStore,
+      "@",
+      "test-lib",
+      "1.0.0",
+      "abc123",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(pnpmPkgDir, { recursive: true });
+    await writeFile(join(pnpmPkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+    await symlink(relative(nodeModulesDir, pnpmPkgDir), join(nodeModulesDir, "test-lib"), "dir");
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "pnpm");
+
+    expect(result.copied).toBeGreaterThan(0);
+    expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
+  });
+
   it("handles scoped packages in .pnpm/", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
@@ -851,7 +938,7 @@ describe("pnpm injection", () => {
     const entry = await getStoreEntry("test-lib", "1.0.0");
 
     await expect(inject(entry!, testConsumer, "pnpm")).rejects.toThrow(
-      "resolves outside this project's .pnpm virtual store"
+      "resolves outside a configured pnpm virtual store"
     );
 
     await rm(external, { recursive: true, force: true });
@@ -887,7 +974,7 @@ describe("pnpm injection", () => {
 
     try {
       await expect(inject(entry!, testConsumer, "pnpm")).rejects.toThrow(
-        "resolves outside this project's .pnpm virtual store"
+        "resolves outside a configured pnpm virtual store"
       );
       expect(await exists(join(external, "dist", "index.js"))).toBe(false);
     } finally {
