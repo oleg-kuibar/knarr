@@ -316,6 +316,22 @@ function pathEnvKey(env: NodeJS.ProcessEnv): string {
   return Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "Path";
 }
 
+function setEnvVar(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  value: string
+): void {
+  if (platform() === "win32") {
+    const lowered = key.toLowerCase();
+    for (const existingKey of Object.keys(env)) {
+      if (existingKey.toLowerCase() === lowered) {
+        delete env[existingKey];
+      }
+    }
+  }
+  env[key] = value;
+}
+
 function buildLifecycleEnv(
   packageDir: string,
   pkg: PackageJson,
@@ -325,16 +341,22 @@ function buildLifecycleEnv(
   const env = { ...process.env };
   const key = pathEnvKey(env);
   const existingPath = env[key] ?? "";
-  env[key] = [
-    join(packageDir, "node_modules", ".bin"),
-    existingPath,
-  ].filter(Boolean).join(delimiter);
+  setEnvVar(
+    env,
+    key,
+    [
+      join(packageDir, "node_modules", ".bin"),
+      existingPath,
+    ].filter(Boolean).join(delimiter)
+  );
 
-  env.INIT_CWD ??= packageDir;
-  env.npm_lifecycle_event = hookName;
-  env.npm_lifecycle_script = script;
-  env.npm_package_name = pkg.name;
-  env.npm_package_version = pkg.version;
+  if (!("INIT_CWD" in env) || !env.INIT_CWD) {
+    setEnvVar(env, "INIT_CWD", packageDir);
+  }
+  setEnvVar(env, "npm_lifecycle_event", hookName);
+  setEnvVar(env, "npm_lifecycle_script", script);
+  setEnvVar(env, "npm_package_name", pkg.name);
+  setEnvVar(env, "npm_package_version", pkg.version);
   return env;
 }
 
