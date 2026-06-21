@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0
+
+- Expand package-manager support for Yarn Berry node-modules, Yarn pnpm-linker, Yarn PnP rejection, pnpm virtual stores, and Bun install layouts.
+- Run Yarn PnP lifecycle hooks through Yarn and preserve package-manager layout metadata across restore, update, and push.
+- Harden injection, doctor, and explain diagnostics against stale or external virtual-store targets.
+- Improve publish output for `publishConfig.directory`, workspace aliases, catalog dependencies, `.gitignore` packing, and unchanged rewritten manifests.
+- Make watch and dry-run workflows safer, including initial build handling, dry-run watch exits, dependency-aware workspace skips, and cascade failure handling.
+- Add compatibility smoke coverage and package-manager-focused regression tests.
+
 ## 0.0.3
 
 - Keep auto-installed setup dependencies from pruning freshly linked packages.
