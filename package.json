@@ -86,7 +86,7 @@
     "node": ">=22.12.0"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/node": "^26.0.0",
     "@types/picomatch": "^4.0.3",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
