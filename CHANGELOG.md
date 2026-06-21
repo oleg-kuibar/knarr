@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Clarify README, FAQ, comparison, and yalc migration docs around native package-manager workflows, yalc, and Knarr tradeoffs.
+- Recommend canary or prerelease packages for CI and release validation, with Knarr limited to local smoke tests.
+
 ## 0.1.0
 
 - Expand package-manager support for Yarn Berry node-modules, Yarn pnpm-linker, Yarn PnP rejection, pnpm virtual stores, and Bun install layouts.
