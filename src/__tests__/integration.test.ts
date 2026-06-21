@@ -1491,6 +1491,66 @@ describe("bun support", () => {
     expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
     expect(await exists(join(stalePnpmPkgDir, "dist", "index.js"))).toBe(false);
   });
+
+  it("injects into local bun isolated store symlinks", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    await writeFile(join(testConsumer, "bun.lock"), "");
+    const bunTarget = join(
+      testConsumer,
+      "node_modules",
+      ".bun",
+      "test-lib@1.0.0",
+      "node_modules",
+      "test-lib"
+    );
+    await mkdir(bunTarget, { recursive: true });
+    await writeFile(
+      join(bunTarget, "package.json"),
+      JSON.stringify({ name: "test-lib", version: "1.0.0" })
+    );
+    await symlink(
+      join(".bun", "test-lib@1.0.0", "node_modules", "test-lib"),
+      join(testConsumer, "node_modules", "test-lib"),
+      "dir"
+    );
+
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+    const result = await inject(entry!, testConsumer, "bun");
+
+    expect(result.copied).toBeGreaterThan(0);
+    expect(await exists(join(bunTarget, "dist", "index.js"))).toBe(true);
+    expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
+  });
+
+  it("refuses bun isolated symlinks outside the local .bun store", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+
+    const external = await mkdtemp(join(tmpdir(), "KNARR-bun-external-"));
+    try {
+      await writeFile(join(testConsumer, "bun.lock"), "");
+      await writeFile(
+        join(external, "package.json"),
+        JSON.stringify({ name: "test-lib", version: "1.0.0" })
+      );
+      await symlink(external, join(testConsumer, "node_modules", "test-lib"), "dir");
+
+      await publish(testLib);
+      const entry = await getStoreEntry("test-lib", "1.0.0");
+
+      await expect(inject(entry!, testConsumer, "bun")).rejects.toThrow(
+        "Bun target resolves outside"
+      );
+      expect(await exists(join(external, "dist", "index.js"))).toBe(false);
+    } finally {
+      await rm(external, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("pnpm injection", () => {

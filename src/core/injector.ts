@@ -40,7 +40,7 @@ export interface InjectOptions {
 /**
  * Inject a package from the store into a consumer's node_modules.
  * Strategy depends on the package manager:
- * - npm/yarn/bun: direct node_modules/<pkg>/
+ * - npm/yarn/bun: direct node_modules/<pkg>/ (Bun isolated symlinks must stay local)
  * - pnpm: follow .pnpm/ structure
  * - yarn with nodeLinker: pnpm: follow .store/ structure
  */
@@ -261,8 +261,12 @@ export async function resolveInjectionTarget(
     currentPm.source,
     yarnLinker
   );
+  const effectiveBun = currentPm.packageManager === "bun" || (useTrackedPm && pm === "bun");
 
   if (!storeKind) {
+    if (effectiveBun) {
+      return resolveBunTarget(consumerPath, directPath, packageName, version);
+    }
     return directPath;
   }
 
@@ -392,6 +396,42 @@ function storeKindLabel(kind: "pnpm" | "yarn-pnpm"): string {
   return kind === "pnpm" ? "pnpm" : "Yarn pnpm-linker";
 }
 
+async function resolveBunTarget(
+  consumerPath: string,
+  directPath: string,
+  packageName: string,
+  version: string | undefined
+): Promise<string> {
+  try {
+    const linkStat = await lstat(directPath);
+    if (!linkStat.isSymbolicLink()) return directPath;
+  } catch (err) {
+    if (isNodeError(err) && err.code === "ENOENT") return directPath;
+    throw err;
+  }
+
+  const realPath = await realpath(directPath);
+  const bunStoreDir = join(consumerPath, "node_modules", ".bun");
+  const bunStoreRoot = await realpath(bunStoreDir).catch((err: unknown) => {
+    if (isNodeError(err) && err.code === "ENOENT") return bunStoreDir;
+    throw err;
+  });
+  if (!isPathInside(bunStoreRoot, realPath)) {
+    throw new Error(
+      `Refusing to inject ${packageName}: Bun target resolves outside the local node_modules/.bun store (${realPath})`
+    );
+  }
+
+  await validateResolvedPackageIdentity(realPath, packageName, version, "Bun isolated");
+  verbose(`[inject] Bun isolated: resolved symlink → ${realPath}`);
+  return realPath;
+}
+
+function isPathInside(parentDir: string, childPath: string): boolean {
+  const rel = relative(resolve(parentDir), resolve(childPath));
+  return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel));
+}
+
 function getEffectiveStoreKind(
   storedPm: PackageManager,
   currentPm: PackageManager,
@@ -425,18 +465,19 @@ async function validateResolvedPackageIdentity(
   targetDir: string,
   packageName: string,
   version: string | undefined,
-  storeKind: "pnpm" | "yarn-pnpm"
+  storeKind: "pnpm" | "yarn-pnpm" | "Bun isolated"
 ): Promise<void> {
+  const label = storeKind === "Bun isolated" ? storeKind : storeKindLabel(storeKind);
   const pkg = await readPackageJson(targetDir);
   if (!pkg) return;
   if (pkg.name && pkg.name !== packageName) {
     throw new Error(
-      `Refusing to inject ${packageName}: ${storeKindLabel(storeKind)} target contains package "${pkg.name}"`
+      `Refusing to inject ${packageName}: ${label} target contains package "${pkg.name}"`
     );
   }
   if (version && pkg.version && pkg.version !== version) {
     throw new Error(
-      `Refusing to inject ${packageName}@${version}: ${storeKindLabel(storeKind)} target contains version ${pkg.version}`
+      `Refusing to inject ${packageName}@${version}: ${label} target contains version ${pkg.version}`
     );
   }
 }
