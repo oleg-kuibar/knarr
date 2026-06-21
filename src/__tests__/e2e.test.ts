@@ -17,11 +17,12 @@ import {
   mkdir,
   rm,
   stat,
+  lstat,
   readdir,
   symlink,
 } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { platform, tmpdir } from "node:os";
 import { exists, collectFiles } from "../utils/fs.js";
 
 // Paths to the real example packages (built with tsup)
@@ -859,10 +860,13 @@ describe("pnpm injection strategy", () => {
       '{"name":"@example/ui-kit","version":"1.0.0"}'
     );
     await mkdir(join(consumer1, "node_modules", "@example"), { recursive: true });
+    const directPath = join(consumer1, "node_modules", "@example", "ui-kit");
+    const directParent = join(consumer1, "node_modules", "@example");
+    const isWindows = platform() === "win32";
     await symlink(
-      relative(join(consumer1, "node_modules", "@example"), pnpmTarget),
-      join(consumer1, "node_modules", "@example", "ui-kit"),
-      "dir"
+      isWindows ? pnpmTarget : relative(directParent, pnpmTarget),
+      directPath,
+      isWindows ? "junction" : "dir"
     );
 
     await publish(UI_KIT_DIR);
@@ -871,8 +875,8 @@ describe("pnpm injection strategy", () => {
 
     await removeInjected(consumer1, "@example/ui-kit", "pnpm", "1.0.0");
 
-    expect(await exists(join(consumer1, "node_modules", "@example", "ui-kit"))).toBe(false);
-    expect(await exists(pnpmTarget)).toBe(false);
+    await expect(lstat(directPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(pnpmTarget)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 
