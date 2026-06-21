@@ -7,6 +7,25 @@ import { getConsumerStatePath, getConsumerKnarrDir } from "./paths.js";
 import { readConsumerState, writeConsumerState } from "../core/tracker.js";
 import type { PackageManager } from "../types.js";
 
+export const POSTINSTALL_RESTORE_COMMAND = 'knarr restore --silent || node -e "process.exit(0)"';
+
+export function usesSelfResolvingKnarrCommand(postinstall: string): boolean {
+  return /\b(?:npx(?:\s+--yes|\s+-y)?|pnpm\s+dlx|yarn\s+dlx|bunx)\s+knarr\s+restore(?:\s|$)/.test(postinstall);
+}
+
+export function usesKnarrRestoreCommand(postinstall: string): boolean {
+  return /(?:^|[;&|()\s])(?:(?:npx(?:\s+(?:--yes|-y))?|pnpm\s+dlx|yarn\s+dlx|bunx)\s+)?knarr\s+restore(?:\s|$)/.test(postinstall);
+}
+
+function isStandaloneKnarrRestoreCommand(postinstall: string): boolean {
+  const trimmed = postinstall.trim();
+  return (
+    trimmed === POSTINSTALL_RESTORE_COMMAND ||
+    trimmed === "knarr restore --silent" ||
+    usesSelfResolvingKnarrCommand(trimmed)
+  );
+}
+
 /**
  * Ensure .knarr/ is in .gitignore. Returns true if it was added.
  */
@@ -42,8 +61,7 @@ export async function ensureGitignore(
 }
 
 /**
- * Add "postinstall": "npx knarr restore || true" to package.json scripts.
- * Uses npx to ensure the command works even if knarr isn't globally installed.
+ * Add a package-manager-neutral restore hook to package.json scripts.
  * Returns true if it was added.
  */
 export async function addPostinstall(pkgPath: string): Promise<boolean> {
@@ -51,15 +69,15 @@ export async function addPostinstall(pkgPath: string): Promise<boolean> {
   const pkg = JSON.parse(content);
 
   if (pkg.scripts?.postinstall) {
-    if (pkg.scripts.postinstall.includes("knarr")) return false;
+    if (usesKnarrRestoreCommand(pkg.scripts.postinstall)) return false;
     consola.warn(
-      `Existing postinstall script found. Add ${pc.cyan("npx knarr restore")} manually if needed.`,
+      `Existing postinstall script found. Add ${pc.cyan(POSTINSTALL_RESTORE_COMMAND)} manually if needed.`,
     );
     return false;
   }
 
   if (!pkg.scripts) pkg.scripts = {};
-  pkg.scripts.postinstall = "npx knarr restore || true";
+  pkg.scripts.postinstall = POSTINSTALL_RESTORE_COMMAND;
 
   const indent = content.match(/^(\s+)"/m)?.[1] || "  ";
   await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
@@ -78,7 +96,9 @@ export async function removePostinstall(pkgPath: string): Promise<boolean> {
     return false;
   }
   const pkg = JSON.parse(content);
-  if (!pkg.scripts?.postinstall?.includes("knarr")) return false;
+  if (!pkg.scripts?.postinstall || !isStandaloneKnarrRestoreCommand(pkg.scripts.postinstall)) {
+    return false;
+  }
 
   delete pkg.scripts.postinstall;
   // Clean up empty scripts object

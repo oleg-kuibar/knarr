@@ -10,6 +10,7 @@ import {
   writeConsumerState,
 } from "../core/tracker.js";
 import { getStoreEntry, listStoreEntries } from "../core/store.js";
+import { resolveInjectionTarget } from "../core/injector.js";
 import { ensureDir, exists, isNodeError } from "../utils/fs.js";
 import {
   getConsumerKnarrDir,
@@ -20,10 +21,18 @@ import {
 import {
   detectPackageManager,
   detectYarnNodeLinker,
+  hasYarnPnpMarkers,
   hasYarnrcYml,
+  hasYarnPnpManifest,
+  isYarnPnpProject,
 } from "../utils/pm-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
-import { addPostinstall, ensureGitignore } from "../utils/init-helpers.js";
+import {
+  addPostinstall,
+  ensureGitignore,
+  usesKnarrRestoreCommand,
+  usesSelfResolvingKnarrCommand,
+} from "../utils/init-helpers.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, isJsonOutput } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
@@ -82,6 +91,18 @@ export async function runDoctorDiagnostics(
   }
 
   const pm = await detectPackageManager(consumerPath);
+  const yarnrcExists = await hasYarnrcYml(consumerPath);
+  const pnpManifestExists = await hasYarnPnpManifest(consumerPath);
+  const hardPnpMarkers = await hasYarnPnpMarkers(consumerPath);
+  const shouldCheckYarnLinker = pm === "yarn" || yarnrcExists || pnpManifestExists;
+  const yarnLinker = shouldCheckYarnLinker
+    ? await detectYarnNodeLinker(consumerPath)
+    : null;
+  const isPnpProject =
+    hardPnpMarkers || (pm === "yarn" && await isYarnPnpProject(consumerPath));
+  const canFixConsumerSetup = !isPnpProject;
+  const pnpFixBlockedReason =
+    "Yarn PnP has no node_modules tree for Knarr to manage. Set `nodeLinker: node-modules` or `nodeLinker: pnpm`, run `yarn install`, then re-run `knarr doctor --fix`.";
 
   const storePath = getStorePath();
   if (await exists(storePath)) {
@@ -156,11 +177,12 @@ export async function runDoctorDiagnostics(
       name: "Consumer state",
       status: "warn",
       message: "No .knarr/state.json found.",
-      fixable: true,
+      fixable: canFixConsumerSetup,
       fixed: false,
       fixes: [],
+      ...(!canFixConsumerSetup ? { unfixableReason: pnpFixBlockedReason } : {}),
     };
-    if (shouldFix) {
+    if (shouldFix && check.fixable) {
       await ensureDir(knarrDir);
       await writeConsumerState(consumerPath, {
         version: "1",
@@ -223,7 +245,24 @@ export async function runDoctorDiagnostics(
       });
     }
 
-    const nmPath = join(consumerPath, "node_modules", name);
+    let nmPath: string;
+    try {
+      nmPath = await resolveInjectionTarget(
+        consumerPath,
+        name,
+        link.packageManager,
+        link.version,
+        { warnOnFallback: false }
+      );
+    } catch (err) {
+      await addCheck({
+        name: `node_modules: ${name}`,
+        status: "fail",
+        message: `Cannot resolve package target. ${err instanceof Error ? err.message : String(err)}`,
+      });
+      continue;
+    }
+
     if (!(await exists(nmPath))) {
       await addCheck({
         name: `node_modules: ${name}`,
@@ -233,7 +272,13 @@ export async function runDoctorDiagnostics(
     } else {
       try {
         const nmPkg = JSON.parse(await readFile(join(nmPath, "package.json"), "utf-8"));
-        if (nmPkg.version && nmPkg.version !== link.version) {
+        if (nmPkg.name && nmPkg.name !== name) {
+          await addCheck({
+            name: `node_modules: ${name}`,
+            status: "fail",
+            message: `node_modules target contains package "${nmPkg.name}". Run your package manager install, then 'knarr restore'.`,
+          });
+        } else if (nmPkg.version && nmPkg.version !== link.version) {
           await addCheck({
             name: `node_modules: ${name}`,
             status: "warn",
@@ -262,39 +307,39 @@ export async function runDoctorDiagnostics(
     message: pm,
   });
 
-  if (pm === "yarn") {
-    const linker = await detectYarnNodeLinker(consumerPath);
-    const yarnrcExists = await hasYarnrcYml(consumerPath);
-
-    if (!yarnrcExists) {
-      await addCheck({
-        name: "Yarn linker",
-        status: "pass",
-        message: "Yarn Classic, node_modules mode",
-      });
-    } else if (linker === "node-modules") {
+  if (shouldCheckYarnLinker) {
+    if (yarnLinker === "node-modules") {
       await addCheck({
         name: "Yarn linker",
         status: "pass",
         message: "Yarn Berry with node-modules linker",
       });
-    } else if (linker === "pnpm") {
+    } else if (yarnLinker === "pnpm") {
       await addCheck({
         name: "Yarn linker",
         status: "pass",
-        message: "Yarn pnpm linker mode (Knarr handles this)",
+        message: "Yarn pnpm linker mode (.store virtual store)",
       });
-    } else if (linker === "pnp") {
+    } else if (isPnpProject) {
+      const reason = yarnLinker === "pnp" || pnpManifestExists
+        ? "Yarn PnP is not compatible."
+        : "Yarn Berry defaults to PnP.";
       await addCheck({
         name: "Yarn linker",
         status: "fail",
-        message: "Yarn PnP is not compatible. Set `nodeLinker: node-modules` in .yarnrc.yml",
+        message: `${reason} Set \`nodeLinker: node-modules\` or \`nodeLinker: pnpm\` in .yarnrc.yml`,
+      });
+    } else if (!yarnrcExists) {
+      await addCheck({
+        name: "Yarn linker",
+        status: "pass",
+        message: "Yarn Classic, node_modules mode",
       });
     } else {
       await addCheck({
         name: "Yarn linker",
         status: "warn",
-        message: "Yarn Berry defaults to PnP. Add `nodeLinker: node-modules` to .yarnrc.yml",
+        message: "Yarn Berry defaults to PnP. Add `nodeLinker: node-modules` or `nodeLinker: pnpm` to .yarnrc.yml",
       });
     }
   }
@@ -328,11 +373,12 @@ export async function runDoctorDiagnostics(
         name: "Vite integration",
         status: "warn",
         message: "Knarr Vite plugin is missing.",
-        fixable: true,
+        fixable: canFixConsumerSetup,
         fixed: false,
         fixes: [],
+        ...(!canFixConsumerSetup ? { unfixableReason: pnpFixBlockedReason } : {}),
       };
-      if (shouldFix) {
+      if (shouldFix && check.fixable) {
         const result = await addKnarrVitePlugin(bundler.configFile);
         if (result.modified) {
           check.fixed = !dryRun;
@@ -368,10 +414,14 @@ export async function runDoctorDiagnostics(
         name: `Next.js integration: ${name}`,
         status: "warn",
         message: `${name} is missing from transpilePackages.`,
-        fixable: !transpile.error,
+        fixable: !transpile.error && canFixConsumerSetup,
         fixed: false,
         fixes: [],
-        ...(transpile.error ? { unfixableReason: transpile.error } : {}),
+        ...(transpile.error
+          ? { unfixableReason: transpile.error }
+          : !canFixConsumerSetup
+            ? { unfixableReason: pnpFixBlockedReason }
+            : {}),
       };
       if (shouldFix && check.fixable) {
         const result = await addToTranspilePackages(bundler.configFile, name);
@@ -400,7 +450,8 @@ export async function runDoctorDiagnostics(
         name: ".gitignore",
         status: "warn",
         message: ".knarr/ not in .gitignore.",
-        fixable: true,
+        fixable: canFixConsumerSetup,
+        ...(!canFixConsumerSetup ? { unfixableReason: pnpFixBlockedReason } : {}),
       },
       async () => {
         const changed = await ensureGitignore(gitignorePath);
@@ -413,12 +464,21 @@ export async function runDoctorDiagnostics(
   if (await exists(pkgPath)) {
     const pkg = await readJsonFile(pkgPath);
     const postinstall = pkg?.scripts?.postinstall;
-    if (typeof postinstall === "string" && postinstall.includes("knarr")) {
-      await addCheck({
-        name: "Postinstall restore",
-        status: "pass",
-        message: "postinstall runs knarr restore",
-      });
+    if (typeof postinstall === "string" && usesKnarrRestoreCommand(postinstall)) {
+      if (await canVerifyKnarrForPostinstall(consumerPath, pkg, postinstall)) {
+        await addCheck({
+          name: "Postinstall restore",
+          status: "pass",
+          message: "postinstall runs knarr restore",
+        });
+      } else {
+        await addCheck({
+          name: "Postinstall restore",
+          status: "warn",
+          message: "postinstall runs knarr restore, but no local knarr dependency or binary was found.",
+          unfixableReason: "Install knarr as a devDependency for reliable auto-restore, or ensure a global knarr binary is available during installs.",
+        });
+      }
     } else if (typeof postinstall === "string") {
       await addCheck({
         name: "Postinstall restore",
@@ -432,7 +492,8 @@ export async function runDoctorDiagnostics(
           name: "Postinstall restore",
           status: "warn",
           message: "postinstall restore hook is missing.",
-          fixable: true,
+          fixable: canFixConsumerSetup,
+          ...(!canFixConsumerSetup ? { unfixableReason: pnpFixBlockedReason } : {}),
         },
         async () => {
           const changed = await addPostinstall(pkgPath);
@@ -603,6 +664,29 @@ async function pathKind(path: string): Promise<"missing" | "file" | "dir"> {
     }
     return "file";
   }
+}
+
+async function canVerifyKnarrForPostinstall(
+  consumerPath: string,
+  pkg: Record<string, any> | null,
+  postinstall: string
+): Promise<boolean> {
+  if (usesSelfResolvingKnarrCommand(postinstall)) return true;
+  if (declaresKnarrDependency(pkg)) return true;
+  return (
+    await exists(join(consumerPath, "node_modules", ".bin", "knarr")) ||
+    await exists(join(consumerPath, "node_modules", ".bin", "knarr.cmd"))
+  );
+}
+
+function declaresKnarrDependency(pkg: Record<string, any> | null): boolean {
+  if (!pkg) return false;
+  return [
+    pkg.dependencies,
+    pkg.devDependencies,
+    pkg.optionalDependencies,
+    pkg.peerDependencies,
+  ].some((deps) => deps && typeof deps === "object" && "knarr" in deps);
 }
 
 async function readJsonFile(path: string): Promise<Record<string, any> | null> {

@@ -6,13 +6,14 @@ import { getStoreEntry } from "./store.js";
 import { inject } from "./injector.js";
 import { addLink, getConsumers, getLink } from "./tracker.js";
 import { detectBuildCommand } from "../utils/build-detect.js";
-import { detectPackageManager } from "../utils/pm-detect.js";
+import { detectPackageManager, detectPackageManagerInfo } from "../utils/pm-detect.js";
 import { loadKnarrConfig } from "../utils/config.js";
 import type { KnarrConfig } from "../utils/config.js";
 import { Timer } from "../utils/timer.js";
 import { output } from "../utils/output.js";
 import { errorWithSuggestion } from "../utils/errors.js";
-import { verbose } from "../utils/logger.js";
+import { isDryRun, verbose } from "../utils/logger.js";
+import { recordMutation } from "../utils/dry-run.js";
 import { consola } from "../utils/console.js";
 import type { PackageJson, StoreEntry } from "../types.js";
 
@@ -57,6 +58,12 @@ export interface PushSummary {
   consumerResults: PushConsumerResult[];
 }
 
+export interface WorkspaceWatchBuildResult {
+  canPush: boolean;
+  failedPackages: Set<string>;
+  skippedPackages: Set<string>;
+}
+
 /**
  * Publish a package to the store, then inject into all registered consumers.
  * Shared by both `push` and `dev` commands.
@@ -74,12 +81,48 @@ export async function doPush(
     historyLimit: options.historyLimit,
   });
   if (result.skipped) {
+    const entry = await getStoreEntry(result.name, result.version);
+    if (entry) {
+      return pushStoreEntry(entry, {
+        force: options.force,
+        timer,
+        noConsumersStatus: "available",
+        noChange: true,
+        skippedReason: "content unchanged",
+      });
+    } else {
+      const summary = createEmptySummary(result.name, result.version, result.buildId, timer.elapsedMs());
+      summary.noChange = true;
+      summary.skippedReason = "content unchanged";
+      consola.info(
+        `No changes to push for ${result.name}@${result.version}` +
+          (result.buildId ? ` [${result.buildId}]` : "")
+      );
+      output(summary);
+      return summary;
+    }
+  }
+
+  if (isDryRun()) {
+    const consumers = await getConsumers(result.name);
     const summary = createEmptySummary(result.name, result.version, result.buildId, timer.elapsedMs());
-    summary.noChange = true;
-    summary.skippedReason = "content unchanged";
+    summary.skippedReason = "dry-run";
+    summary.consumers = consumers.length;
+    summary.skippedConsumers = consumers.length;
+    summary.consumerResults = consumers.map((consumerPath) => ({
+      consumerPath,
+      status: "skipped",
+      copied: 0,
+      removed: 0,
+      skipped: 0,
+      binLinks: 0,
+      cacheInvalidations: 0,
+      reason: "dry-run publish preview; store entry was not written",
+    }));
     consola.info(
-      `No changes to push for ${result.name}@${result.version}` +
-        (result.buildId ? ` [${result.buildId}]` : "")
+      `Dry-run: would publish ${result.name}@${result.version}` +
+        (result.buildId ? ` [${result.buildId}]` : "") +
+        ". Skipping consumer injection preview because the store entry was not written."
     );
     output(summary);
     return summary;
@@ -124,6 +167,10 @@ export interface PushStoreEntryOptions {
   noConsumersStatus?: "published" | "available";
   /** Emit structured output for this push summary (default: true) */
   emitOutput?: boolean;
+  /** Mark summary as a no-content-change push */
+  noChange?: boolean;
+  /** Optional no-change/skip reason for the summary */
+  skippedReason?: string;
 }
 
 /**
@@ -150,6 +197,8 @@ export async function pushStoreEntry(
       entry.meta.buildId ?? "",
       timer.elapsedMs()
     );
+    summary.noChange = options.noChange ?? false;
+    summary.skippedReason = options.skippedReason;
     if (options.emitOutput !== false) output(summary);
     return summary;
   }
@@ -184,10 +233,14 @@ export async function pushStoreEntry(
         }
 
         try {
+          const currentPm = await detectPackageManagerInfo(consumerPath);
+          const packageManager = currentPm.source === "default"
+            ? link.packageManager
+            : currentPm.packageManager;
           const injectResult = await inject(
             entry,
             consumerPath,
-            link.packageManager,
+            packageManager,
             { force: options.force }
           );
 
@@ -199,6 +252,7 @@ export async function pushStoreEntry(
             contentHash: entry.meta.contentHash,
             linkedAt: new Date().toISOString(),
             buildId: entry.meta.buildId ?? "",
+            packageManager,
           });
 
           return {
@@ -290,6 +344,8 @@ export async function pushStoreEntry(
     elapsed: timer.elapsedMs(),
     consumerResults: results,
   };
+  summary.noChange = options.noChange ?? false;
+  summary.skippedReason = options.skippedReason;
 
   if (options.emitOutput !== false) output(summary);
   return summary;
@@ -380,6 +436,109 @@ export async function startWatchMode(
     process.once("SIGINT", cleanup);
     process.once("SIGTERM", cleanup);
   });
+}
+
+/**
+ * Run the watch-mode build command once before the initial publish/push.
+ * Returns false when a configured build fails, so callers can skip publishing
+ * stale output while still entering watch mode.
+ */
+export async function runInitialWatchBuild(
+  packageDir: string,
+  args: WatchArgs,
+  config?: KnarrConfig
+): Promise<boolean> {
+  const resolvedConfig = config ?? await loadKnarrConfig(packageDir);
+  const { buildCmd } = await resolveWatchConfig(packageDir, args, resolvedConfig);
+  if (!buildCmd) return true;
+
+  if (isDryRun()) {
+    recordMutation({ type: "command-skip", path: packageDir, detail: buildCmd });
+    return true;
+  }
+
+  const { runBuildCommand } = await import("./watcher.js");
+  const success = await runBuildCommand(buildCmd, packageDir);
+  if (!success) {
+    consola.warn("Initial build failed; skipping initial push. Watch mode will continue.");
+  }
+  return success;
+}
+
+/**
+ * Run initial watch builds for all publishable workspace packages in
+ * dependency-first order.
+ */
+export async function runInitialWorkspaceWatchBuilds(
+  startDir: string,
+  args: WatchArgs
+): Promise<WorkspaceWatchBuildResult> {
+  const {
+    buildReverseAdjacency,
+    buildWorkspaceGraph,
+    filterPublishableWorkspaceGraph,
+  } = await import("../utils/workspace.js");
+  const { topoSort, CycleError } = await import("../utils/topo-sort.js");
+
+  const discovered = await buildWorkspaceGraph(startDir);
+  const graph = filterPublishableWorkspaceGraph(discovered);
+  if (graph.packages.length === 0) {
+    return {
+      canPush: true,
+      failedPackages: new Set(),
+      skippedPackages: new Set(),
+    };
+  }
+
+  let ordered: string[];
+  try {
+    ordered = topoSort(graph.adjacency);
+  } catch (err) {
+    if (err instanceof CycleError) {
+      consola.error(`Cannot build workspace before watch: ${err.message}`);
+      return {
+        canPush: false,
+        failedPackages: new Set(graph.packages.map((pkg) => pkg.name)),
+        skippedPackages: new Set(),
+      };
+    }
+    throw err;
+  }
+
+  const nameToDir = new Map(graph.packages.map((p) => [p.name, p.dir]));
+  const reverseAdjacency = buildReverseAdjacency(graph.adjacency);
+  const failedPackages = new Set<string>();
+  const skippedPackages = new Set<string>();
+  const blocked = new Set<string>();
+
+  for (const name of ordered) {
+    const dir = nameToDir.get(name);
+    if (!dir) continue;
+    if (blocked.has(name)) {
+      skippedPackages.add(name);
+      verbose(`[watch] Skipping initial build for ${name}: dependency build failed`);
+      continue;
+    }
+
+    const success = await runInitialWatchBuild(dir, args);
+    if (!success) {
+      failedPackages.add(name);
+      markTransitiveDependentsBlocked(name, reverseAdjacency, blocked);
+    }
+  }
+  return { canPush: true, failedPackages, skippedPackages };
+}
+
+function markTransitiveDependentsBlocked(
+  name: string,
+  reverseAdjacency: Map<string, Set<string>>,
+  blocked: Set<string>
+): void {
+  for (const dependent of reverseAdjacency.get(name) ?? []) {
+    if (blocked.has(dependent)) continue;
+    blocked.add(dependent);
+    markTransitiveDependentsBlocked(dependent, reverseAdjacency, blocked);
+  }
 }
 
 /**

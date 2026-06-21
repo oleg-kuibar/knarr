@@ -65,7 +65,7 @@ Now `knarr push` from `packages/my-lib/` will update both apps.
 
 ### workspace:* protocol
 
-When knarr publishes a package, it rewrites `workspace:*`, `workspace:^`, and `workspace:~` version specifiers to the actual resolved versions in the store copy. Your source `package.json` is never modified.
+When knarr publishes a package, it rewrites `workspace:*`, `workspace:^`, and `workspace:~` version specifiers to the actual resolved workspace package versions in the store copy. If a dependency cannot be found in the workspace, Knarr leaves the specifier unchanged and warns instead of guessing a version. Your source `package.json` is never modified.
 
 For example, if `my-lib/package.json` has:
 
@@ -102,13 +102,14 @@ knarr dev
 
 The flow is:
 
-1. Source file changes detected immediately
-2. Coalesce window (default 500ms, configurable via `--debounce`)
-3. Build command runs (`pnpm build`)
-4. Publish to store (skipped if content hash unchanged)
-5. Copy changed files to all registered consumers
-6. Each consumer's bundler detects the `node_modules/` change and triggers HMR
-7. If changes arrived during steps 3-5, automatically re-runs
+1. If a build command is configured, it runs once before Knarr publishes and pushes the fresh output
+2. Source file changes are detected immediately
+3. Coalesce window runs (default 500ms, configurable via `--debounce`)
+4. Build command runs again (`pnpm build`)
+5. Publish to store (skipped if content hash unchanged)
+6. Copy changed files to all registered consumers
+7. Each consumer's bundler detects the `node_modules/` change and triggers HMR
+8. If changes arrived during steps 4-6, automatically re-runs
 
 In a separate terminal, run your consumer's dev server:
 
@@ -143,7 +144,7 @@ cd apps/web-app
 pnpm dev
 ```
 
-`knarr dev --all` discovers all workspace packages, sorts them by dependency order, and starts a watcher for each. When a package changes, it rebuilds and pushes to all consumers.
+`knarr dev --all` discovers all workspace packages, sorts them by dependency order, runs initial builds in that order, pushes the fresh outputs, and starts a watcher for each. When a package changes, it rebuilds and pushes to all consumers.
 
 ### Cascading rebuilds
 
@@ -216,7 +217,7 @@ knarr doctor
 
 ### After pnpm install
 
-Running `pnpm install` in a workspace can wipe `node_modules/` overrides. If `knarr init` was run in each consumer, the `postinstall` hook (`knarr restore || true`) will re-inject automatically.
+Running `pnpm install` in a workspace can wipe `node_modules/` overrides. If `knarr init` was run in each consumer, the `postinstall` hook (`knarr restore --silent || node -e "process.exit(0)"`) will re-inject automatically when `knarr` is available on the install script `PATH`.
 
 If you need to re-inject manually:
 

@@ -103,13 +103,13 @@ File resolution follows `npm pack` rules:
 - `.npmignore` exclusions always apply
 - `package.json`, `README*`, `LICENSE*`, `CHANGELOG*` are always included
 
-If a dependency uses `workspace:*` (or `workspace:^`, `workspace:~`), Knarr rewrites it to the actual version in the store copy. The `catalog:` protocol (pnpm's shared version definitions in `pnpm-workspace.yaml`) is also resolved — both `catalog:` (default catalog) and `catalog:<name>` (named catalog) specifiers get replaced with the actual version string. Your source `package.json` is never touched.
+If a dependency uses `workspace:*` (or `workspace:^`, `workspace:~`), Knarr rewrites it to the actual workspace package version in the store copy. If the dependency cannot be found in the workspace, Knarr leaves the specifier unchanged and warns instead of guessing a version. The `catalog:` protocol (pnpm's shared version definitions in `pnpm-workspace.yaml`) is also resolved — both `catalog:` (default catalog) and `catalog:<name>` (named catalog) specifiers get replaced with the actual version string. Your source `package.json` is never touched.
 
 When `publishConfig.directory` is set in `package.json`, Knarr reads files from that subdirectory instead of the package root. This matches how npm/pnpm handle `publishConfig.directory` at pack time.
 
 ## Injection
 
-knarr checks your lockfile to figure out the package manager, then uses the right copy strategy.
+knarr checks `package.json#packageManager` and then lockfiles to figure out the package manager, then uses the right copy strategy.
 
 ### npm / yarn / bun
 
@@ -126,6 +126,8 @@ graph LR
 ```
 
 Clear the target directory, copy files from the store. The writes generate filesystem events that bundler watchers pick up.
+
+For Bun's isolated install layout, `node_modules/<pkg>` can be a symlink into `node_modules/.bun/<pkg>@<version>/node_modules/<pkg>`. Knarr follows that symlink only when it resolves inside the consumer project's local `.bun` store. Symlinks that resolve to a global or external store are refused so Knarr does not mutate files outside the consumer install tree.
 
 ### pnpm
 
@@ -145,14 +147,18 @@ Knarr resolves `node_modules/<pkg>` → follows the symlink into `.pnpm/` → re
 
 ### Detection
 
+Knarr walks up from the project directory and uses the closest package-manager evidence it finds. Within a directory, the `packageManager` field in `package.json` takes precedence when present, including Corepack-style values such as `pnpm@10.0.0` or `yarn@4.0.0`. If it is missing, Knarr falls back to lockfiles:
+
 | Lockfile | Package manager |
 |---|---|
 | `pnpm-lock.yaml` | pnpm |
 | `bun.lockb` or `bun.lock` | bun |
 | `yarn.lock` | yarn |
-| `package-lock.json` | npm |
+| `package-lock.json` or `npm-shrinkwrap.json` | npm |
 
-Detection checks in priority order (pnpm > bun > yarn > npm). Falls back to npm if no lockfile is found.
+Lockfiles are checked in priority order within the nearest matching directory (pnpm > bun > yarn > npm). If no `packageManager` field or lockfile is present in a directory, `.yarnrc.yml` and `.pnp.*` files are treated as Yarn evidence before walking upward. Falls back to npm if no package-manager evidence is found.
+
+Knarr keeps track of whether npm came from explicit evidence (`packageManager`, `package-lock.json`, or `npm-shrinkwrap.json`) or from the no-evidence fallback. This lets current npm projects override stale pnpm/Yarn link metadata, while projects with no package-manager evidence can still use their tracked link layout.
 
 #### Yarn Berry `nodeLinker` modes
 
@@ -161,7 +167,7 @@ When yarn is detected, Knarr also reads `.yarnrc.yml` to determine the linker mo
 | `nodeLinker` value | Behavior |
 |---|---|
 | `node-modules` | Flat `node_modules/` — same as npm, works directly |
-| `pnpm` | `.pnpm/` virtual store with symlinks — Knarr follows the symlink chain (same as pnpm) |
+| `pnpm` | Yarn `.store/` virtual store with symlinks — Knarr follows the symlink chain |
 | `pnp` | No `node_modules/` — incompatible, Knarr exits with an error |
 | *(absent, `.yarnrc.yml` exists)* | Berry defaults to PnP — Knarr exits with an error |
 | *(no `.yarnrc.yml`)* | Yarn Classic — flat `node_modules/`, works directly |
@@ -269,7 +275,11 @@ preknarr → prepack → [publish files] → postpack → postknarr
 
 ## Dry-run mode
 
-When you pass `--dry-run` to any command, Knarr skips all filesystem mutations (copies, removes, directory creation, bin links, lock acquisition, lifecycle hooks) but still runs the full logic to determine what _would_ happen. Each skipped mutation is recorded centrally, and at exit Knarr prints a grouped summary:
+When you pass `--dry-run` to any command, Knarr skips all filesystem mutations (copies, removes, directory creation, bin links, lock acquisition, lifecycle hooks, package-manager commands) and records the skipped work centrally. Watch modes preview the initial build/push once and exit without starting file watchers.
+
+For `knarr push --dry-run`, Knarr previews the publish/store writes and then stops before consumer injection, because the dry-run store entry was not actually written. This avoids reading a stale real store entry and showing a misleading injection preview. Commands that inject from an already-existing store entry, such as `restore`, still preview those copy mutations.
+
+At exit, Knarr prints a grouped summary:
 
 ```
 [dry-run] 14 mutation(s) would be performed:
@@ -284,6 +294,8 @@ When you pass `--dry-run` to any command, Knarr skips all filesystem mutations (
     /path/to/store/my-lib@1.0.0
   Skip lifecycle hook (1):
     /path/to/my-lib (prepack: npm run build)
+  Skip command (1):
+    /path/to/my-lib (npm run build)
 ```
 
 With `--json`, the summary is output as structured JSON with all mutation details.

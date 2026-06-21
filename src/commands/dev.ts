@@ -1,7 +1,13 @@
 import { defineCommand } from "citty";
 import { resolve } from "node:path";
 import { suppressHumanOutput } from "../utils/output.js";
-import { doPush, startWatchMode, startMultiWatchMode } from "../core/push-engine.js";
+import {
+  doPush,
+  runInitialWatchBuild,
+  runInitialWorkspaceWatchBuilds,
+  startWatchMode,
+  startMultiWatchMode,
+} from "../core/push-engine.js";
 import { doPushAll } from "../core/batch-push.js";
 import { loadKnarrConfig } from "../utils/config.js";
 import { isDryRun } from "../utils/logger.js";
@@ -69,16 +75,27 @@ export default defineCommand({
     };
 
     if (args.all) {
-      // Initial push all workspace packages in topo order
-      await doPushAll(packageDir, pushOptions);
+      const initialBuild = await runInitialWorkspaceWatchBuilds(packageDir, args);
+      const skipPackages = new Set([
+        ...initialBuild.failedPackages,
+        ...initialBuild.skippedPackages,
+      ]);
+      if (initialBuild.canPush) {
+        // Initial push all workspace packages in topo order
+        await doPushAll(packageDir, { ...pushOptions, skipPackages });
+      }
+      if (isDryRun()) { printDryRunReport(); return; }
 
       // Watch all workspace packages
       await startMultiWatchMode(packageDir, args, pushOptions);
     } else {
       const push = () => doPush(packageDir, pushOptions);
 
-      // Initial push
-      await push();
+      const initialBuildOk = await runInitialWatchBuild(packageDir, args, config);
+      if (initialBuildOk) {
+        // Initial push
+        await push();
+      }
       if (isDryRun()) { printDryRunReport(); return; }
 
       // Start watching

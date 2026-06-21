@@ -96,7 +96,7 @@ Running `npm install`, `pnpm install`, `yarn install`, or `bun install` can wipe
 knarr restore
 ```
 
-If you ran `knarr init` or `knarr use`, this can happen automatically via the `postinstall` hook.
+If you ran `knarr init` or `knarr use`, this can happen automatically via the `postinstall` hook when `knarr` is available on the install script `PATH` (for example, installed globally or as a devDependency). The generated hook uses a Node fallback so installs remain safe when Knarr is unavailable.
 
 ## 5. Clean up
 

@@ -101,6 +101,24 @@ describe("resolvePackFiles", () => {
     expect(files.some((f) => f.endsWith("secret.js"))).toBe(false);
   });
 
+  it("falls back to .gitignore when .npmignore is absent", async () => {
+    await writeFile(join(tempDir, "package.json"), "{}");
+    await writeFile(join(tempDir, "index.js"), "");
+    await writeFile(join(tempDir, "secret.js"), "");
+    await mkdir(join(tempDir, "ignored-dir"), { recursive: true });
+    await writeFile(join(tempDir, "ignored-dir", "hidden.js"), "");
+    await writeFile(join(tempDir, ".gitignore"), "secret.js\nignored-dir/\n");
+
+    const pkg: PackageJson = { name: "test", version: "1.0.0" };
+    const files = await resolvePackFiles(tempDir, pkg);
+    const rels = files.map((f) => f.slice(tempDir.length + 1).replace(/\\/g, "/"));
+
+    expect(rels).toContain("index.js");
+    expect(rels).not.toContain("secret.js");
+    expect(rels).not.toContain("ignored-dir/hidden.js");
+    expect(rels).not.toContain(".gitignore");
+  });
+
   it("skips non-existent paths in files field", async () => {
     await writeFile(join(tempDir, "package.json"), "{}");
 

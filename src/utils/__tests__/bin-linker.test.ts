@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir, platform } from "node:os";
-import { resolveBinEntries, createBinLinks, removeBinLinks } from "../bin-linker.js";
+import {
+  resolveBinEntries,
+  createBinLinks,
+  removeBinLinks,
+  parseShebangInterpreter,
+} from "../bin-linker.js";
 import { exists } from "../fs.js";
 import type { PackageJson } from "../../types.js";
 
@@ -44,6 +49,32 @@ describe("resolveBinEntries", () => {
       "cmd-a": "./dist/a.js",
       "cmd-b": "./dist/b.js",
     });
+  });
+});
+
+describe("parseShebangInterpreter", () => {
+  it("defaults to node when no shebang exists", () => {
+    expect(parseShebangInterpreter("console.log('hi');\n")).toBe("node");
+  });
+
+  it("detects node shebangs", () => {
+    expect(parseShebangInterpreter("#!/usr/bin/env node\nconsole.log('hi');\n")).toBe("node");
+  });
+
+  it("detects bun shebangs", () => {
+    expect(parseShebangInterpreter("#!/usr/bin/env bun\nconsole.log('hi');\n")).toBe("bun");
+  });
+
+  it("detects env -S shebang interpreters", () => {
+    expect(parseShebangInterpreter("#!/usr/bin/env -S bun run\nconsole.log('hi');\n")).toBe("bun");
+  });
+
+  it("detects direct shebang interpreters", () => {
+    expect(parseShebangInterpreter("#!/bin/sh\necho hi\n")).toBe("sh");
+  });
+
+  it("falls back to node for unsafe interpreter tokens", () => {
+    expect(parseShebangInterpreter("#!/usr/bin/env bun;echo bad\n")).toBe("node");
   });
 });
 

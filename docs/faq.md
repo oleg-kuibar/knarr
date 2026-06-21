@@ -49,7 +49,7 @@ No. Knarr never modifies the consumer's `package.json` or lockfile. The only pro
 
 - `.knarr/state.json` -- tracks which packages are linked (gitignored)
 - `.knarr/backups/` -- backup of original npm-installed packages (gitignored)
-- A `postinstall` script entry (`knarr restore || true`) added by `knarr init`
+- A `postinstall` script entry (`knarr restore --silent || node -e "process.exit(0)"`) added by `knarr init`
 
 The `postinstall` script is the only change to `package.json`, and it is opt-in via `knarr init`. It does not affect dependency resolution or version specifiers.
 
@@ -124,10 +124,11 @@ Knarr detects this automatically and exits early with a clear error message:
 Error: Yarn PnP mode is not compatible with Knarr.
 
 Knarr works by copying files into node_modules/, but PnP eliminates
-node_modules/ entirely. To use Knarr with Yarn Berry, add this to
-.yarnrc.yml:
+node_modules/ entirely. To use Knarr with Yarn Berry, add one of these
+to .yarnrc.yml:
 
   nodeLinker: node-modules
+  nodeLinker: pnpm
 
 Then run: yarn install
 ```
@@ -136,11 +137,13 @@ If you use Yarn Berry, set the linker mode in `.yarnrc.yml`:
 
 ```yaml
 nodeLinker: node-modules
+# or use Yarn's pnpm linker:
+# nodeLinker: pnpm
 ```
 
 Then run `yarn install` to recreate `node_modules/`.
 
-Note: Yarn Berry's `nodeLinker: pnpm` mode (symlink-based virtual store, same layout as pnpm) is also supported. Knarr detects this and follows the `.pnpm/` symlink chain automatically.
+With `nodeLinker: pnpm`, Knarr follows Yarn's `.store/` symlink chain automatically.
 
 ## Can I use Knarr with private packages?
 
@@ -161,7 +164,7 @@ knarr publish --dry-run
 knarr push --dry-run
 ```
 
-Knarr prints a grouped summary of all mutations it would perform: file copies, removals, directory creation, bin links, lock acquisitions, and lifecycle hooks. With `--json`, the summary is output as structured JSON.
+Knarr prints a grouped summary of all mutations it would perform: file copies, removals, directory creation, bin links, lock acquisitions, lifecycle hooks, and skipped commands. With `--json`, the summary is output as structured JSON.
 
 ## What happens when I run npm install / pnpm install?
 
@@ -171,4 +174,4 @@ Running `npm install` or `pnpm install` replaces files in `node_modules/`, which
 knarr restore
 ```
 
-If you ran `knarr init`, this happens automatically via the `postinstall` hook. The hook runs `knarr restore || true`, which re-injects all linked packages. The `|| true` ensures the install does not fail if Knarr is not globally available.
+If you ran `knarr init`, this can happen automatically via the `postinstall` hook. The hook runs `knarr restore --silent || node -e "process.exit(0)"`, which re-injects all linked packages when `knarr` is available on the install script `PATH` (for example, installed globally or as a devDependency). The Node fallback ensures the install does not fail if Knarr is not available.

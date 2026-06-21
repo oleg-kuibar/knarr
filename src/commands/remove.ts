@@ -84,6 +84,7 @@ export default defineCommand({
 
       consola.success(`Removed ${removed} Knarr link(s)${failed > 0 ? `, ${failed} failed` : ""} in ${timer.elapsed()}`);
       output({ removed, failed, elapsed: timer.elapsedMs() });
+      if (isDryRun()) printDryRunReport();
       return;
     }
 
@@ -117,20 +118,23 @@ export default defineCommand({
 export async function removeSinglePackage(
   consumerPath: string,
   packageName: string,
-  link: { backupExists: boolean; packageManager: "npm" | "pnpm" | "yarn" | "bun" }
+  link: {
+    backupExists: boolean;
+    packageManager: "npm" | "pnpm" | "yarn" | "bun";
+    version?: string;
+  }
 ): Promise<void> {
   verbose(`[remove] Removing ${packageName}`);
 
-  // Remove from node_modules
-  await removeInjected(consumerPath, packageName, link.packageManager);
-
   // Restore backup if it exists
+  let restored = false;
   if (link.backupExists) {
     try {
-      const restored = await restoreBackup(
+      restored = await restoreBackup(
         consumerPath,
         packageName,
-        link.packageManager
+        link.packageManager,
+        link.version
       );
       if (restored) {
         consola.success(`Restored original ${packageName} from backup`);
@@ -141,6 +145,11 @@ export async function removeSinglePackage(
         `Run your package manager's install command to restore it.`
       );
     }
+  }
+
+  // Remove from node_modules when there is no original package to restore.
+  if (!restored) {
+    await removeInjected(consumerPath, packageName, link.packageManager, link.version);
   }
 
   // Auto-update bundler configs

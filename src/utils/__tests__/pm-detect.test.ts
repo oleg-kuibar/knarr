@@ -2,7 +2,16 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { detectPackageManager, detectYarnNodeLinker, hasYarnrcYml } from "../pm-detect.js";
+import {
+  detectPackageManager,
+  detectPackageManagerInfo,
+  detectYarnNodeLinker,
+  detectYarnPnpmStoreFolder,
+  hasYarnPnpMarkers,
+  hasYarnPnpManifest,
+  hasYarnrcYml,
+  isYarnPnpProject,
+} from "../pm-detect.js";
 
 describe("detectPackageManager", () => {
   let tempDir: string;
@@ -20,6 +29,11 @@ describe("detectPackageManager", () => {
     expect(await detectPackageManager(tempDir)).toBe("npm");
   });
 
+  it("detects npm from npm-shrinkwrap.json", async () => {
+    await writeFile(join(tempDir, "npm-shrinkwrap.json"), "{}");
+    expect(await detectPackageManager(tempDir)).toBe("npm");
+  });
+
   it("detects pnpm from pnpm-lock.yaml", async () => {
     await writeFile(join(tempDir, "pnpm-lock.yaml"), "");
     expect(await detectPackageManager(tempDir)).toBe("pnpm");
@@ -33,6 +47,84 @@ describe("detectPackageManager", () => {
   it("detects bun from bun.lockb", async () => {
     await writeFile(join(tempDir, "bun.lockb"), "");
     expect(await detectPackageManager(tempDir)).toBe("bun");
+  });
+
+  it("prefers packageManager fields over lockfiles", async () => {
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ packageManager: "yarn@1.22.22" })
+    );
+    await writeFile(join(tempDir, "pnpm-lock.yaml"), "");
+    expect(await detectPackageManager(tempDir)).toBe("yarn");
+  });
+
+  it("detects packageManager fields without versions", async () => {
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ packageManager: "pnpm" })
+    );
+    expect(await detectPackageManager(tempDir)).toBe("pnpm");
+  });
+
+  it("reports packageManager field detection details", async () => {
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ packageManager: "yarn@4.6.0" })
+    );
+    await expect(detectPackageManagerInfo(tempDir)).resolves.toEqual({
+      packageManager: "yarn",
+      source: "packageManager",
+      dir: tempDir,
+      file: join(tempDir, "package.json"),
+    });
+  });
+
+  it("reports lockfile detection details", async () => {
+    await writeFile(join(tempDir, "bun.lock"), "");
+    await expect(detectPackageManagerInfo(tempDir)).resolves.toEqual({
+      packageManager: "bun",
+      source: "lockfile",
+      dir: tempDir,
+      file: join(tempDir, "bun.lock"),
+    });
+  });
+
+  it("detects yarn from .yarnrc.yml without a lockfile", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+    await expect(detectPackageManagerInfo(tempDir)).resolves.toEqual({
+      packageManager: "yarn",
+      source: "yarnArtifact",
+      dir: tempDir,
+      file: join(tempDir, ".yarnrc.yml"),
+    });
+  });
+
+  it("detects yarn from PnP manifests without a lockfile", async () => {
+    await writeFile(join(tempDir, ".pnp.cjs"), "");
+    await expect(detectPackageManagerInfo(tempDir)).resolves.toEqual({
+      packageManager: "yarn",
+      source: "yarnArtifact",
+      dir: tempDir,
+      file: join(tempDir, ".pnp.cjs"),
+    });
+  });
+
+  it("prefers local lockfiles over yarn artifacts in the same directory", async () => {
+    await writeFile(join(tempDir, "package-lock.json"), "{}");
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+    await expect(detectPackageManagerInfo(tempDir)).resolves.toMatchObject({
+      packageManager: "npm",
+      source: "lockfile",
+      file: join(tempDir, "package-lock.json"),
+    });
+  });
+
+  it("reports default detection details", async () => {
+    await expect(detectPackageManagerInfo(tempDir)).resolves.toEqual({
+      packageManager: "npm",
+      source: "default",
+      dir: tempDir,
+    });
   });
 
   it("defaults to npm when no lockfile", async () => {
@@ -114,11 +206,56 @@ describe("detectYarnNodeLinker", () => {
     expect(await detectYarnNodeLinker(tempDir)).toBe("node-modules");
   });
 
+  it("handles inline comments after nodeLinker values", async () => {
+    await writeFile(
+      join(tempDir, ".yarnrc.yml"),
+      'nodeLinker: "node-modules" # required for knarr\n'
+    );
+    expect(await detectYarnNodeLinker(tempDir)).toBe("node-modules");
+  });
+
   it("walks up to find .yarnrc.yml in parent", async () => {
     const nested = join(tempDir, "packages", "app");
     await mkdir(nested, { recursive: true });
     await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnpm\n");
     expect(await detectYarnNodeLinker(nested)).toBe("pnpm");
+  });
+
+  it("walks past child .yarnrc.yml files without nodeLinker", async () => {
+    const nested = join(tempDir, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: node-modules\n");
+    await writeFile(join(nested, ".yarnrc.yml"), "yarnPath: .yarn/releases/yarn-4.0.0.cjs\n");
+    expect(await detectYarnNodeLinker(nested)).toBe("node-modules");
+  });
+});
+
+describe("detectYarnPnpmStoreFolder", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "KNARR-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("returns pnpmStoreFolder from .yarnrc.yml", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), 'pnpmStoreFolder: ".cache/.store" # yarn pnpm linker\n');
+    expect(await detectYarnPnpmStoreFolder(tempDir)).toBe(".cache/.store");
+  });
+
+  it("walks up to find pnpmStoreFolder in parent", async () => {
+    const nested = join(tempDir, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(tempDir, ".yarnrc.yml"), "pnpmStoreFolder: .cache/.store\n");
+    expect(await detectYarnPnpmStoreFolder(nested)).toBe(".cache/.store");
+  });
+
+  it("returns null when pnpmStoreFolder is absent", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+    expect(await detectYarnPnpmStoreFolder(tempDir)).toBeNull();
   });
 });
 
@@ -147,5 +284,121 @@ describe("hasYarnrcYml", () => {
     await mkdir(nested, { recursive: true });
     await writeFile(join(tempDir, ".yarnrc.yml"), "");
     expect(await hasYarnrcYml(nested)).toBe(true);
+  });
+});
+
+describe("hasYarnPnpManifest", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "KNARR-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("returns true when a PnP manifest exists", async () => {
+    await writeFile(join(tempDir, ".pnp.cjs"), "");
+    expect(await hasYarnPnpManifest(tempDir)).toBe(true);
+  });
+
+  it("walks up to find a PnP manifest in parent", async () => {
+    const nested = join(tempDir, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(tempDir, ".pnp.loader.mjs"), "");
+    expect(await hasYarnPnpManifest(nested)).toBe(true);
+  });
+
+  it("returns false when PnP manifests are missing", async () => {
+    expect(await hasYarnPnpManifest(tempDir)).toBe(false);
+  });
+});
+
+describe("hasYarnPnpMarkers", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "KNARR-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("returns true for PnP manifests", async () => {
+    await writeFile(join(tempDir, ".pnp.cjs"), "");
+    expect(await hasYarnPnpMarkers(tempDir)).toBe(true);
+  });
+
+  it("returns true for explicit pnp nodeLinker", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnp\n");
+    expect(await hasYarnPnpMarkers(tempDir)).toBe(true);
+  });
+
+  it("returns false for yarn pnpm-linker", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+    expect(await hasYarnPnpMarkers(tempDir)).toBe(false);
+  });
+});
+
+describe("isYarnPnpProject", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "KNARR-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("returns true when nodeLinker is pnp", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnp\n");
+    expect(await isYarnPnpProject(tempDir)).toBe(true);
+  });
+
+  it("returns false when nodeLinker is node-modules", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: node-modules\n");
+    expect(await isYarnPnpProject(tempDir)).toBe(false);
+  });
+
+  it("returns false when nodeLinker is pnpm", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), "nodeLinker: pnpm\n");
+    expect(await isYarnPnpProject(tempDir)).toBe(false);
+  });
+
+  it("returns true when .yarnrc.yml omits nodeLinker", async () => {
+    await writeFile(join(tempDir, ".yarnrc.yml"), "yarnPath: .yarn/releases/yarn-4.0.0.cjs\n");
+    expect(await isYarnPnpProject(tempDir)).toBe(true);
+  });
+
+  it("returns true when a PnP manifest exists without .yarnrc.yml", async () => {
+    await writeFile(join(tempDir, ".pnp.cjs"), "");
+    expect(await isYarnPnpProject(tempDir)).toBe(true);
+  });
+
+  it("returns true for modern Yarn packageManager fields", async () => {
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ packageManager: "yarn@4.6.0" })
+    );
+    expect(await isYarnPnpProject(tempDir)).toBe(true);
+  });
+
+  it("returns true for Yarn Corepack channels", async () => {
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ packageManager: "yarn@stable" })
+    );
+    expect(await isYarnPnpProject(tempDir)).toBe(true);
+  });
+
+  it("returns false for Yarn Classic packageManager fields", async () => {
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ packageManager: "yarn@1.22.22" })
+    );
+    expect(await isYarnPnpProject(tempDir)).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { platform } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { platform } from "node:os";
 import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
 import { findStoreEntry, getStoreEntry } from "../core/store.js";
@@ -8,10 +8,21 @@ import { publish } from "../core/publisher.js";
 import { inject, backupExisting, checkMissingDeps } from "../core/injector.js";
 import { addLink, registerConsumer, getLink } from "../core/tracker.js";
 import { exists } from "../utils/fs.js";
-import { detectPackageManager, detectYarnNodeLinker, hasYarnrcYml } from "../utils/pm-detect.js";
+import {
+  detectPackageManager,
+  hasYarnPnpMarkers,
+  isYarnPnpProject,
+} from "../utils/pm-detect.js";
 import { detectBuildCommand } from "../utils/build-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { ensureConsumerInit } from "../utils/init-helpers.js";
+import {
+  buildDevInstallCommand,
+  buildInstallCommand,
+  formatPackageManagerCommand,
+  runPackageManagerCommand,
+  type PackageManagerCommand,
+} from "../utils/pm-commands.js";
 import { addToTranspilePackages } from "../utils/nextjs-config.js";
 import { getConsumerStatePath } from "../utils/paths.js";
 import { Timer } from "../utils/timer.js";
@@ -68,6 +79,23 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
     }
   }
 
+  const pm = await detectPackageManager(consumerPath);
+  if (
+    await hasYarnPnpMarkers(consumerPath) ||
+    (pm === "yarn" && await isYarnPnpProject(consumerPath))
+  ) {
+    consola.error(
+      `Yarn PnP mode is not compatible with knarr.\n\n` +
+      `knarr works by copying files into node_modules/, but PnP eliminates\n` +
+      `node_modules/ entirely. To use knarr with Yarn Berry, add one of these\n` +
+      `to .yarnrc.yml:\n\n` +
+      `  nodeLinker: node-modules\n` +
+      `  nodeLinker: pnpm\n\n` +
+      `Then run: yarn install`
+    );
+    process.exit(1);
+  }
+
   if (options.from) {
     const fromPath = resolve(options.from);
     sourcePath = fromPath;
@@ -95,27 +123,11 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
   }
 
   const needsInit = !(await exists(getConsumerStatePath(consumerPath)));
-  const pm = await detectPackageManager(consumerPath);
   if (needsInit) {
     await ensureConsumerInit(consumerPath, pm);
     consola.success("Auto-initialized knarr (consumer mode)");
   }
   consola.info(`Detected package manager: ${pm}`);
-
-  if (pm === "yarn") {
-    const linker = await detectYarnNodeLinker(consumerPath);
-    if (linker === "pnp" || (linker === null && await hasYarnrcYml(consumerPath))) {
-      consola.error(
-        `Yarn PnP mode is not compatible with knarr.\n\n` +
-        `knarr works by copying files into node_modules/, but PnP eliminates\n` +
-        `node_modules/ entirely. To use knarr with Yarn Berry, add this to\n` +
-        `.yarnrc.yml:\n\n` +
-        `  nodeLinker: node-modules\n\n` +
-        `Then run: yarn install`
-      );
-      process.exit(1);
-    }
-  }
 
   const existingLink = await getLink(consumerPath, packageName);
   if (existingLink) {
@@ -306,7 +318,7 @@ async function handleMissingDeps(
   pm: PackageManager,
   yes: boolean,
 ): Promise<void> {
-  const missing = await checkMissingDeps(entry, consumerPath);
+  const missing = await checkMissingDeps(entry, consumerPath, pm);
   if (missing.length === 0) return;
 
   if (isJsonOutput()) {
@@ -316,6 +328,7 @@ async function handleMissingDeps(
 
   if (yes) {
     const cmd = buildInstallCommand(pm, missing);
+    const display = formatPackageManagerCommand(cmd);
     consola.info(
       isDryRun()
         ? `[dry-run] Would install missing dependencies: ${missing.join(", ")}`
@@ -325,7 +338,7 @@ async function handleMissingDeps(
     if (ok && !isDryRun()) {
       consola.success("Installed missing dependencies");
     } else if (!ok) {
-      consola.warn(`Install failed. Run manually: ${cmd}`);
+      consola.warn(`Install failed. Run manually: ${display}`);
     }
     return;
   }
@@ -336,16 +349,17 @@ async function handleMissingDeps(
   );
   if (confirm) {
     const cmd = buildInstallCommand(pm, missing);
+    const display = formatPackageManagerCommand(cmd);
     const ok = await runInstallCommand(cmd, consumerPath);
     if (ok && !isDryRun()) {
       consola.success("Installed missing dependencies");
     } else if (!ok) {
-      consola.warn(`Install failed. Run manually: ${cmd}`);
+      consola.warn(`Install failed. Run manually: ${display}`);
     }
   } else {
     consola.warn(
       `Missing transitive dependencies: ${missing.join(", ")}\n` +
-        `  Run: ${buildInstallCommand(pm, missing)}`,
+        `  Run: ${formatPackageManagerCommand(buildInstallCommand(pm, missing))}`,
     );
   }
 }
@@ -376,6 +390,7 @@ async function configureBundler(
     if (viteResult.modified) {
       consola.success(`Added knarr plugin to ${basename(bundler.configFile)}`);
       const installCmd = buildDevInstallCommand(pm, "knarr");
+      const installDisplay = formatPackageManagerCommand(installCmd);
       consola.info(
         isDryRun()
           ? "[dry-run] Would install knarr as devDependency"
@@ -385,7 +400,7 @@ async function configureBundler(
       if (ok && !isDryRun()) {
         consola.success("Installed knarr");
       } else if (!ok) {
-        consola.warn(`Install failed. Run manually: ${installCmd}`);
+        consola.warn(`Install failed. Run manually: ${installDisplay}`);
       }
     } else if (viteResult.error) {
       consola.info(
@@ -406,36 +421,8 @@ async function configureBundler(
   }
 }
 
-function buildInstallCommand(pm: PackageManager, deps: string[]): string {
-  for (const dep of deps) validatePackageNameStrict(dep);
-  const joined = deps.join(" ");
-  switch (pm) {
-    case "pnpm":
-      return `pnpm add ${joined}`;
-    case "yarn":
-      return `yarn add ${joined}`;
-    case "bun":
-      return `bun add ${joined}`;
-    default:
-      return `npm install ${joined}`;
-  }
-}
-
-function buildDevInstallCommand(pm: PackageManager, dep: string): string {
-  switch (pm) {
-    case "pnpm":
-      return `pnpm add -D ${dep}`;
-    case "yarn":
-      return `yarn add -D ${dep}`;
-    case "bun":
-      return `bun add -d ${dep}`;
-    default:
-      return `npm install -D ${dep}`;
-  }
-}
-
-function runInstallCommand(cmd: string, cwd: string): Promise<boolean> {
-  return runShellCommand(cmd, cwd);
+function runInstallCommand(cmd: PackageManagerCommand, cwd: string): Promise<boolean> {
+  return runPackageManagerCommand(cmd, cwd);
 }
 
 function runShellCommand(cmd: string, cwd: string): Promise<boolean> {

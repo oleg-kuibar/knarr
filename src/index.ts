@@ -11,7 +11,11 @@ export { doPushAll } from "./core/batch-push.js";
 export { captureHistory, listHistory, getHistoryEntry, restoreHistoryEntry, pruneHistory, clearHistory, resolveHistoryLimit } from "./core/history.js";
 export { startWatcher, killActiveBuild, runBuildCommand } from "./core/watcher.js";
 export { WatchOrchestrator } from "./core/watch-orchestrator.js";
-export { detectPackageManager } from "./utils/pm-detect.js";
+export { detectPackageManager, detectPackageManagerInfo } from "./utils/pm-detect.js";
+export type {
+  PackageManagerDetection,
+  PackageManagerDetectionSource,
+} from "./utils/pm-detect.js";
 export { loadKnarrConfig } from "./utils/config.js";
 export type { KnarrConfig } from "./utils/config.js";
 export { topoSort, CycleError } from "./utils/topo-sort.js";

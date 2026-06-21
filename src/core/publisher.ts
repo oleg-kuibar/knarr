@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { join, relative, dirname, resolve } from "node:path";
+import { delimiter, join, relative, dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { consola } from "../utils/console.js";
@@ -16,6 +16,11 @@ import type { Catalogs } from "../utils/workspace.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
 import { validatePackageIdentity } from "../utils/validators.js";
+import {
+  detectPackageManagerInfo,
+  hasYarnPnpMarkers,
+  isYarnPnpProject,
+} from "../utils/pm-detect.js";
 
 export interface PublishOptions {
   allowPrivate?: boolean;
@@ -67,11 +72,6 @@ export async function publish(
   if (!pkg.name) throw new Error("package.json missing 'name' field");
   if (!pkg.version) throw new Error("package.json missing 'version' field");
   validatePackageIdentity(pkg.name, pkg.version);
-  if (pkg.private && !options.allowPrivate) {
-    throw new Error(
-      `Package "${pkg.name}" is private. Use --private flag to publish private packages.`
-    );
-  }
 
   await runLifecycleHook(packageDir, pkg, "preknarr");
 
@@ -99,25 +99,39 @@ export async function publish(
   }
 
   // 3. Resolve publishable files (from publishDir when publishConfig.directory is set)
-  const filePkg = publishDir !== packageDir
-    ? JSON.parse(await readFile(join(publishDir, "package.json"), "utf-8").catch(() => JSON.stringify(pkg))) as PackageJson
+  const publishPkgPath = join(publishDir, "package.json");
+  const publishDirHasPackageJson = publishDir === packageDir || await exists(publishPkgPath);
+  const filePkg = publishDirHasPackageJson
+    ? JSON.parse(await readFile(publishPkgPath, "utf-8")) as PackageJson
     : pkg;
-  const files = await resolvePackFiles(publishDir, filePkg);
+  if (!filePkg.name) throw new Error("publish package.json missing 'name' field");
+  if (!filePkg.version) throw new Error("publish package.json missing 'version' field");
+  validatePackageIdentity(filePkg.name, filePkg.version);
+  if (filePkg.private && !options.allowPrivate) {
+    throw new Error(
+      `Package "${filePkg.name}" is private. Use --private flag to publish private packages.`
+    );
+  }
+
+  const packListPkg = publishDirHasPackageJson
+    ? filePkg
+    : { ...filePkg, files: undefined };
+  const files = await resolvePackFiles(publishDir, packListPkg);
   if (files.length === 0) {
     throw new Error("No publishable files found");
   }
-  verbose(`[publish] Resolved ${files.length} files for ${pkg.name}@${pkg.version}`);
+  verbose(`[publish] Resolved ${files.length} files for ${filePkg.name}@${filePkg.version}`);
 
   // 4. Pre-load workspace versions and catalog definitions
-  await preloadWorkspaceVersions(pkg, packageDir);
-  await preloadCatalogs(pkg, packageDir);
+  await preloadWorkspaceVersions(filePkg, packageDir);
+  await preloadCatalogs(filePkg, packageDir);
 
   // 5. Compute the content hash from the exact package.json that will land in
   // the store, including workspace/catalog rewrites and publishConfig overrides.
-  let processedPkg = rewriteProtocolVersions(pkg);
+  let processedPkg = rewriteProtocolVersions(filePkg);
   processedPkg = applyPublishConfig(processedPkg);
   const contentOverrides = new Map<string, string | Buffer>();
-  if (processedPkg !== pkg || publishDir !== packageDir) {
+  if (processedPkg !== filePkg || !publishDirHasPackageJson) {
     contentOverrides.set("package.json", JSON.stringify(processedPkg, null, 2));
   }
   const hashFiles = [...files];
@@ -131,12 +145,12 @@ export async function publish(
 
   // 6. Fast path: check if already up to date (no lock needed)
   if (!options.force) {
-    const existingMeta = await readMeta(pkg.name, pkg.version);
+    const existingMeta = await readMeta(filePkg.name, filePkg.version);
     if (existingMeta && existingMeta.contentHash === contentHash) {
-      consola.info(`${pkg.name}@${pkg.version} already up to date (no changes since last publish)`);
+      consola.info(`${filePkg.name}@${filePkg.version} already up to date (no changes since last publish)`);
       return {
-        name: pkg.name,
-        version: pkg.version,
+        name: filePkg.name,
+        version: filePkg.version,
         fileCount: files.length,
         skipped: true,
         contentHash,
@@ -146,19 +160,19 @@ export async function publish(
   }
 
   // 7. Acquire lock and copy files to store (prevents concurrent publish corruption)
-  const storeEntryDir = getStoreEntryPath(pkg.name, pkg.version);
+  const storeEntryDir = getStoreEntryPath(filePkg.name, filePkg.version);
 
   const result = await withFileLock(
     storeEntryDir + ".lock",
     async () => {
       // Re-check hash under lock — another process may have published while we waited
       if (!options.force) {
-        const metaUnderLock = await readMeta(pkg.name, pkg.version);
+        const metaUnderLock = await readMeta(filePkg.name, filePkg.version);
         if (metaUnderLock && metaUnderLock.contentHash === contentHash) {
-          consola.info(`${pkg.name}@${pkg.version} already up to date (no changes since last publish)`);
+          consola.info(`${filePkg.name}@${filePkg.version} already up to date (no changes since last publish)`);
           return {
-            name: pkg.name,
-            version: pkg.version,
+            name: filePkg.name,
+            version: filePkg.version,
             fileCount: files.length,
             skipped: true,
             contentHash,
@@ -188,11 +202,15 @@ export async function publish(
           files.map((file) =>
             copyLimit(async () => {
               const rel = relative(publishDir, file);
+              const normalizedRel = rel.replace(/\\/g, "/");
               const dest = join(tmpPackageDir, rel);
+              const override = contentOverrides.get(normalizedRel);
 
-              if (rel === "package.json" && processedPkg !== pkg) {
-                // Write the rewritten package.json
-                await atomicWriteFile(dest, JSON.stringify(processedPkg, null, 2));
+              if (override !== undefined) {
+                await atomicWriteFile(
+                  dest,
+                  Buffer.isBuffer(override) ? override.toString("utf-8") : override
+                );
               } else {
                 // Parent dirs already pre-created above
                 await copyWithCoW(file, dest, { ensureParent: false });
@@ -201,9 +219,9 @@ export async function publish(
           )
         );
 
-        // If publishDir != packageDir, ensure we always write the processed package.json
-        // (the files list from publishDir may have its own package.json or none)
-        if (publishDir !== packageDir) {
+        // If the manifest was generated or rewritten, ensure it lands in the store
+        // even when the file list did not include package.json.
+        if (contentOverrides.has("package.json")) {
           await atomicWriteFile(
             join(tmpPackageDir, "package.json"),
             JSON.stringify(processedPkg, null, 2)
@@ -248,7 +266,7 @@ export async function publish(
         if (hadOld && !isDryRun()) {
           try {
             const { captureHistory } = await import("./history.js");
-            await captureHistory(pkg.name, pkg.version, oldDir, options.historyLimit);
+            await captureHistory(filePkg.name, filePkg.version, oldDir, options.historyLimit);
           } catch (err) {
             verbose(`[publish] History capture failed: ${err instanceof Error ? err.message : String(err)}`);
           }
@@ -263,8 +281,8 @@ export async function publish(
       }
 
       return {
-        name: pkg.name,
-        version: pkg.version,
+        name: filePkg.name,
+        version: filePkg.version,
         fileCount: files.length,
         skipped: false,
         contentHash,
@@ -285,13 +303,62 @@ export async function publish(
   await runLifecycleHook(packageDir, pkg, "postknarr");
 
   consola.success(
-    `Published ${pkg.name}@${pkg.version} (${files.length} files) [${result.buildId}]`
+    `Published ${filePkg.name}@${filePkg.version} (${files.length} files) [${result.buildId}]`
   );
 
   return result;
 }
 
 const HOOK_TIMEOUT = parseInt(process.env.KNARR_HOOK_TIMEOUT ?? "30000", 10);
+
+function pathEnvKey(env: NodeJS.ProcessEnv): string {
+  if (platform() !== "win32") return "PATH";
+  return Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "Path";
+}
+
+function setEnvVar(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  value: string
+): void {
+  if (platform() === "win32") {
+    const lowered = key.toLowerCase();
+    for (const existingKey of Object.keys(env)) {
+      if (existingKey.toLowerCase() === lowered) {
+        delete env[existingKey];
+      }
+    }
+  }
+  env[key] = value;
+}
+
+function buildLifecycleEnv(
+  packageDir: string,
+  pkg: PackageJson,
+  hookName: string,
+  script: string
+): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  const key = pathEnvKey(env);
+  const existingPath = env[key] ?? "";
+  setEnvVar(
+    env,
+    key,
+    [
+      join(packageDir, "node_modules", ".bin"),
+      existingPath,
+    ].filter(Boolean).join(delimiter)
+  );
+
+  if (!("INIT_CWD" in env) || !env.INIT_CWD) {
+    setEnvVar(env, "INIT_CWD", packageDir);
+  }
+  setEnvVar(env, "npm_lifecycle_event", hookName);
+  setEnvVar(env, "npm_lifecycle_script", script);
+  setEnvVar(env, "npm_package_name", pkg.name);
+  setEnvVar(env, "npm_package_version", pkg.version);
+  return env;
+}
 
 /**
  * Run a lifecycle hook script if defined in package.json scripts.
@@ -313,14 +380,17 @@ async function runLifecycleHook(
     return;
   }
 
-  verbose(`[lifecycle] Running ${hookName}: ${script}`);
+  const command = await resolveLifecycleCommand(packageDir, hookName, script);
+  verbose(`[lifecycle] Running ${hookName}: ${command}`);
   return new Promise((resolve, reject) => {
     const isWin = platform() === "win32";
     const shell = isWin ? "cmd" : "sh";
     const shellFlag = isWin ? "/c" : "-c";
+    const env = buildLifecycleEnv(packageDir, pkg, hookName, script);
 
-    const child = spawn(shell, [shellFlag, script], {
+    const child = spawn(shell, [shellFlag, command], {
       cwd: packageDir,
+      env,
       stdio: "inherit",
     });
 
@@ -343,6 +413,21 @@ async function runLifecycleHook(
       reject(new Error(`${hookName} script error: ${err.message}`));
     });
   });
+}
+
+async function resolveLifecycleCommand(
+  packageDir: string,
+  hookName: string,
+  script: string
+): Promise<string> {
+  const shouldUseYarn =
+    await hasYarnPnpMarkers(packageDir) ||
+    (
+      (await detectPackageManagerInfo(packageDir)).packageManager === "yarn" &&
+      await isYarnPnpProject(packageDir)
+    );
+
+  return shouldUseYarn ? `yarn run ${hookName}` : script;
 }
 
 /** Fields from publishConfig that override the corresponding package.json fields */
@@ -394,15 +479,9 @@ function rewriteProtocolVersions(pkg: PackageJson): PackageJson {
     const newDeps = { ...deps };
     for (const [name, version] of Object.entries(deps)) {
       if (version.startsWith("workspace:")) {
-        const versionPart = version.slice("workspace:".length);
-        // workspace:* or workspace:^ or workspace:~ → use the dependency's version from the workspace
-        if (versionPart === "*" || versionPart === "^" || versionPart === "~") {
-          const depVersion = _cachedWorkspaceVersions?.versions.get(name) ?? pkg.version;
-          newDeps[name] = versionPart === "*" ? depVersion : versionPart + depVersion;
-        } else {
-          // workspace:1.0.0 → 1.0.0
-          newDeps[name] = versionPart;
-        }
+        const resolved = resolveWorkspaceSpecifier(name, version);
+        if (!resolved) continue;
+        newDeps[name] = resolved;
         fieldChanged = true;
         changed = true;
       } else if (version.startsWith("catalog:")) {
@@ -433,6 +512,49 @@ function rewriteProtocolVersions(pkg: PackageJson): PackageJson {
   return changed ? result : pkg;
 }
 
+function resolveWorkspaceSpecifier(
+  depName: string,
+  specifier: string
+): string | null {
+  const raw = specifier.slice("workspace:".length);
+  const alias = parseWorkspaceAlias(raw);
+  const targetName = alias?.name ?? depName;
+  const versionPart = alias?.range ?? raw;
+
+  // workspace:* / workspace:^ / workspace:~ use the workspace package's version.
+  if (versionPart === "*" || versionPart === "^" || versionPart === "~") {
+    const depVersion = _cachedWorkspaceVersions?.versions.get(targetName);
+    if (!depVersion) {
+      consola.warn(
+        `workspace: specifier for "${targetName}" could not be resolved — published package.json will contain "${specifier}" which may cause install failures`
+      );
+      return null;
+    }
+
+    const resolved = versionPart === "*" ? depVersion : versionPart + depVersion;
+    return alias && targetName !== depName
+      ? `npm:${targetName}@${resolved}`
+      : resolved;
+  }
+
+  // workspace:1.0.0 -> 1.0.0; workspace:foo@1.0.0 -> npm:foo@1.0.0
+  return alias && targetName !== depName
+    ? `npm:${targetName}@${versionPart}`
+    : versionPart;
+}
+
+function parseWorkspaceAlias(
+  specifierBody: string
+): { name: string; range: string } | null {
+  const atIndex = specifierBody.lastIndexOf("@");
+  if (atIndex <= 0) return null;
+
+  const name = specifierBody.slice(0, atIndex);
+  const range = specifierBody.slice(atIndex + 1);
+  if (!name || !range) return null;
+  return { name, range };
+}
+
 /**
  * Resolve a catalog: specifier to the actual version string.
  * - `catalog:` or `catalog:default` → default catalog
@@ -457,8 +579,8 @@ let _cachedWorkspaceRoot: { dir: string; root: string | null } | null = null;
 
 async function getWorkspaceRoot(packageDir: string): Promise<string | null> {
   if (_cachedWorkspaceRoot?.dir === packageDir) return _cachedWorkspaceRoot.root;
-  const { findWorkspaceRoot } = await import("../utils/workspace.js");
-  const root = await findWorkspaceRoot(packageDir);
+  const { findWorkspacePackageRoot } = await import("../utils/workspace.js");
+  const root = await findWorkspacePackageRoot(packageDir);
   _cachedWorkspaceRoot = { dir: packageDir, root };
   return root;
 }

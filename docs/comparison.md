@@ -150,7 +150,7 @@ Knarr's watch mode handles the full loop: file change → coalesce (500ms) → b
 | yalc | References gone, `yalc link` again |
 | Knarr | Run `knarr restore` (or automatic via postinstall hook) |
 
-`knarr init` sets up a `postinstall` hook, so `knarr restore` runs automatically after every install.
+`knarr init` sets up a `postinstall` hook, so `knarr restore` can run automatically after installs when `knarr` is available on the install script `PATH`.
 
 ## When to use what
 

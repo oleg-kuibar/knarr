@@ -38,7 +38,7 @@ graph TD
 ```
 package.json → resolvePackFiles() → computeContentHash()
   → compare with store meta → copy files to temp dir
-  → rewrite workspace:/catalog: versions → atomic rename to store
+  → rewrite resolvable workspace:/catalog: versions → atomic rename to store
   → write .knarr-meta.json
 ```
 
@@ -63,8 +63,9 @@ publish() → getConsumers() → inject() to each consumer (parallel, limited to
 ### Watch (dev mode)
 
 ```
-chokidar watches src/lib/dist → debounce → run build cmd (if set)
-  → doPush() → repeat
+startup → resolve build cmd → run initial build (if set) → doPush()
+  → chokidar watches source dirs (or output dirs without a build cmd)
+  → debounce → run build cmd (if set) → doPush() → repeat
 ```
 
 The watcher uses a "debounce effects, not detection" strategy: changes are detected immediately but coalesced. If new changes arrive during a push, it automatically re-pushes after the current one finishes.
@@ -75,7 +76,7 @@ The watcher uses a "debounce effects, not detection" strategy: changes are detec
 WatchOrchestrator starts per-package watchers in topo order
   → package A changes → build + push A
   → lookup reverse adjacency → packages B, C depend on A
-  → requestRebuild(B), requestRebuild(C) (pLimit(2))
+  → requestRebuild(B), requestRebuild(C)
   → build + push B → cascade to B's dependents → ...
 ```
 
@@ -88,7 +89,6 @@ State machine per package prevents infinite loops: `idle → building → idle` 
 | `withFileLock()` | `publisher.ts` | Prevents concurrent publishes of the same package from corrupting the store. Uses `mkdir` as an atomic lock primitive with exponential backoff and 60s stale detection. |
 | `pLimit(cpuCount)` | `publisher.ts`, `hash.ts` | Limits parallel file copies and hash computations to CPU core count. |
 | `pLimit(4)` | `push-engine.ts` | Limits parallel consumer injections to 4 to avoid saturating I/O. |
-| `pLimit(2)` | `watch-orchestrator.ts` | Limits concurrent cascade rebuilds to 2. |
 
 `pLimit` is a minimal reimplementation in `utils/concurrency.ts` (no external dependency).
 
@@ -121,7 +121,7 @@ The `buildId` is `contentHash.slice(9, 17)` — the first 8 hex characters after
 | `src/utils/hash.ts` | `computeContentHash()` (SHA-256 aggregate), `hashFile()` (xxHash64 per-file) |
 | `src/utils/fs.ts` | `copyWithCoW()`, `incrementalCopy()`, `ensureDir()`, `isNodeError()` |
 | `src/utils/pack-list.ts` | `resolvePackFiles()` — npm-pack-compatible file resolution from `files` field |
-| `src/utils/pm-detect.ts` | `detectPackageManager()` — lockfile-based PM detection |
+| `src/utils/pm-detect.ts` | `detectPackageManager()` — `packageManager` field + lockfile-based PM detection |
 | `src/utils/lockfile.ts` | `withFileLock()` — directory-based lock with retry and stale detection |
 | `src/utils/workspace.ts` | Workspace root detection, package enumeration, catalog parsing, reverse adjacency |
 | `src/utils/concurrency.ts` | Minimal `pLimit()` reimplementation |

@@ -198,4 +198,4 @@ Catches `files` field or `.npmignore` mistakes before writing to the store.
 - Use `--json` for any step where you need to parse output or check results programmatically.
 - Run `knarr doctor --json` as a diagnostic step if link verification fails.
 - Knarr does not require global installation. `npx knarr` works in any step.
-- The `postinstall` hook (`knarr restore || true`) is safe in CI -- if Knarr is not installed globally, `|| true` prevents the hook from failing.
+- The `postinstall` hook (`knarr restore --silent || node -e "process.exit(0)"`) is safe in CI -- if Knarr is not available on the install script `PATH`, the Node fallback prevents the hook from failing. Install Knarr as a devDependency or run `npx knarr restore` explicitly when CI needs automatic restore.

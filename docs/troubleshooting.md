@@ -97,7 +97,34 @@ knarr restore
 knarr doctor
 ```
 
-It reports the detected package manager. If it shows the wrong one, check that your lockfile (`pnpm-lock.yaml`) is present.
+It reports the detected package manager. If it shows the wrong one, check `package.json#packageManager` first, then verify that the expected lockfile (`pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, or `package-lock.json`) is present.
+
+---
+
+## Yarn PnP mode is not compatible
+
+**Symptom:** `knarr add`, `knarr restore`, `knarr update`, or `knarr doctor --fix` reports that Yarn PnP mode is not compatible with Knarr.
+
+**Cause:** Yarn Plug'n'Play removes the physical `node_modules/` tree. Knarr copies package files into `node_modules/`, so it needs a node_modules-compatible Yarn linker.
+
+**Fix:**
+
+1. Choose a linker in `.yarnrc.yml`:
+
+```yaml
+nodeLinker: node-modules
+# or:
+# nodeLinker: pnpm
+```
+
+2. Reinstall dependencies and restore Knarr links:
+
+```bash
+yarn install
+knarr restore
+```
+
+If a Yarn Berry project has `.yarnrc.yml` but no `nodeLinker`, Yarn defaults to PnP. Set the linker explicitly before running Knarr setup or `doctor --fix`.
 
 ---
 

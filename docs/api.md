@@ -573,7 +573,8 @@ function isComplexConfig(
 
 ### `detectPackageManager(projectDir)`
 
-Detect the package manager by walking up the filesystem looking for lockfiles.
+Detect the package manager by walking up the filesystem. The `packageManager`
+field in `package.json` is checked first, then lockfiles are used as a fallback.
 
 ```typescript
 async function detectPackageManager(
@@ -581,7 +582,30 @@ async function detectPackageManager(
 ): Promise<PackageManager>  // "npm" | "pnpm" | "yarn" | "bun"
 ```
 
-Priority order: pnpm > bun > yarn > npm. Falls back to npm if no lockfile is found.
+Within a directory, lockfile priority is pnpm > bun > yarn > npm. npm is detected
+from `package-lock.json` or `npm-shrinkwrap.json`. Falls back to npm if no
+`packageManager` field, lockfile, or Yarn artifact is found. Yarn can also be
+detected from `.yarnrc.yml` or `.pnp.*` when no closer lockfile is present.
+
+### `detectPackageManagerInfo(projectDir)`
+
+Detect the package manager and return the evidence used for the decision. This
+distinguishes an explicit npm project from the no-evidence npm fallback.
+
+```typescript
+async function detectPackageManagerInfo(
+  projectDir: string
+): Promise<PackageManagerDetection>
+```
+
+```typescript
+interface PackageManagerDetection {
+  packageManager: PackageManager;
+  source: "packageManager" | "lockfile" | "yarnArtifact" | "default";
+  dir: string;
+  file?: string;
+}
+```
 
 ### `Timer`
 
@@ -664,7 +688,8 @@ interface PreflightIssue {
 }
 
 type MutationType = "copy" | "remove" | "move" | "mkdir" | "write"
-  | "bin-link" | "bin-unlink" | "cache-invalidate" | "lock-skip" | "lifecycle-skip";
+  | "bin-link" | "bin-unlink" | "cache-invalidate" | "lock-skip"
+  | "lifecycle-skip" | "command-skip";
 
 interface DryRunMutation {
   type: MutationType;

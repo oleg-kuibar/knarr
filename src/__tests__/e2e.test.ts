@@ -17,10 +17,12 @@ import {
   mkdir,
   rm,
   stat,
+  lstat,
   readdir,
+  symlink,
 } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { join, relative, resolve } from "node:path";
+import { platform, tmpdir } from "node:os";
 import { exists, collectFiles } from "../utils/fs.js";
 
 // Paths to the real example packages (built with tsup)
@@ -648,9 +650,20 @@ describe("workspace protocol rewriting on publish", () => {
   it("rewrites workspace:* to actual version in store copy", async () => {
     const { publish } = await import("../core/publisher.js");
 
-    const tempLib = await mkdtemp(join(tmpdir(), "KNARR-ws-"));
+    const root = await mkdtemp(join(tmpdir(), "KNARR-ws-root-"));
+    const tempLib = join(root, "packages", "lib");
     await mkdir(join(tempLib, "dist"), { recursive: true });
     await writeFile(join(tempLib, "dist", "index.js"), "");
+    await writeFile(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
+    for (const dep of ["dep-a", "dep-b", "dep-c"]) {
+      const depDir = join(root, "packages", dep);
+      await mkdir(join(depDir, "dist"), { recursive: true });
+      await writeFile(
+        join(depDir, "package.json"),
+        JSON.stringify({ name: dep, version: "3.2.1", files: ["dist"] })
+      );
+      await writeFile(join(depDir, "dist", "index.js"), "");
+    }
     await writeFile(
       join(tempLib, "package.json"),
       JSON.stringify({
@@ -687,7 +700,7 @@ describe("workspace protocol rewriting on publish", () => {
     const sourcePkg = JSON.parse(await readFile(join(tempLib, "package.json"), "utf-8"));
     expect(sourcePkg.dependencies["dep-a"]).toBe("workspace:*");
 
-    await rm(tempLib, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   });
 
   it("does not rewrite package.json when no workspace deps exist", async () => {
@@ -789,6 +802,7 @@ describe("pnpm injection strategy", () => {
         dependencies: { "@example/ui-kit": "1.0.0" },
       })
     );
+    await writeFile(join(consumer1, "pnpm-lock.yaml"), "lockfileVersion: 9.0\n");
     const pnpmTarget = join(
       consumer1,
       "node_modules",
@@ -799,7 +813,10 @@ describe("pnpm injection strategy", () => {
       "ui-kit"
     );
     await mkdir(pnpmTarget, { recursive: true });
-    await writeFile(join(pnpmTarget, "package.json"), '{"name":"@example/ui-kit","version":"0.0.1"}');
+    await writeFile(
+      join(pnpmTarget, "package.json"),
+      '{"name":"@example/ui-kit","version":"1.0.0"}'
+    );
 
     await publish(UI_KIT_DIR);
     const entry = await getStoreEntry("@example/ui-kit", "1.0.0");
@@ -811,6 +828,55 @@ describe("pnpm injection strategy", () => {
     expect(await exists(join(pnpmTarget, "dist", "index.js"))).toBe(true);
     const pkg = JSON.parse(await readFile(join(pnpmTarget, "package.json"), "utf-8"));
     expect(pkg.version).toBe("1.0.0"); // Updated from store
+  });
+
+  it("removeInjected removes the top-level pnpm symlink after deleting the package", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject, removeInjected } = await import("../core/injector.js");
+
+    await writeFile(
+      join(consumer1, "package.json"),
+      JSON.stringify({
+        name: "consumer-one",
+        version: "1.0.0",
+        dependencies: { "@example/ui-kit": "1.0.0" },
+      })
+    );
+    await writeFile(join(consumer1, "pnpm-lock.yaml"), "lockfileVersion: 9.0\n");
+
+    const pnpmTarget = join(
+      consumer1,
+      "node_modules",
+      ".pnpm",
+      "@example+ui-kit@1.0.0",
+      "node_modules",
+      "@example",
+      "ui-kit"
+    );
+    await mkdir(pnpmTarget, { recursive: true });
+    await writeFile(
+      join(pnpmTarget, "package.json"),
+      '{"name":"@example/ui-kit","version":"1.0.0"}'
+    );
+    await mkdir(join(consumer1, "node_modules", "@example"), { recursive: true });
+    const directPath = join(consumer1, "node_modules", "@example", "ui-kit");
+    const directParent = join(consumer1, "node_modules", "@example");
+    const isWindows = platform() === "win32";
+    await symlink(
+      isWindows ? pnpmTarget : relative(directParent, pnpmTarget),
+      directPath,
+      isWindows ? "junction" : "dir"
+    );
+
+    await publish(UI_KIT_DIR);
+    const entry = await getStoreEntry("@example/ui-kit", "1.0.0");
+    await inject(entry!, consumer1, "pnpm");
+
+    await removeInjected(consumer1, "@example/ui-kit", "pnpm", "1.0.0");
+
+    await expect(lstat(directPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(pnpmTarget)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 

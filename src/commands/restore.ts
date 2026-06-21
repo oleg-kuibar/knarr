@@ -9,7 +9,11 @@ import { Timer } from "../utils/timer.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
-import { detectPackageManager, detectYarnNodeLinker, hasYarnrcYml } from "../utils/pm-detect.js";
+import {
+  detectPackageManagerInfo,
+  hasYarnPnpMarkers,
+  isYarnPnpProject,
+} from "../utils/pm-detect.js";
 
 const restoreLimit = pLimit(4);
 
@@ -33,20 +37,21 @@ export default defineCommand({
     const state = await readConsumerState(consumerPath);
 
     // Check for Yarn PnP incompatibility
-    const pm = await detectPackageManager(consumerPath);
-    if (pm === "yarn") {
-      const linker = await detectYarnNodeLinker(consumerPath);
-      if (linker === "pnp" || (linker === null && await hasYarnrcYml(consumerPath))) {
-        consola.error(
-          `Yarn PnP mode is not compatible with Knarr.\n\n` +
-          `Knarr works by copying files into node_modules/, but PnP eliminates\n` +
-          `node_modules/ entirely. To use Knarr with Yarn Berry, add this to\n` +
-          `.yarnrc.yml:\n\n` +
-          `  nodeLinker: node-modules\n\n` +
-          `Then run: yarn install`
-        );
-        process.exit(1);
-      }
+    const currentPm = await detectPackageManagerInfo(consumerPath);
+    if (
+      await hasYarnPnpMarkers(consumerPath) ||
+      (currentPm.packageManager === "yarn" && await isYarnPnpProject(consumerPath))
+    ) {
+      consola.error(
+        `Yarn PnP mode is not compatible with Knarr.\n\n` +
+        `Knarr works by copying files into node_modules/, but PnP eliminates\n` +
+        `node_modules/ entirely. To use Knarr with Yarn Berry, add one of these\n` +
+        `to .yarnrc.yml:\n\n` +
+        `  nodeLinker: node-modules\n` +
+        `  nodeLinker: pnpm\n\n` +
+        `Then run: yarn install`
+      );
+      process.exit(1);
     }
 
     const links = Object.entries(state.links);
@@ -73,13 +78,17 @@ export default defineCommand({
           }
 
           try {
-            const result = await inject(entry, consumerPath, link.packageManager);
+            const packageManager = currentPm.source === "default"
+              ? link.packageManager
+              : currentPm.packageManager;
+            const result = await inject(entry, consumerPath, packageManager);
             // Update state so contentHash and linkedAt stay current
             await addLink(consumerPath, packageName, {
               ...link,
               contentHash: entry.meta.contentHash,
               buildId: entry.meta.buildId ?? "",
               linkedAt: new Date().toISOString(),
+              packageManager,
             });
             verbose(`[restore] ${packageName}@${link.version}: ${result.copied} files`);
             return { packageName, success: true, copied: result.copied };
