@@ -5,50 +5,62 @@ import { recordMutation } from "./dry-run.js";
 import { isDryRun } from "./logger.js";
 import { validatePackageName as validatePackageNameStrict } from "./validators.js";
 
-export function buildInstallCommand(pm: PackageManager, deps: string[]): string {
+export interface PackageManagerCommand {
+  executable: PackageManager;
+  args: string[];
+}
+
+export function formatPackageManagerCommand(cmd: PackageManagerCommand): string {
+  return [cmd.executable, ...cmd.args].join(" ");
+}
+
+export function buildInstallCommand(pm: PackageManager, deps: string[]): PackageManagerCommand {
   if (deps.length === 0) {
     throw new Error("No dependencies provided");
   }
   for (const dep of deps) validatePackageNameStrict(dep);
-  const joined = deps.join(" ");
   switch (pm) {
     case "pnpm":
-      return `pnpm add ${joined}`;
+      return { executable: "pnpm", args: ["add", ...deps] };
     case "yarn":
-      return `yarn add ${joined}`;
+      return { executable: "yarn", args: ["add", ...deps] };
     case "bun":
-      return `bun add ${joined}`;
+      return { executable: "bun", args: ["add", ...deps] };
     default:
-      return `npm install ${joined}`;
+      return { executable: "npm", args: ["install", ...deps] };
   }
 }
 
-export function buildDevInstallCommand(pm: PackageManager, dep: string): string {
+export function buildDevInstallCommand(pm: PackageManager, dep: string): PackageManagerCommand {
   validatePackageNameStrict(dep);
   switch (pm) {
     case "pnpm":
-      return `pnpm add -D ${dep}`;
+      return { executable: "pnpm", args: ["add", "-D", dep] };
     case "yarn":
-      return `yarn add -D ${dep}`;
+      return { executable: "yarn", args: ["add", "-D", dep] };
     case "bun":
-      return `bun add -d ${dep}`;
+      return { executable: "bun", args: ["add", "-d", dep] };
     default:
-      return `npm install -D ${dep}`;
+      return { executable: "npm", args: ["install", "-D", dep] };
   }
 }
 
-export function runShellCommand(cmd: string, cwd: string): Promise<boolean> {
+export function runPackageManagerCommand(
+  cmd: PackageManagerCommand,
+  cwd: string
+): Promise<boolean> {
+  const display = formatPackageManagerCommand(cmd);
   if (isDryRun()) {
-    recordMutation({ type: "command-skip", path: cwd, detail: cmd });
+    recordMutation({ type: "command-skip", path: cwd, detail: display });
     return Promise.resolve(true);
   }
 
   return new Promise((resolve) => {
-    const isWin = platform() === "win32";
-    const shell = isWin ? "cmd" : "sh";
-    const shellFlag = isWin ? "/c" : "-c";
+    const executable = platform() === "win32"
+      ? `${cmd.executable}.cmd`
+      : cmd.executable;
 
-    const child = spawn(shell, [shellFlag, cmd], {
+    const child = spawn(executable, cmd.args, {
       cwd,
       stdio: "inherit",
     });

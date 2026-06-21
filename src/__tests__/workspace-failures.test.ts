@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -6,6 +6,7 @@ import { doPushAll } from "../core/batch-push.js";
 import { addLink, registerConsumer } from "../core/tracker.js";
 import { getStoreEntry } from "../core/store.js";
 import { runInitialWorkspaceWatchBuilds } from "../core/push-engine.js";
+import { consola } from "../utils/console.js";
 import { exists } from "../utils/fs.js";
 
 let testKNARRHome: string;
@@ -81,7 +82,9 @@ describe("workspace failure handling", () => {
       });
       await writeWorkspacePackage(join(root, "packages", "dep-c"), "dep-c");
 
-      const result = await runInitialWorkspaceWatchBuilds(root, watchArgs());
+      const result = await withoutExpectedBuildFailureOutput(() =>
+        runInitialWorkspaceWatchBuilds(root, watchArgs())
+      );
 
       expect(result.canPush).toBe(true);
       expect(result.failedPackages).toEqual(new Set(["dep-a"]));
@@ -97,6 +100,17 @@ describe("workspace failure handling", () => {
     }
   });
 });
+
+async function withoutExpectedBuildFailureOutput<T>(fn: () => Promise<T>): Promise<T> {
+  const errorSpy = vi.spyOn(consola, "error").mockImplementation(() => {});
+  const warnSpy = vi.spyOn(consola, "warn").mockImplementation(() => {});
+  try {
+    return await fn();
+  } finally {
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  }
+}
 
 async function writeWorkspaceRoot(root: string): Promise<void> {
   await mkdir(join(root, "packages"), { recursive: true });

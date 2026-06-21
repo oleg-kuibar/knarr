@@ -1,4 +1,6 @@
+import { spawn } from "node:child_process";
 import { basename, join, resolve } from "node:path";
+import { platform } from "node:os";
 import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
 import { findStoreEntry, getStoreEntry } from "../core/store.js";
@@ -17,7 +19,9 @@ import { ensureConsumerInit } from "../utils/init-helpers.js";
 import {
   buildDevInstallCommand,
   buildInstallCommand,
-  runShellCommand,
+  formatPackageManagerCommand,
+  runPackageManagerCommand,
+  type PackageManagerCommand,
 } from "../utils/pm-commands.js";
 import { addToTranspilePackages } from "../utils/nextjs-config.js";
 import { getConsumerStatePath } from "../utils/paths.js";
@@ -25,7 +29,7 @@ import { Timer } from "../utils/timer.js";
 import { output } from "../utils/output.js";
 import { errorWithSuggestion } from "../utils/errors.js";
 import { isDryRun, verbose, isJsonOutput } from "../utils/logger.js";
-import { printDryRunReport } from "../utils/dry-run.js";
+import { printDryRunReport, recordMutation } from "../utils/dry-run.js";
 import { warnVersionMismatch } from "../utils/validators.js";
 import {
   validatePackageName as validatePackageNameStrict,
@@ -324,6 +328,7 @@ async function handleMissingDeps(
 
   if (yes) {
     const cmd = buildInstallCommand(pm, missing);
+    const display = formatPackageManagerCommand(cmd);
     consola.info(
       isDryRun()
         ? `[dry-run] Would install missing dependencies: ${missing.join(", ")}`
@@ -333,7 +338,7 @@ async function handleMissingDeps(
     if (ok && !isDryRun()) {
       consola.success("Installed missing dependencies");
     } else if (!ok) {
-      consola.warn(`Install failed. Run manually: ${cmd}`);
+      consola.warn(`Install failed. Run manually: ${display}`);
     }
     return;
   }
@@ -344,16 +349,17 @@ async function handleMissingDeps(
   );
   if (confirm) {
     const cmd = buildInstallCommand(pm, missing);
+    const display = formatPackageManagerCommand(cmd);
     const ok = await runInstallCommand(cmd, consumerPath);
     if (ok && !isDryRun()) {
       consola.success("Installed missing dependencies");
     } else if (!ok) {
-      consola.warn(`Install failed. Run manually: ${cmd}`);
+      consola.warn(`Install failed. Run manually: ${display}`);
     }
   } else {
     consola.warn(
       `Missing transitive dependencies: ${missing.join(", ")}\n` +
-        `  Run: ${buildInstallCommand(pm, missing)}`,
+        `  Run: ${formatPackageManagerCommand(buildInstallCommand(pm, missing))}`,
     );
   }
 }
@@ -384,6 +390,7 @@ async function configureBundler(
     if (viteResult.modified) {
       consola.success(`Added knarr plugin to ${basename(bundler.configFile)}`);
       const installCmd = buildDevInstallCommand(pm, "knarr");
+      const installDisplay = formatPackageManagerCommand(installCmd);
       consola.info(
         isDryRun()
           ? "[dry-run] Would install knarr as devDependency"
@@ -393,7 +400,7 @@ async function configureBundler(
       if (ok && !isDryRun()) {
         consola.success("Installed knarr");
       } else if (!ok) {
-        consola.warn(`Install failed. Run manually: ${installCmd}`);
+        consola.warn(`Install failed. Run manually: ${installDisplay}`);
       }
     } else if (viteResult.error) {
       consola.info(
@@ -414,6 +421,27 @@ async function configureBundler(
   }
 }
 
-function runInstallCommand(cmd: string, cwd: string): Promise<boolean> {
-  return runShellCommand(cmd, cwd);
+function runInstallCommand(cmd: PackageManagerCommand, cwd: string): Promise<boolean> {
+  return runPackageManagerCommand(cmd, cwd);
+}
+
+function runShellCommand(cmd: string, cwd: string): Promise<boolean> {
+  if (isDryRun()) {
+    recordMutation({ type: "command-skip", path: cwd, detail: cmd });
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolve) => {
+    const isWin = platform() === "win32";
+    const shell = isWin ? "cmd" : "sh";
+    const shellFlag = isWin ? "/c" : "-c";
+
+    const child = spawn(shell, [shellFlag, cmd], {
+      cwd,
+      stdio: "inherit",
+    });
+
+    child.on("close", (code) => resolve(code === 0));
+    child.on("error", () => resolve(false));
+  });
 }

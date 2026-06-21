@@ -3,6 +3,7 @@ import type { PackageManager } from "../../types.js";
 import {
   buildDevInstallCommand,
   buildInstallCommand,
+  formatPackageManagerCommand,
 } from "../pm-commands.js";
 
 describe("package manager command builders", () => {
@@ -14,7 +15,9 @@ describe("package manager command builders", () => {
   ] satisfies [PackageManager, string][])(
     "builds dependency install commands for %s",
     (pm, expected) => {
-      expect(buildInstallCommand(pm, ["react", "@scope/ui-kit"])).toBe(expected);
+      expect(
+        formatPackageManagerCommand(buildInstallCommand(pm, ["react", "@scope/ui-kit"]))
+      ).toBe(expected);
     }
   );
 
@@ -26,7 +29,9 @@ describe("package manager command builders", () => {
   ] satisfies [PackageManager, string][])(
     "builds dev dependency install commands for %s",
     (pm, expected) => {
-      expect(buildDevInstallCommand(pm, "knarr")).toBe(expected);
+      expect(formatPackageManagerCommand(buildDevInstallCommand(pm, "knarr"))).toBe(
+        expected
+      );
     }
   );
 

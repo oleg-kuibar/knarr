@@ -11,7 +11,11 @@ import {
 } from "../utils/pm-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { detectBuildCommand as detectBuildCmd } from "../utils/build-detect.js";
-import { buildDevInstallCommand, runShellCommand } from "../utils/pm-commands.js";
+import {
+  buildDevInstallCommand,
+  formatPackageManagerCommand,
+  runPackageManagerCommand,
+} from "../utils/pm-commands.js";
 import {
   ensureGitignore,
   addPostinstall,
@@ -213,16 +217,17 @@ export default defineCommand({
         if (viteResult.modified) {
           consola.success(`Added knarr plugin to ${basename(bundler.configFile)}`);
           const installCmd = buildDevInstallCommand(pm, "knarr");
+          const installDisplay = formatPackageManagerCommand(installCmd);
           consola.info(
             isDryRun()
               ? "[dry-run] Would install knarr as devDependency"
               : "Installing knarr as devDependency..."
           );
-          const ok = await runShellCommand(installCmd, projectDir);
+          const ok = await runPackageManagerCommand(installCmd, projectDir);
           if (ok && !isDryRun()) {
             consola.success("Installed knarr");
           } else if (!ok) {
-            consola.warn(`Install failed. Run manually: ${installCmd}`);
+            consola.warn(`Install failed. Run manually: ${installDisplay}`);
           }
         } else if (viteResult.error) {
           consola.info(
