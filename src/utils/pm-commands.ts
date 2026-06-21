@@ -56,13 +56,12 @@ export function runPackageManagerCommand(
   }
 
   return new Promise((resolve) => {
-    const executable = platform() === "win32"
-      ? `${cmd.executable}.cmd`
-      : cmd.executable;
+    const isWin = platform() === "win32";
 
-    const child = spawn(executable, cmd.args, {
+    const child = spawn(cmd.executable, cmd.args, {
       cwd,
       stdio: "inherit",
+      shell: isWin,
     });
 
     child.on("close", (code) => resolve(code === 0));
