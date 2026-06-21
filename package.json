@@ -119,6 +119,8 @@
   "pnpm": {
     "overrides": {
       "dompurify": "^3.4.1",
+      "esbuild": "^0.28.1",
+      "fast-uri": "^3.1.2",
       "picomatch": "^4.0.4",
       "postcss": "^8.5.10",
       "rollup": "^4.59.0"
