@@ -16,9 +16,9 @@
 
 # Knarr
 
-Test local npm packages in real apps without `npm link`, duplicate React, or dirty `package.json` diffs.
+Test local npm packages in real apps without `npm link` symlink surprises or local package references in `package.json`.
 
-Knarr copies the built package output directly into the consumer app's `node_modules/`, so your package behaves like the version you would publish to npm. It works well with pnpm, Vite, Next.js, Webpack/rspack, Turbopack, and teams that want local package overrides to stay out of git.
+Knarr copies the package files you would publish into the consumer app's `node_modules/`, then keeps registered consumers updated. It detects npm, pnpm, Bun, and Yarn projects that use `node_modules` or Yarn's pnpm linker. Yarn PnP is not compatible because it removes `node_modules`.
 
 ```bash
 cd my-app
@@ -35,15 +35,17 @@ If you have not installed Knarr globally, use `npx knarr dev` for the second com
 ## Who this is for
 
 - Library and design-system authors testing packages inside real consumer apps
-- React developers avoiding duplicate React instances and invalid hook calls from symlinks
-- pnpm users where `npm link` or yalc do not match the installed dependency tree
-- Teams that want clean git diffs while iterating on local packages
+- React developers avoiding duplicate dependency instances and invalid hook calls from symlinks
+- pnpm users who want updates copied into the existing virtual-store install when possible
+- Teams that want local package overrides to stay out of dependency specs and lockfiles
 
 ## Why Knarr?
 
-`npm link` creates symlinks that can break module resolution: duplicate React instances, peer dependency mismatches, and bundlers that cannot follow links outside the project root. yalc improves this by copying files, but it rewrites consumer dependency specs and usually needs extra watch tooling.
+`npm link` creates symlinks that can break module resolution: duplicate dependency instances, peer dependency mismatches, and bundlers that cannot follow links outside the project root. yalc improves this by copying files, but its workflow can rewrite consumer dependency specs or require extra watch tooling.
 
-Knarr keeps your `package.json` and lockfile clean. It publishes a local package into `~/.knarr/store/`, injects that package into every registered consumer, and can watch, rebuild, and push changes continuously.
+Knarr keeps the local override out of your dependency spec. It publishes a local package into `~/.knarr/store/`, injects that package into every registered consumer, and can watch, rebuild, and push changes continuously. Setup helpers may still add `.knarr/`, `.gitignore`, a restore hook, or bundler config when needed.
+
+If pnpm workspaces, `file:`, or `dependenciesMeta.*.injected` already fit your repo, use those native features first. Knarr is for the narrower case where you want publishable package files copied into real consumers while their dependency specs stay normal.
 
 ## Quick Start
 
@@ -65,7 +67,7 @@ knarr dev
 
 If Knarr is not installed globally, run `npx knarr dev` instead.
 
-That is the everyday loop: edit `my-lib`, Knarr rebuilds it, pushes changed files into `my-app/node_modules/`, and your bundler sees the update.
+That is the everyday loop: edit `my-lib`, Knarr rebuilds it, pushes changed files into `my-app/node_modules/`, and your dev server sees normal file changes there.
 
 If you prefer the explicit steps:
 
@@ -98,20 +100,20 @@ graph LR
 4. `push` publishes and copies to all registered consumers
 5. `dev` watches, builds, publishes, and pushes continuously
 
-## At A Glance
+## What Knarr Does
 
-|                        | npm link                | yalc                        | Knarr               |
-| ---------------------- | ----------------------- | --------------------------- | ------------------- |
-| Mechanism              | Symlinks                | Copy + package.json rewrite | Copy only           |
-| Module resolution      | Broken (dual instances) | Works                       | Works               |
-| Git contamination      | None                    | package.json + .yalc/       | None                |
-| Bundler HMR            | Often broken            | Varies                      | Works               |
-| pnpm support           | Fragile                 | Limited                     | Full                |
-| Watch mode             | None                    | External                    | Built-in            |
-| Survives `npm install` | No                      | No                          | `knarr restore`     |
-| Incremental sync       | N/A                     | Full copy each time         | mtime + xxhash diff |
+| Area | Behavior |
+| --- | --- |
+| Store | `~/.knarr/store/<name>@<version>/package/`, or `KNARR_HOME/store/...` when `KNARR_HOME` is set |
+| Consumer copy | Copies package files into `node_modules/<package>/` and records link state in `.knarr/state.json` |
+| Package files | Uses npm-pack-compatible file resolution, including the `files` field and `publishConfig.directory` |
+| pnpm | Follows existing pnpm virtual-store symlinks when present; falls back to a direct `node_modules` path |
+| Watch loop | `knarr dev` runs an initial push, then watches, rebuilds, publishes, and pushes again |
+| Reinstall recovery | `knarr restore` re-injects registered packages after `node_modules` is replaced |
+| Bundlers | Vite plugin triggers reload/restart, Next.js uses `transpilePackages`, Webpack/rspack plugin invalidates watch/cache, and other bundlers rely on file changes under `node_modules` |
+| Incremental sync | Skips same size and mtime, hashes same-size changed-mtime files with xxHash64, and removes stale destination files |
 
-See [detailed comparison](docs/comparison.md) for a deeper breakdown.
+See [detailed comparison](docs/comparison.md) for native pnpm options, yalc, symlink workflows, and Knarr tradeoffs.
 
 ## Migrate From yalc In 60 Seconds
 
@@ -129,13 +131,13 @@ See [Migrating from yalc](docs/migrating-from-yalc.md) for the full guide.
 ## Install
 
 ```bash
-pnpm add -g knarr       # or npm, yarn, bun
-npx knarr init          # one-off setup for a consumer project
+pnpm add -g knarr       # or npm install -g knarr
+npx knarr init          # optional consumer setup and repair helpers
 ```
 
 ## Performance Notes
 
-knarr uses CoW reflinks for instant copy-on-write on APFS/btrfs/ReFS, with automatic fallback. Reflink support is probed once per volume and cached. Incremental sync checks size and mtime first, then falls back to xxhash only when needed, so unchanged files are skipped quickly.
+Knarr uses Node's copy-on-write reflink mode when the current filesystem supports it, with automatic fallback to a normal copy. Reflink support is probed once per volume and cached. Incremental sync checks size and mtime first, then falls back to xxHash64 only when needed, so unchanged files are skipped quickly.
 
 ## Documentation
 
@@ -143,6 +145,7 @@ knarr uses CoW reflinks for instant copy-on-write on APFS/btrfs/ReFS, with autom
 - [Commands](docs/commands.md)
 - [Comparison](docs/comparison.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [CI/CD](docs/ci-cd.md)
 - [Examples](examples/)
 - [Contributing](CONTRIBUTING.md)
 

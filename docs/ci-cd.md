@@ -1,201 +1,119 @@
-# Using Knarr in CI/CD
+# CI/CD: Prefer Canary Builds
 
-Knarr can run in CI pipelines to test against local (unpublished) versions of packages — useful when you want to verify a library change doesn't break consumers before publishing to npm.
+For CI and release validation, prefer canary or prerelease packages over Knarr.
 
-## Key flags for CI
+A canary build publishes a real package artifact to a registry under a
+non-`latest` dist-tag such as `canary`, `beta`, or `next`. The consumer then
+installs that tag or exact prerelease version through its package manager. That
+tests the same path users rely on: registry auth, tarball contents, lockfile
+resolution, peer dependencies, install scripts, and integrity checks.
 
-### --json
+Use these primary sources when setting up canary releases:
 
-All Knarr commands support `--json` for machine-readable output. When enabled, human-readable log messages are suppressed and structured JSON is printed to stdout.
+- [npm dist-tags](https://docs.npmjs.com/cli/v11/commands/npm-dist-tag/) -
+  documents tags such as `canary`, `beta`, and `next`, plus installing with
+  `npm install <name>@<tag>`.
+- [npm publish --tag](https://docs.npmjs.com/cli/v11/commands/npm-publish/#tag)
+  - publishes a version under a tag other than `latest`.
+- [Changesets snapshot releases](https://github.com/changesets/changesets/blob/main/docs/snapshot-releases.md)
+  - publishes temporary test versions such as `0.0.0-canary-<timestamp>`.
+- [Changesets prereleases](https://github.com/changesets/changesets/blob/main/docs/prereleases.md)
+  - manages longer-lived prerelease streams such as `next` or `beta`.
 
-```bash
-knarr publish --json
-# Output:
-# {
-#   "name": "my-lib",
-#   "version": "1.0.0",
-#   "files": 12,
-#   "skipped": false,
-#   "elapsed": 45
-# }
+## Recommended Flow
 
-knarr status --json
-knarr list --json
-knarr push --json
-```
+Use this shape for package-to-consumer CI:
 
-Use this to parse results in CI scripts:
+1. Build and test the package.
+2. Publish a canary or prerelease version with a non-`latest` dist-tag.
+3. In the consumer job, install the canary tag or exact canary version.
+4. Run the consumer's tests, typecheck, and build.
+5. Promote to a normal release only after the canary passes.
 
-```bash
-RESULT=$(knarr push --json)
-CONSUMERS=$(echo "$RESULT" | jq '.consumers')
-echo "Pushed to $CONSUMERS consumer(s)"
-```
-
-### --dry-run
-
-Preview what Knarr would do without writing any files:
+With Changesets snapshots, the package side usually looks like this:
 
 ```bash
-knarr publish --dry-run
-knarr push --dry-run
+pnpm build
+pnpm exec changeset version --snapshot canary
+pnpm exec changeset publish --tag canary --no-git-tag
 ```
 
-When `--dry-run` completes, Knarr prints a grouped summary of all mutations that would have been performed (file copies, removals, directory creation, bin links, lock acquisitions, lifecycle hooks). With `--json`, the summary is output as structured JSON.
-
-Good for validation steps where you want to confirm the operation succeeds without writing files.
-
-### --verbose
-
-Enable debug-level logging for troubleshooting CI failures:
+The consumer side should use its normal package manager:
 
 ```bash
-knarr push --verbose
+pnpm add my-lib@canary
+pnpm test
 ```
 
-Logs file hash computations, symlink resolution, store operations, and timing. In combination with `--json`, verbose logs go to stderr while structured output goes to stdout.
+Prefer installing the exact canary version when you need reproducible reruns.
+Use the moving `canary` tag when the job should always test the newest canary.
 
-### --private
+## Where Knarr Fits
 
-Allow publishing packages that have `"private": true` in package.json:
+Knarr is mainly a local development tool. It is not the recommended CI
+integration path for release confidence because it copies files into
+`node_modules/` after the package manager has already resolved and installed the
+dependency graph. That bypasses important release surfaces that canary builds
+exercise.
+
+Use Knarr in CI only for narrow pre-registry smoke tests, for example:
+
+- Testing a package against same-checkout fixture apps before a canary publish.
+- Running `knarr check` to catch missing entry points, exports, types, or bin
+  paths.
+- Exercising a consumer when registry publishing is unavailable in forks or
+  local-only automation.
+
+Treat a passing Knarr smoke test as a weaker signal than a passing canary
+consumer test.
+
+## Minimal Knarr Smoke Test
+
+If you still need a local smoke test, isolate the store per job and keep the
+job small:
 
 ```bash
-knarr publish --private
+export KNARR_HOME="$(mktemp -d)"
+
+pnpm --filter my-lib build
+npx knarr check packages/my-lib --json
+npx knarr publish packages/my-lib --json
+
+cd apps/my-app
+npx knarr add my-lib --yes
+pnpm test
 ```
 
-Private packages are skipped by default. Use this flag in CI when testing internal packages that are not meant for the npm registry.
+`KNARR_HOME` must be job-local so one CI run cannot see another run's mutable
+store.
 
-## KNARR_HOME for isolated environments
+## What CI Should Not Do
 
-By default, Knarr stores data in `~/.knarr/`. In CI, you typically want an isolated store per job to avoid cross-contamination between builds.
+- Do not use Knarr as a replacement for canary package tests.
+- Do not rely on `knarr dev` in CI; it is a watch command and does not exit.
+- Do not cache `KNARR_HOME` between jobs unless you intentionally want shared
+  mutable local package state.
+- Do not publish a stable `latest` package from a Knarr verification job.
+- Do not use Knarr for Yarn PnP consumers. Knarr requires `node_modules`.
 
-Set the `KNARR_HOME` environment variable to redirect the store:
+## Useful Knarr Commands
+
+`knarr check` validates package metadata without writing to the store:
 
 ```bash
-export KNARR_HOME=$(mktemp -d)
-knarr publish
-knarr add my-lib
+npx knarr check packages/my-lib --json
 ```
 
-Or inline:
+`--dry-run` previews mutations without touching the store or consumer project:
 
 ```bash
-KNARR_HOME=/tmp/knarr-ci knarr publish
-KNARR_HOME=/tmp/knarr-ci knarr add my-lib
+npx knarr publish packages/my-lib --dry-run --json
 ```
 
-Everything (store, registry, metadata) goes under that directory.
+`--json` suppresses human-oriented output and writes structured JSON to stdout.
+`--verbose` still writes debug logs to stderr, so this keeps machine output
+parseable:
 
-## GitHub Actions example
-
-A full workflow: build a library, inject it into a consumer, run the consumer's tests.
-
-```yaml
-name: Test with local packages
-
-on:
-  pull_request:
-    paths:
-      - 'packages/my-lib/**'
-      - 'apps/my-app/**'
-
-jobs:
-  integration-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build library
-        run: pnpm --filter my-lib build
-
-      - name: Set up Knarr
-        env:
-          KNARR_HOME: ${{ runner.temp }}/knarr
-        run: |
-          cd apps/my-app
-          npx knarr init -y
-
-      - name: Publish and link
-        env:
-          KNARR_HOME: ${{ runner.temp }}/knarr
-        run: |
-          npx knarr publish packages/my-lib
-          cd apps/my-app
-          npx knarr add my-lib
-
-      - name: Verify link
-        env:
-          KNARR_HOME: ${{ runner.temp }}/knarr
-        run: |
-          cd apps/my-app
-          npx knarr status --json
-
-      - name: Run consumer tests
-        run: pnpm --filter my-app test
-
-      - name: Run consumer build
-        run: pnpm --filter my-app build
+```bash
+npx knarr push --json --verbose > push.json 2> knarr-debug.log
 ```
-
-Key points:
-
-- `KNARR_HOME` is set to `${{ runner.temp }}/knarr` so the store is isolated to the job and cleaned up automatically.
-- `knarr init -y` skips interactive prompts.
-- `knarr status --json` is used as a verification step.
-- The library is built before publishing, since Knarr copies built output.
-
-## Testing multiple consumers
-
-If you have several apps that depend on the same library, you can push to all of them at once:
-
-```yaml
-      - name: Publish library
-        env:
-          KNARR_HOME: ${{ runner.temp }}/knarr
-        run: npx knarr publish packages/my-lib
-
-      - name: Link to all consumers
-        env:
-          KNARR_HOME: ${{ runner.temp }}/knarr
-        run: |
-          for app in apps/app-1 apps/app-2 apps/app-3; do
-            cd $app
-            npx knarr init -y
-            npx knarr add my-lib
-            cd ${{ github.workspace }}
-          done
-
-      - name: Run all tests
-        run: pnpm --filter './apps/*' test
-```
-
-## Validating with --dry-run
-
-Add a dry-run step to catch packaging issues without modifying anything:
-
-```yaml
-      - name: Validate packaging
-        run: npx knarr publish packages/my-lib --dry-run --json
-```
-
-Catches `files` field or `.npmignore` mistakes before writing to the store.
-
-## Tips
-
-- Always set `KNARR_HOME` in CI. The default `~/.knarr/` may persist across cached runners and cause stale state.
-- Use `--json` for any step where you need to parse output or check results programmatically.
-- Run `knarr doctor --json` as a diagnostic step if link verification fails.
-- Knarr does not require global installation. `npx knarr` works in any step.
-- The `postinstall` hook (`knarr restore --silent || node -e "process.exit(0)"`) is safe in CI -- if Knarr is not available on the install script `PATH`, the Node fallback prevents the hook from failing. Install Knarr as a devDependency or run `npx knarr restore` explicitly when CI needs automatic restore.

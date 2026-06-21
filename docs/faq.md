@@ -2,7 +2,7 @@
 
 ## Why not symlinks?
 
-Node.js resolves `require()` and `import` from the symlink's **real path**, not the link location. When a library is symlinked from outside the consumer project, its `require('react')` resolves from the library's own `node_modules/`, not the consumer's. This creates two separate instances of React (or any shared dependency), which causes:
+By default, Node.js resolves `require()` and `import` from the symlink's **real path**, not the link location. When a library is symlinked from outside the consumer project, its `require('react')` resolves from the library's own `node_modules/`, not the consumer's. This can create two separate instances of React (or any shared dependency), which causes:
 
 - "Invalid hook call" errors in React
 - `instanceof` checks returning false
@@ -11,7 +11,7 @@ Node.js resolves `require()` and `import` from the symlink's **real path**, not 
 
 Knarr copies files directly into `node_modules/`, so the library resolves dependencies from the consumer's `node_modules/` tree, just like a real npm-installed package.
 
-See [Comparison](comparison.md) for a detailed side-by-side with `npm link` and yalc.
+See [Comparison](comparison.md) for a detailed side-by-side with native pnpm options, symlink workflows, yalc, and Knarr.
 
 ## How does copy-on-write (CoW) work?
 
@@ -29,29 +29,34 @@ Knarr also uses incremental copying with a three-tier check: it compares file si
 
 The main differences:
 
-1. **Knarr never modifies package.json.** yalc rewrites dependency versions to `file:.yalc/my-lib`, which shows up in git diffs and can leak into CI or npm publishes. Knarr keeps `package.json` clean.
+1. **Knarr does not add local dependency specs.** The default `yalc add` flow writes a `file:.yalc/my-lib` or `link:` dependency into `package.json`. Knarr keeps the consumer's dependency spec pointed at the normal package version, though setup helpers may still add a restore hook or bundler config.
 
-2. **Knarr never creates project-level store directories.** yalc creates a `.yalc/` directory with package copies inside your project. knarr uses a single global store at `~/.knarr/store/` and only creates a gitignored `.knarr/` directory for state tracking.
+2. **Different local state.** yalc commonly creates `.yalc/` and `yalc.lock` in the consumer. Knarr uses a global store at `~/.knarr/store/` and a gitignored `.knarr/` directory for consumer state and backups.
 
-3. **pnpm support.** yalc has been broken with pnpm since v7.10. Knarr detects pnpm and follows the `.pnpm/` symlink chain to inject files at the correct location.
+3. **pnpm virtual-store injection.** Knarr detects pnpm and follows the `.pnpm/` symlink chain to inject files at the existing package location when possible. Native pnpm `workspace:`, `file:`, and `dependenciesMeta.*.injected` are still better choices when they fit your workspace.
 
-4. **Built-in watch mode.** yalc relies on the unmaintained `yalc-watch` package. Knarr has `knarr dev` (auto-detects build command) and `knarr push --watch --build "cmd"` built in.
+4. **Built-in build/push loop.** yalc has `yalc push` and `yalc publish --push`; Knarr has `knarr dev` and `knarr push --watch --build "cmd"` for rebuilding and pushing to registered consumers continuously.
 
-5. **Incremental copy.** yalc copies all files every time. Knarr hashes files with xxhash (parallel, ~10x faster than SHA-256) and only copies what changed.
+5. **Incremental copy into consumers.** Knarr compares size, mtime, and xxHash64 where needed, then only copies changed files into each consumer.
 
-6. **Backup and restore.** Knarr backs up the original npm-installed version and restores it on `knarr remove`. yalc does not.
+6. **Backup and restore.** Knarr backs up the original installed package and restores it on `knarr remove`. `knarr restore` re-injects linked packages after installs replace `node_modules`.
 
 See [Migrating from yalc](migrating-from-yalc.md) for a step-by-step migration guide.
 
 ## Does Knarr modify package.json?
 
-No. Knarr never modifies the consumer's `package.json` or lockfile. The only project-level artifacts are:
+Knarr never rewrites dependency version specifiers to local `file:` or `link:` paths. Some setup and repair helpers can edit `package.json`:
 
-- `.knarr/state.json` -- tracks which packages are linked (gitignored)
-- `.knarr/backups/` -- backup of original npm-installed packages (gitignored)
-- A `postinstall` script entry (`knarr restore --silent || node -e "process.exit(0)"`) added by `knarr init`
+- `knarr init` may add a `postinstall` script (`knarr restore --silent || node -e "process.exit(0)"`)
+- Vite auto-configuration may install `knarr` as a dev dependency so `knarr/vite` resolves from the consumer project
+- Missing dependency prompts may install dependencies if you accept them
 
-The `postinstall` script is the only change to `package.json`, and it is opt-in via `knarr init`. It does not affect dependency resolution or version specifiers.
+The normal Knarr link state lives in gitignored project files:
+
+- `.knarr/state.json` -- tracks which packages are linked
+- `.knarr/backups/` -- backup of original installed packages
+
+Knarr does not intentionally edit lockfiles except through package-manager install commands that you approve.
 
 ## What about pnpm strict mode?
 
@@ -71,21 +76,15 @@ warn  my-lib depends on "lodash" which is not installed in this project
 
 You need to install it yourself (`pnpm add lodash`), just as you would with a real npm-published version.
 
-## Can I use Knarr in CI?
+## Should I use Knarr in CI?
 
-Yes. See [CI/CD Guide](ci-cd.md) for details. The short version:
+Usually no. Prefer canary or prerelease packages for CI and release validation
+because they go through the registry and the consumer's normal package-manager
+install path.
 
-1. Set `KNARR_HOME` to an isolated temp directory per job.
-2. Use `--json` for machine-readable output.
-3. Use `--dry-run` for validation steps.
-4. Use `npx knarr` -- no global install required.
-
-```bash
-export KNARR_HOME=$(mktemp -d)
-npx knarr publish packages/my-lib
-cd apps/my-app && npx knarr init -y && npx knarr add my-lib
-pnpm test
-```
+Knarr can still be used for narrow same-checkout smoke tests when publishing a
+canary is unavailable, but treat that as a weaker signal. See
+[CI/CD: Prefer Canary Builds](ci-cd.md).
 
 ## How do I clean up the store?
 

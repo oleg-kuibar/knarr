@@ -1,161 +1,126 @@
-# npm link vs yalc vs Knarr
+# Comparing local package workflows
 
-You're developing a library and an app that uses it. You want changes to show up in the app without publishing to npm. Here's how the three main tools handle this, and where each breaks down.
+Knarr is not a replacement for every local package workflow. Use the native
+package-manager feature when it already matches what you need. Use Knarr when
+you specifically want to test the publishable package output inside a consumer
+project without changing that consumer's dependency spec to a local path.
 
-## How they work
+## Short version
 
-### npm link (symlinks)
+| Workflow | Best fit | Tradeoff |
+| --- | --- | --- |
+| pnpm `workspace:` | Packages live in one pnpm workspace and consumers can use source links | Requires a workspace and dependency specs intentionally point at local workspace packages |
+| pnpm `file:` | Local package path should be hard-linked and dependencies installed by pnpm | Writes a local path into the manifest and lockfile |
+| pnpm `dependenciesMeta.*.injected` | Workspace package needs per-consumer peer dependency resolution | Copies must be refreshed after source changes, usually by install/build tooling |
+| `npm link` / `pnpm link` | Quick manual test where symlinks are acceptable | Symlink behavior can expose duplicate dependency or bundler-watch issues |
+| yalc | Local repository workflow with publish/add/push commands | Default `yalc add` creates `.yalc`, `yalc.lock`, and a `file:` or `link:` dependency |
+| Knarr | Test built/publishable package files in real consumers while keeping normal dependency specs | Not package-manager-native; installs can overwrite injected files until `knarr restore` runs |
 
-```mermaid
-graph LR
-    A["my-lib/"] -- "npm link" --> B["global<br/>node_modules/my-lib"]
-    B -- "npm link my-lib" --> C["app/node_modules/my-lib<br/>(symlink → global)"]
+## Native options first
 
-    style A fill:#2e7d32,stroke:#66bb6a,color:#e8f5e9
-    style B fill:#1565c0,stroke:#64b5f6,color:#e3f2fd
-    style C fill:#c62828,stroke:#ef5350,color:#ffebee
-```
+### pnpm workspaces
 
-Creates a symlink chain: library → global `node_modules` → consumer's `node_modules`. The catch is that Node.js resolves `require()` from the *real* path, not the link location.
+If the library and app live in the same pnpm workspace, start with
+`workspace:`. pnpm guarantees that `workspace:` dependencies resolve only to
+local workspace packages, and rewrites those specs to normal versions during
+`pnpm pack` or `pnpm publish`.
 
-### yalc (copy + package.json mutation)
+Use this when the consumer can run against workspace source or your existing
+build pipeline already compiles the dependency for the app.
 
-```mermaid
-graph LR
-    A["my-lib/"] -- "yalc publish" --> B["~/.yalc/<br/>my-lib/"]
-    B -- "yalc add" --> C["app/node_modules/my-lib<br/>(copied files)"]
-    B -- "yalc add" --> D["app/.yalc/my-lib<br/>(yalc store)"]
-    B -- "yalc add" --> E["app/package.json<br/>(modified dep)"]
+### pnpm `file:` and `pnpm link`
 
-    style A fill:#2e7d32,stroke:#66bb6a,color:#e8f5e9
-    style B fill:#1565c0,stroke:#64b5f6,color:#e3f2fd
-    style C fill:#e65100,stroke:#ffb74d,color:#fff3e0
-    style D fill:#6a1b9a,stroke:#ba68c8,color:#f3e5f5
-    style E fill:#c62828,stroke:#ef5350,color:#ffebee
-```
+pnpm documents an important difference:
 
-Copies files but also rewrites the consumer's `package.json` to point to `.yalc/`. This shows up in `git diff`, CI might pick it up, and `npm publish` from the consumer could accidentally include the local override.
+- `pnpm link <dir>` symlinks the source package. Changes are reflected, but
+  dependencies of the linked package are not installed for you.
+- `file:` hard-links the package into `node_modules` and pnpm installs the
+  package's dependencies. pnpm recommends `file:` when peer dependency behavior
+  matters.
 
-### Knarr (copy only)
+These are good native choices when you are comfortable committing or locally
+maintaining a local path spec in `package.json` and the lockfile.
 
-```mermaid
-graph LR
-    A["my-lib/"] -- "knarr publish" --> B["~/.knarr/store/<br/>my-lib@1.0.0"]
-    B -- "knarr add" --> C["app/node_modules/my-lib<br/>(copied files)"]
+### pnpm injected workspace dependencies
 
-    style A fill:#2e7d32,stroke:#66bb6a,color:#e8f5e9
-    style B fill:#1565c0,stroke:#64b5f6,color:#e3f2fd
-    style C fill:#e65100,stroke:#ffb74d,color:#fff3e0
-```
+`dependenciesMeta.*.injected` tells pnpm to install a local workspace package as
+a hard-linked copy in `node_modules/.pnpm` instead of the default symlink to the
+source directory. pnpm calls out the peer dependency benefit: different
+consumers can resolve the same workspace package against different peer
+versions.
 
-Copies files to a global store, then from the store into `node_modules/`. State is tracked in a gitignored `.knarr/` directory. Your `package.json` is never modified.
+The catch is update flow. pnpm's docs note that injected copies must be updated
+when the source changes, and suggest rerunning install or using helper tools for
+more robust watch behavior. If that fits your monorepo, prefer it over Knarr.
 
-## Side by side
+### pnpm overrides
 
-| | npm link | yalc | Knarr |
-|---|---|---|---|
-| Module resolution | Broken (dual instances) | Works | Works |
-| Git contamination | None | package.json + .yalc/ | None |
-| Bundler HMR | Often broken | Fragile | Works |
-| pnpm support | Fragile | Broken since v7.10 | Works |
-| Watch mode | None | External (yalc-watch) | Built-in |
-| Survives npm install | No | No | `knarr restore` |
-| Lock file safe | Yes | Can corrupt | Never touches lockfiles |
-| CI safe | Yes | Risk of leaking | Nothing in git |
-| npm publish safe | Yes | Risk of leaking | Nothing in package.json |
-| Transitive dep warnings | No | No | Yes |
-| Incremental copy | N/A | Full copy each time | mtime + xxhash diff (parallel) |
-| Backup/restore | No | No | Yes |
-| Scoped packages | Works | Fragile | Works |
+`overrides` can replace dependencies across the graph from the workspace root.
+It is useful for forcing a version, testing a fork, or removing an unwanted
+transitive dependency. It is less like a day-to-day watch workflow: it is a
+resolution rule, changes project configuration, and normally requires install
+steps to materialize the replacement.
 
-## Where things break
+## yalc
 
-### Duplicate dependencies (npm link)
+yalc is closest to Knarr conceptually: it publishes package contents to a local
+store and can push updates to projects that installed that local copy.
 
-```mermaid
-graph TB
-    subgraph "npm link (broken)"
-        App1[app] --> React1["react@18 ①"]
-        App1 --> Lib1["my-lib (symlink)"]
-        Lib1 --> React2["react@18 ②"]
-    end
+The default `yalc add my-package` flow copies the package into the consumer's
+`.yalc` folder, adds a `file:.yalc/my-package` dependency to `package.json`, and
+tracks it in `yalc.lock`. That is explicit and reproducible, but it shows up as
+project state. yalc also has alternatives:
 
-    subgraph "Knarr (works)"
-        App2[app] --> React3["react@18"]
-        App2 --> Lib2["my-lib (copied)"]
-        Lib2 -.-> React3
-    end
+- `yalc link my-package` creates a symlink from `.yalc` into `node_modules` and
+  does not modify `package.json`.
+- `yalc add --pure` avoids touching `package.json` and `node_modules`, which is
+  useful for workspace-style setups.
+- `yalc publish --push` and `yalc push` publish and propagate updates.
 
-    style App1 fill:#e65100,stroke:#ffb74d,color:#fff3e0
-    style React1 fill:#c62828,stroke:#ef5350,color:#ffebee
-    style React2 fill:#c62828,stroke:#ef5350,color:#ffebee
-    style Lib1 fill:#6a1b9a,stroke:#ba68c8,color:#f3e5f5
-    style App2 fill:#e65100,stroke:#ffb74d,color:#fff3e0
-    style React3 fill:#2e7d32,stroke:#66bb6a,color:#e8f5e9
-    style Lib2 fill:#00838f,stroke:#4dd0e1,color:#e0f2f1
-```
+Use yalc when you like the local-repository model and are happy to manage
+`.yalc`, `yalc.lock`, and any manifest changes as part of your workflow.
 
-With symlinks, `my-lib`'s `require('react')` resolves from the library's real location, which has its own `node_modules/react`. Now you have two React instances. Hooks fail silently, `instanceof` returns false, context doesn't propagate. It's one of those bugs where everything looks right but nothing works.
+## npm link and pnpm link
 
-With Knarr, `my-lib` is inside the consumer's `node_modules/`, so `require('react')` resolves to the same copy the app uses.
+`npm link` is a two-step symlink workflow: first a package is linked into the
+global npm prefix, then that global link is linked into the consumer's
+`node_modules`. npm does not save linked dependencies to `package.json` by
+default.
 
-### Git contamination (yalc)
+`pnpm link` similarly symlinks to source. It is handy for fast manual testing,
+especially when the linked package uses a different package manager, but pnpm
+does not install that package's dependencies for you.
 
-yalc modifies `package.json`:
-```diff
- "dependencies": {
--  "my-lib": "^1.0.0"
-+  "my-lib": "file:.yalc/my-lib"
- }
-```
+Symlinks are fine for many backend and CLI packages. They are weaker for frontend
+libraries with peer dependencies or bundlers that treat files outside the
+project root differently.
 
-It also creates a `.yalc/my-lib/` directory. Forget to revert before committing and your team gets broken builds.
+## Knarr
 
-Knarr keeps everything in `.knarr/` which is gitignored. Your `package.json` stays clean.
+Knarr publishes the files that should be package contents into
+`~/.knarr/store/<name>@<version>/package/`, then copies them into registered
+consumers' `node_modules`. The consumer keeps its normal dependency spec; Knarr
+tracks local state in `.knarr/state.json` and the global consumers registry.
 
-### pnpm (yalc + npm link)
+This is useful when:
 
-pnpm uses a content-addressable store with symlinks to a `.pnpm/` virtual store. Neither `npm link` nor yalc understand this structure, and yalc has been broken with pnpm since v7.10.
+- The package and consumer are in different repos, or you do not want a local
+  `file:`/`link:` spec in the consumer.
+- You want to test built output, `files`, `publishConfig.directory`,
+  `workspace:`, and `catalog:` rewriting as they would appear in a package.
+- You want one command (`knarr dev`) to rebuild, publish, and push changed files
+  to every registered consumer.
+- You need a restore step after installs replace `node_modules`.
 
-Knarr detects pnpm, follows the symlink chain into `.pnpm/`, and replaces files at the real directory. The existing symlink structure stays intact.
+Knarr is not the right tool when Yarn PnP is required, when a native pnpm
+workspace link already gives you the desired behavior, or when the consumer
+should commit the local dependency path for repeatability.
 
-### Bundler HMR
+## Sources
 
-| Scenario | npm link | yalc | Knarr |
-|---|---|---|---|
-| Vite detects changes | No (symlink outside project) | Fragile (.yalc not watched) | Yes (plugin auto-injected) |
-| Webpack re-builds | Sometimes | Sometimes | Yes (optional plugin for cache invalidation) |
-| rspack re-builds | Sometimes | Sometimes | Yes (same plugin as webpack) |
-| Turbopack | No (outside root) | Unknown | Yes |
-
-Knarr writes real files at `node_modules/` paths, which generates filesystem events bundlers can see. See [Bundler Guide](bundlers.md) for Vite config.
-
-### Watch mode
-
-| Tool | Watch support |
-|---|---|
-| npm link | None (manual re-link) |
-| yalc | External package (yalc-watch), unmaintained |
-| Knarr | Built-in: `knarr dev` (auto-detects build) or `knarr push --watch --build "tsup"` |
-
-Knarr's watch mode handles the full loop: file change → coalesce (500ms) → build → publish → push. `knarr dev` auto-detects the build command from `package.json` scripts, so you just run `knarr dev` and start editing. Changes are detected immediately but batched. If new changes arrive while a push is running, Knarr automatically re-pushes. Build failures get logged but the watcher keeps running.
-
-### After npm install
-
-`npm install` wipes `node_modules/` overrides:
-
-| Tool | After `npm install` |
-|---|---|
-| npm link | Symlinks gone, manual re-link |
-| yalc | References gone, `yalc link` again |
-| Knarr | Run `knarr restore` (or automatic via postinstall hook) |
-
-`knarr init` sets up a `postinstall` hook, so `knarr restore` can run automatically after installs when `knarr` is available on the install script `PATH`.
-
-## When to use what
-
-`npm link` is fine for quick one-off tests where you just need to check if something works.
-
-Knarr is the better choice when you're doing ongoing development, using pnpm, working on a team (where git contamination matters), or testing in CI.
-
-yalc still works if you can't install new tools or are on a very old Node version.
+- [yalc README](https://github.com/wclr/yalc)
+- [pnpm workspace protocol](https://pnpm.io/workspaces#workspace-protocol-workspace)
+- [pnpm `dependenciesMeta.*.injected`](https://pnpm.io/package_json#dependenciesmetainjected)
+- [pnpm link vs `file:`](https://pnpm.io/cli/link#whats-the-difference-between-pnpm-link-and-using-the-file-protocol)
+- [pnpm overrides](https://pnpm.io/settings#overrides)
+- [npm link](https://docs.npmjs.com/cli/v11/commands/npm-link/)

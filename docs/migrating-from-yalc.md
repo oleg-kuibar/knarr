@@ -17,15 +17,15 @@ knarr dev
 
 | | yalc | Knarr |
 |---|---|---|
-| **package.json** | Rewrites deps to `file:.yalc/` | Never touches package.json |
-| **Git contamination** | `.yalc/` dir + modified package.json | Everything in gitignored `.knarr/` |
+| **package.json** | `yalc add` writes `file:.yalc/` or `link:` deps by default; `yalc link` and `--pure` avoid that | Does not rewrite dependency specs to local paths; setup helpers may add restore or bundler config |
+| **Project artifacts** | Usually `.yalc/` + `yalc.lock` | Gitignored `.knarr/` state and backups |
 | **Lock file** | `yalc.lock` in project root | `.knarr/state.json` (gitignored) |
-| **pnpm support** | Broken since pnpm v7.10 | Works (follows `.pnpm/` symlinks) |
-| **Watch mode** | External (yalc-watch, unmaintained) | Built-in (`knarr dev` or `knarr push --watch`) |
-| **After npm install** | Manual `yalc link` again | Automatic via `postinstall` hook |
-| **Incremental copy** | Full copy every time | Hash-based diff, only changed files |
+| **pnpm fit** | yalc can be used with workspaces, but its default `add` workflow is separate from pnpm's virtual-store model | Follows existing `.pnpm/` symlinks when injecting into pnpm installs |
+| **Watch/update loop** | `yalc push` / `yalc publish --push`; external watchers are optional | Built-in `knarr dev` or `knarr push --watch` |
+| **After install** | `yalc add` can reinstall from `.yalc` if artifacts remain; `yalc link` symlinks need relinking | `knarr restore`, optionally via `postinstall` hook |
+| **Incremental consumer copy** | yalc updates package contents; `--changed` can skip unchanged publish/push work | Hash-based diff, only changed files copied into consumers |
 | **Backup/restore** | No | Yes, original npm version backed up |
-| **Git hooks** | Adds pre-push hook to warn | No git hooks |
+| **Git guardrails** | yalc documents `yalc check` for user-managed hooks | No git hooks |
 
 ## Automated migration
 
@@ -109,11 +109,11 @@ npx knarr use ../my-lib
 
 ### 5. Set up watch mode
 
-Replace your yalc-watch setup with Knarr's built-in watch:
+Replace your yalc push watcher with Knarr's built-in watch:
 
 ```bash
 # Before (yalc)
-# Terminal 1: yalc publish --watch  (or yalc-watch)
+# Terminal 1: your build watcher runs yalc push --changed
 # Terminal 2: pnpm dev
 
 # After (Knarr)
@@ -140,13 +140,13 @@ rm -rf ~/.yalc
 
 ### No git hooks
 
-yalc installs a pre-push git hook that warns if yalc packages are linked. Knarr does not add git hooks. Since Knarr never modifies `package.json`, there is nothing dangerous to accidentally commit.
+yalc documents `yalc check` for teams that want a precommit or pre-push guard against committing yalc dependencies. Knarr does not add git hooks. Because Knarr does not rewrite dependency specs to local paths, the main accidental-commit risk is lower.
 
-### No package.json modifications
+### No local dependency specs
 
-yalc rewrites dependency versions to `file:.yalc/my-lib`. This means `git diff` shows changes, CI might install from the wrong source, and `npm publish` from the consumer can accidentally include the override.
+The default `yalc add` flow rewrites dependency versions to `file:.yalc/my-lib` or `link:`. This means `git diff` shows changes, CI might install from the local artifact if those changes are committed, and publishing the consumer with that manifest would preserve the local override.
 
-Knarr never touches `package.json`. The real version from the registry stays in your dependency list. Knarr just overwrites the files inside `node_modules/` at runtime.
+Knarr keeps the real version from the registry in your dependency list and overwrites files inside `node_modules/` at runtime. `knarr init` and bundler repair helpers can still edit config or scripts; they do not replace package dependency ranges with local paths.
 
 ### postinstall hook
 
