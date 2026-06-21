@@ -317,6 +317,11 @@ async function handleMissingDeps(
   const missing = await checkMissingDeps(entry, consumerPath, pm);
   if (missing.length === 0) return;
 
+  if (isJsonOutput()) {
+    verbose(`[add] Missing transitive deps (json mode): ${missing.join(", ")}`);
+    return;
+  }
+
   if (yes) {
     const cmd = buildInstallCommand(pm, missing);
     consola.info(
@@ -330,11 +335,6 @@ async function handleMissingDeps(
     } else if (!ok) {
       consola.warn(`Install failed. Run manually: ${cmd}`);
     }
-    return;
-  }
-
-  if (isJsonOutput()) {
-    verbose(`[add] Missing transitive deps (json mode): ${missing.join(", ")}`);
     return;
   }
 

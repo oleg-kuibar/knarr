@@ -18,8 +18,9 @@ import {
   rm,
   stat,
   readdir,
+  symlink,
 } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { exists, collectFiles } from "../utils/fs.js";
 
@@ -800,6 +801,7 @@ describe("pnpm injection strategy", () => {
         dependencies: { "@example/ui-kit": "1.0.0" },
       })
     );
+    await writeFile(join(consumer1, "pnpm-lock.yaml"), "lockfileVersion: 9.0\n");
     const pnpmTarget = join(
       consumer1,
       "node_modules",
@@ -810,7 +812,10 @@ describe("pnpm injection strategy", () => {
       "ui-kit"
     );
     await mkdir(pnpmTarget, { recursive: true });
-    await writeFile(join(pnpmTarget, "package.json"), '{"name":"@example/ui-kit","version":"0.0.1"}');
+    await writeFile(
+      join(pnpmTarget, "package.json"),
+      '{"name":"@example/ui-kit","version":"1.0.0"}'
+    );
 
     await publish(UI_KIT_DIR);
     const entry = await getStoreEntry("@example/ui-kit", "1.0.0");
@@ -822,6 +827,52 @@ describe("pnpm injection strategy", () => {
     expect(await exists(join(pnpmTarget, "dist", "index.js"))).toBe(true);
     const pkg = JSON.parse(await readFile(join(pnpmTarget, "package.json"), "utf-8"));
     expect(pkg.version).toBe("1.0.0"); // Updated from store
+  });
+
+  it("removeInjected removes the top-level pnpm symlink after deleting the package", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject, removeInjected } = await import("../core/injector.js");
+
+    await writeFile(
+      join(consumer1, "package.json"),
+      JSON.stringify({
+        name: "consumer-one",
+        version: "1.0.0",
+        dependencies: { "@example/ui-kit": "1.0.0" },
+      })
+    );
+    await writeFile(join(consumer1, "pnpm-lock.yaml"), "lockfileVersion: 9.0\n");
+
+    const pnpmTarget = join(
+      consumer1,
+      "node_modules",
+      ".pnpm",
+      "@example+ui-kit@1.0.0",
+      "node_modules",
+      "@example",
+      "ui-kit"
+    );
+    await mkdir(pnpmTarget, { recursive: true });
+    await writeFile(
+      join(pnpmTarget, "package.json"),
+      '{"name":"@example/ui-kit","version":"1.0.0"}'
+    );
+    await mkdir(join(consumer1, "node_modules", "@example"), { recursive: true });
+    await symlink(
+      relative(join(consumer1, "node_modules", "@example"), pnpmTarget),
+      join(consumer1, "node_modules", "@example", "ui-kit"),
+      "dir"
+    );
+
+    await publish(UI_KIT_DIR);
+    const entry = await getStoreEntry("@example/ui-kit", "1.0.0");
+    await inject(entry!, consumer1, "pnpm");
+
+    await removeInjected(consumer1, "@example/ui-kit", "pnpm", "1.0.0");
+
+    expect(await exists(join(consumer1, "node_modules", "@example", "ui-kit"))).toBe(false);
+    expect(await exists(pnpmTarget)).toBe(false);
   });
 });
 

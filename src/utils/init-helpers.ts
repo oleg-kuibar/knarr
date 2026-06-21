@@ -17,6 +17,15 @@ export function usesKnarrRestoreCommand(postinstall: string): boolean {
   return /(?:^|[;&|()\s])(?:(?:npx(?:\s+(?:--yes|-y))?|pnpm\s+dlx|yarn\s+dlx|bunx)\s+)?knarr\s+restore(?:\s|$)/.test(postinstall);
 }
 
+function isStandaloneKnarrRestoreCommand(postinstall: string): boolean {
+  const trimmed = postinstall.trim();
+  return (
+    trimmed === POSTINSTALL_RESTORE_COMMAND ||
+    trimmed === "knarr restore --silent" ||
+    usesSelfResolvingKnarrCommand(trimmed)
+  );
+}
+
 /**
  * Ensure .knarr/ is in .gitignore. Returns true if it was added.
  */
@@ -87,10 +96,7 @@ export async function removePostinstall(pkgPath: string): Promise<boolean> {
     return false;
   }
   const pkg = JSON.parse(content);
-  if (
-    !pkg.scripts?.postinstall ||
-    !usesKnarrRestoreCommand(pkg.scripts.postinstall)
-  ) {
+  if (!pkg.scripts?.postinstall || !isStandaloneKnarrRestoreCommand(pkg.scripts.postinstall)) {
     return false;
   }
 

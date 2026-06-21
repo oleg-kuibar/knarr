@@ -72,11 +72,6 @@ export async function publish(
   if (!pkg.name) throw new Error("package.json missing 'name' field");
   if (!pkg.version) throw new Error("package.json missing 'version' field");
   validatePackageIdentity(pkg.name, pkg.version);
-  if (pkg.private && !options.allowPrivate) {
-    throw new Error(
-      `Package "${pkg.name}" is private. Use --private flag to publish private packages.`
-    );
-  }
 
   await runLifecycleHook(packageDir, pkg, "preknarr");
 

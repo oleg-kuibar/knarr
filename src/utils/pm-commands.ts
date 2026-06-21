@@ -6,6 +6,9 @@ import { isDryRun } from "./logger.js";
 import { validatePackageName as validatePackageNameStrict } from "./validators.js";
 
 export function buildInstallCommand(pm: PackageManager, deps: string[]): string {
+  if (deps.length === 0) {
+    throw new Error("No dependencies provided");
+  }
   for (const dep of deps) validatePackageNameStrict(dep);
   const joined = deps.join(" ");
   switch (pm) {

@@ -167,4 +167,26 @@ describe("addPostinstall", () => {
     expect(removed).toBe(true);
     expect(pkg.scripts).toBeUndefined();
   });
+
+  it("preserves composite postinstall scripts that include knarr restore", async () => {
+    const pkgPath = join(tempDir, "package.json");
+    await writeFile(
+      pkgPath,
+      JSON.stringify(
+        {
+          name: "app",
+          version: "1.0.0",
+          scripts: { postinstall: `echo setup && ${POSTINSTALL_RESTORE_COMMAND}` },
+        },
+        null,
+        2
+      )
+    );
+
+    const removed = await removePostinstall(pkgPath);
+
+    const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
+    expect(removed).toBe(false);
+    expect(pkg.scripts.postinstall).toBe(`echo setup && ${POSTINSTALL_RESTORE_COMMAND}`);
+  });
 });

@@ -1,5 +1,6 @@
 import { lstat, readFile, readdir, realpath, rm, symlink } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { platform } from "node:os";
 import { consola } from "../utils/console.js";
 import type { PackageJson, PackageManager, StoreEntry } from "../types.js";
 import { getNodeModulesPackagePath, getConsumerBackupPath } from "../utils/paths.js";
@@ -143,12 +144,16 @@ export async function removeInjected(
   pm: PackageManager,
   version?: string
 ): Promise<void> {
+  const directPath = getNodeModulesPackagePath(consumerPath, packageName);
   const targetDir = await resolveInjectionTarget(consumerPath, packageName, pm, version);
   const pkg = await readPackageJson(targetDir);
   if (pkg) {
     await removeBinLinks(consumerPath, pkg);
   }
   await removeDir(targetDir);
+  if (resolve(targetDir) !== resolve(directPath)) {
+    await removeDir(directPath);
+  }
 }
 
 /**
@@ -295,7 +300,7 @@ export async function resolveInjectionTarget(
       // Symlink doesn't exist yet, fall through
     } else {
       if (isNodeError(err)) {
-        consola.debug(`${storeKindLabel(storeKind)} symlink resolution error: ${err instanceof Error ? err.message : String(err)}`);
+        verbose(`${storeKindLabel(storeKind)} symlink resolution error: ${err instanceof Error ? err.message : String(err)}`);
       }
       throw err;
     }
@@ -318,6 +323,7 @@ export async function resolveInjectionTarget(
     }
 
     if (storeKind === "yarn-pnpm") {
+      const matches: string[] = [];
       for (const storeDir of existingStoreDirs) {
         verbose(`[inject] yarn-pnpm: scanning ${relative(consumerPath, storeDir) || "."} for ${packageName}`);
         const candidate = await resolveYarnPnpmCandidate(
@@ -326,12 +332,16 @@ export async function resolveInjectionTarget(
           version
         );
         if (candidate) {
-          verbose(`[inject] yarn-pnpm: found in virtual store → ${candidate}`);
-          if (options.repairMissingLink) {
-            await repairMissingVirtualStoreLink(directPath, candidate, packageName, storeKind);
-          }
-          return candidate;
+          matches.push(candidate);
         }
+      }
+      const candidate = requireSingleVirtualStoreCandidate(packageName, storeKind, matches);
+      if (candidate) {
+        verbose(`[inject] yarn-pnpm: found in virtual store → ${candidate}`);
+        if (options.repairMissingLink) {
+          await repairMissingVirtualStoreLink(directPath, candidate, packageName, storeKind);
+        }
+        return candidate;
       }
     }
 
@@ -361,6 +371,7 @@ export async function resolveInjectionTarget(
 
         // Fall back to a peer-suffixed match for the requested version, if present.
         const entries = await readdir(pnpmDir);
+        const matches: string[] = [];
         for (const entry of entries) {
           if (matchesPnpmPackageEntry(encodedName, version, entry)) {
             const candidate = await resolvePnpmCandidate(
@@ -370,13 +381,17 @@ export async function resolveInjectionTarget(
               join(pnpmDir, entry, "node_modules", packageName)
             );
             if (candidate) {
-              verbose(`[inject] pnpm: found in virtual store → ${candidate}`);
-              if (options.repairMissingLink) {
-                await repairMissingVirtualStoreLink(directPath, candidate, packageName, storeKind);
-              }
-              return candidate;
+              matches.push(candidate);
             }
           }
+        }
+        const candidate = requireSingleVirtualStoreCandidate(packageName, storeKind, matches);
+        if (candidate) {
+          verbose(`[inject] pnpm: found in virtual store → ${candidate}`);
+          if (options.repairMissingLink) {
+            await repairMissingVirtualStoreLink(directPath, candidate, packageName, storeKind);
+          }
+          return candidate;
         }
       }
     }
@@ -512,6 +527,7 @@ async function repairMissingVirtualStoreLink(
     return;
   }
 
+  const isWindows = platform() === "win32";
   await ensureDir(linkParent);
   const linkParentReal = await realpath(linkParent).catch(() => linkParent);
   const targetRelative = relative(linkParentReal, targetDir);
@@ -521,7 +537,11 @@ async function repairMissingVirtualStoreLink(
   if (removeDanglingSymlink) {
     await rm(directPath, { force: true });
   }
-  await symlink(targetRelative, directPath, "dir");
+  await symlink(
+    isWindows ? targetDir : targetRelative,
+    directPath,
+    isWindows ? "junction" : "dir"
+  );
 }
 
 async function resolvePnpmCandidate(
@@ -558,6 +578,7 @@ async function resolveYarnPnpmCandidate(
   version: string | undefined
 ): Promise<string | null> {
   const entries = await readdir(storeDir);
+  const matches: string[] = [];
   for (const entry of entries) {
     const candidatePath = join(storeDir, entry, "package");
     const pkg = await readPackageJson(candidatePath);
@@ -573,9 +594,9 @@ async function resolveYarnPnpmCandidate(
         `Refusing to inject ${packageName}: virtual store candidate resolves outside a configured Yarn pnpm-linker virtual store (${realPath})`
       );
     }
-    return realPath;
+    matches.push(realPath);
   }
-  return null;
+  return requireSingleVirtualStoreCandidate(packageName, "yarn-pnpm", matches);
 }
 
 function matchesPnpmPackageEntry(
@@ -592,6 +613,18 @@ function matchesPnpmPackageEntry(
 function isInside(root: string, target: string): boolean {
   const rel = relative(resolve(root), resolve(target));
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function requireSingleVirtualStoreCandidate(
+  packageName: string,
+  storeKind: "pnpm" | "yarn-pnpm",
+  matches: string[]
+): string | null {
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0];
+  throw new Error(
+    `Refusing to repair ${packageName}: multiple ${storeKindLabel(storeKind)} virtual-store entries match. Run your package manager's install command, then try again.`
+  );
 }
 
 async function getPnpmVirtualStoreDirs(consumerPath: string): Promise<string[]> {

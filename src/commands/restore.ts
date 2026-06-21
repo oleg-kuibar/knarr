@@ -78,10 +78,10 @@ export default defineCommand({
           }
 
           try {
-            const result = await inject(entry, consumerPath, link.packageManager);
             const packageManager = currentPm.source === "default"
               ? link.packageManager
               : currentPm.packageManager;
+            const result = await inject(entry, consumerPath, packageManager);
             // Update state so contentHash and linkedAt stay current
             await addLink(consumerPath, packageName, {
               ...link,

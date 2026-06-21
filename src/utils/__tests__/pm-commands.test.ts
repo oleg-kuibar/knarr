@@ -36,6 +36,12 @@ describe("package manager command builders", () => {
     );
   });
 
+  it("rejects empty dependency lists", () => {
+    expect(() => buildInstallCommand("npm", [])).toThrow(
+      "No dependencies provided"
+    );
+  });
+
   it("rejects unsafe dev dependency names", () => {
     expect(() => buildDevInstallCommand("pnpm", "../knarr")).toThrow(
       "Invalid package name"

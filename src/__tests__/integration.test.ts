@@ -419,6 +419,33 @@ describe("publish", () => {
     expect(await readFile(storeIndex, "utf-8")).toBe('module.exports = "from-dist";');
   });
 
+  it("allows a private root package when publishConfig.directory provides a public manifest", async () => {
+    const { publish } = await import("../core/publisher.js");
+
+    await mkdir(join(testLib, "dist"), { recursive: true });
+    await writeFile(join(testLib, "dist", "index.js"), 'module.exports = "from-dist";');
+    await writeFile(
+      join(testLib, "dist", "package.json"),
+      JSON.stringify({ name: "test-lib", version: "1.0.0", main: "index.js" })
+    );
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({
+        name: "test-lib",
+        version: "1.0.0",
+        private: true,
+        publishConfig: { directory: "dist" },
+      })
+    );
+
+    const result = await publish(testLib);
+
+    expect(result.skipped).toBe(false);
+    expect(
+      await exists(join(testKNARRHome, "store", "test-lib@1.0.0", "package", "index.js"))
+    ).toBe(true);
+  });
+
   it("writes a package manifest when publishConfig.directory has none", async () => {
     const { publish } = await import("../core/publisher.js");
 
@@ -2221,7 +2248,7 @@ describe("missing transitive deps", () => {
     expect(missing).not.toContain("lodash");
   });
 
-  it("plans dependency install when --yes and --json are both set", async () => {
+  it("skips dependency installation when --yes and --json are both set", async () => {
     const { publish } = await import("../core/publisher.js");
     const { addPackageToConsumer } = await import("../commands/add-flow.js");
     const { getMutations, resetMutations } = await import("../utils/dry-run.js");
@@ -2254,7 +2281,7 @@ describe("missing transitive deps", () => {
         emitOutput: false,
       });
 
-      expect(getMutations()).toEqual(
+      expect(getMutations()).not.toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             type: "command-skip",
