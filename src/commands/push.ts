@@ -80,12 +80,20 @@ export default defineCommand({
     };
 
     if (args.all) {
-      const initialBuildOk = args.watch
+      const initialBuild = args.watch
         ? await runInitialWorkspaceWatchBuilds(packageDir, args)
-        : true;
-      if (initialBuildOk) {
+        : {
+            canPush: true,
+            failedPackages: new Set<string>(),
+            skippedPackages: new Set<string>(),
+          };
+      const skipPackages = new Set([
+        ...initialBuild.failedPackages,
+        ...initialBuild.skippedPackages,
+      ]);
+      if (initialBuild.canPush) {
         // Push all workspace packages
-        await doPushAll(packageDir, pushOptions);
+        await doPushAll(packageDir, { ...pushOptions, skipPackages });
       }
       if (isDryRun()) { printDryRunReport(); return; }
 

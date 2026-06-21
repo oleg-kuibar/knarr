@@ -127,6 +127,8 @@ graph LR
 
 Clear the target directory, copy files from the store. The writes generate filesystem events that bundler watchers pick up.
 
+For Bun's isolated install layout, `node_modules/<pkg>` can be a symlink into `node_modules/.bun/<pkg>@<version>/node_modules/<pkg>`. Knarr follows that symlink only when it resolves inside the consumer project's local `.bun` store. Symlinks that resolve to a global or external store are refused so Knarr does not mutate files outside the consumer install tree.
+
 ### pnpm
 
 pnpm's `.pnpm/` virtual store makes this trickier. Knarr follows the symlink chain to find the real directory:

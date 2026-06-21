@@ -2,7 +2,7 @@ import { consola } from "../utils/console.js";
 import { verbose } from "../utils/logger.js";
 import { loadKnarrConfig } from "../utils/config.js";
 import { doPush, resolveWatchConfig } from "./push-engine.js";
-import type { WatchArgs, PushOptions } from "./push-engine.js";
+import type { PushSummary, WatchArgs, PushOptions } from "./push-engine.js";
 
 type PackageState = "idle" | "building" | "queued";
 
@@ -89,12 +89,9 @@ export class WatchOrchestrator {
 
       const wrappedOnChange = async () => {
         await this.runExclusive(name, async () => {
-          await doPush(dir, pushOptions);
+          const summary = await doPush(dir, pushOptions);
+          assertPushSucceeded(summary, name);
           await this.onPackagePushed(name);
-        }).catch((err) => {
-          consola.warn(
-            `Push failed for ${name}: ${err instanceof Error ? err.message : String(err)}`
-          );
         });
       };
 
@@ -201,7 +198,8 @@ export class WatchOrchestrator {
         }
       }
 
-      await doPush(entry.dir, this.pushOptions);
+      const summary = await doPush(entry.dir, this.pushOptions);
+      assertPushSucceeded(summary, name);
       await this.onPackagePushed(name);
     }).catch((err) => {
       consola.warn(
@@ -216,4 +214,11 @@ export class WatchOrchestrator {
     );
     this.packages.clear();
   }
+}
+
+function assertPushSucceeded(summary: PushSummary, packageName: string): void {
+  if (summary.failedConsumers === 0) return;
+  throw new Error(
+    `Push for ${packageName} failed for ${summary.failedConsumers} consumer(s)`
+  );
 }

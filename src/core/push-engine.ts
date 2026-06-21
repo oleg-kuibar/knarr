@@ -58,6 +58,12 @@ export interface PushSummary {
   consumerResults: PushConsumerResult[];
 }
 
+export interface WorkspaceWatchBuildResult {
+  canPush: boolean;
+  failedPackages: Set<string>;
+  skippedPackages: Set<string>;
+}
+
 /**
  * Publish a package to the store, then inject into all registered consumers.
  * Shared by both `push` and `dev` commands.
@@ -466,8 +472,9 @@ export async function runInitialWatchBuild(
 export async function runInitialWorkspaceWatchBuilds(
   startDir: string,
   args: WatchArgs
-): Promise<boolean> {
+): Promise<WorkspaceWatchBuildResult> {
   const {
+    buildReverseAdjacency,
     buildWorkspaceGraph,
     filterPublishableWorkspaceGraph,
   } = await import("../utils/workspace.js");
@@ -475,7 +482,13 @@ export async function runInitialWorkspaceWatchBuilds(
 
   const discovered = await buildWorkspaceGraph(startDir);
   const graph = filterPublishableWorkspaceGraph(discovered);
-  if (graph.packages.length === 0) return true;
+  if (graph.packages.length === 0) {
+    return {
+      canPush: true,
+      failedPackages: new Set(),
+      skippedPackages: new Set(),
+    };
+  }
 
   let ordered: string[];
   try {
@@ -483,20 +496,49 @@ export async function runInitialWorkspaceWatchBuilds(
   } catch (err) {
     if (err instanceof CycleError) {
       consola.error(`Cannot build workspace before watch: ${err.message}`);
-      return false;
+      return {
+        canPush: false,
+        failedPackages: new Set(graph.packages.map((pkg) => pkg.name)),
+        skippedPackages: new Set(),
+      };
     }
     throw err;
   }
 
   const nameToDir = new Map(graph.packages.map((p) => [p.name, p.dir]));
-  let ok = true;
+  const reverseAdjacency = buildReverseAdjacency(graph.adjacency);
+  const failedPackages = new Set<string>();
+  const skippedPackages = new Set<string>();
+  const blocked = new Set<string>();
+
   for (const name of ordered) {
     const dir = nameToDir.get(name);
     if (!dir) continue;
+    if (blocked.has(name)) {
+      skippedPackages.add(name);
+      verbose(`[watch] Skipping initial build for ${name}: dependency build failed`);
+      continue;
+    }
+
     const success = await runInitialWatchBuild(dir, args);
-    ok &&= success;
+    if (!success) {
+      failedPackages.add(name);
+      markTransitiveDependentsBlocked(name, reverseAdjacency, blocked);
+    }
   }
-  return ok;
+  return { canPush: true, failedPackages, skippedPackages };
+}
+
+function markTransitiveDependentsBlocked(
+  name: string,
+  reverseAdjacency: Map<string, Set<string>>,
+  blocked: Set<string>
+): void {
+  for (const dependent of reverseAdjacency.get(name) ?? []) {
+    if (blocked.has(dependent)) continue;
+    blocked.add(dependent);
+    markTransitiveDependentsBlocked(dependent, reverseAdjacency, blocked);
+  }
 }
 
 /**
