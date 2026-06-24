@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveWatchConfig, runInitialWatchBuild } from "../core/push-engine.js";
+import { shouldUsePolling } from "../core/watcher.js";
 
 describe("resolveWatchConfig", () => {
   let tempDir: string;
@@ -65,5 +66,30 @@ describe("resolveWatchConfig", () => {
     await expect(
       runInitialWatchBuild(tempDir, { build: "node fail.cjs" })
     ).resolves.toBe(false);
+  });
+});
+
+describe("shouldUsePolling", () => {
+  it("polls for WebContainers and WSL Windows mounts only", () => {
+    expect(shouldUsePolling("/project", {
+      platform: "linux",
+      release: "6.6.0",
+      webcontainer: true,
+    })).toBe(true);
+    expect(shouldUsePolling("/mnt/c/project", {
+      platform: "linux",
+      release: "5.15.0-microsoft-standard-WSL2",
+      webcontainer: false,
+    })).toBe(true);
+    expect(shouldUsePolling("/home/me/project", {
+      platform: "linux",
+      release: "5.15.0-microsoft-standard-WSL2",
+      webcontainer: false,
+    })).toBe(false);
+    expect(shouldUsePolling("/mnt/c/project", {
+      platform: "linux",
+      release: "6.6.0",
+      webcontainer: false,
+    })).toBe(false);
   });
 });

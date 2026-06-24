@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
-import { platform } from "node:os";
+import { platform, release } from "node:os";
 import { join } from "node:path";
 import { consola } from "../utils/console.js";
 import { ringBell } from "../utils/bell.js";
@@ -9,6 +9,12 @@ import type { WatchOptions } from "../types.js";
 /** Module-level references to active child processes for signal cleanup */
 const activeChildren = new Set<ChildProcess>();
 let activeWatcher: { close: () => Promise<void> } | null = null;
+
+interface PollingEnvironment {
+  platform: string;
+  release: string;
+  webcontainer: boolean;
+}
 
 /** Kill the active build process if one is running */
 export function killActiveBuild(): void {
@@ -21,6 +27,22 @@ export function killActiveBuild(): void {
 }
 
 const IGNORED_DIRS = new Set(["node_modules", ".git", ".knarr"]);
+
+export function shouldUsePolling(
+  watchDir: string,
+  env: PollingEnvironment = {
+    platform: platform(),
+    release: release(),
+    webcontainer: !!process.versions?.webcontainer,
+  }
+): boolean {
+  if (env.webcontainer) return true;
+  return (
+    env.platform === "linux" &&
+    /microsoft|wsl/i.test(env.release) &&
+    /^\/mnt\/[a-z](?:\/|$)/i.test(watchDir)
+  );
+}
 
 /** Recursively walk a directory, collecting file paths and their mtimeMs. */
 async function walkDir(
@@ -202,9 +224,8 @@ export async function startWatcher(
         pollInterval: 50,
       };
 
-  // WebContainers don't emit native filesystem events — enable polling
-  // so chokidar can detect changes (same approach as the Vite plugin).
-  const usePolling = !!process.versions?.webcontainer;
+  // WebContainers and WSL Windows mounts can miss native fs events.
+  const usePolling = shouldUsePolling(watchDir);
 
   const watcher = watch(watchPaths, {
     ignoreInitial: true,
