@@ -6,7 +6,7 @@ import pc from "picocolors";
 import { getStoreEntry, findStoreEntry } from "../core/store.js";
 import { resolveInjectionTarget } from "../core/injector.js";
 import { readConsumerStateSafe, readConsumersRegistry } from "../core/tracker.js";
-import { detectPackageManager } from "../utils/pm-detect.js";
+import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import { exists } from "../utils/fs.js";
 import {
   getConsumerBackupPath,
@@ -67,7 +67,9 @@ export async function explainState(
   packageName?: string
 ): Promise<ExplainResult> {
   const { state, reliable } = await readConsumerStateSafe(consumerPath);
-  const pm = await detectPackageManager(consumerPath);
+  const pm = (
+    await inspectProjectPackageManager(consumerPath)
+  ).resolve().packageManager;
 
   if (!reliable) {
     return {

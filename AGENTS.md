@@ -62,7 +62,8 @@ src/utils/           → shared helpers
   fs.ts              → copyWithCoW, incrementalCopy, ensureDir
   hash.ts            → xxHash64 per-file, SHA-256 aggregate (computeContentHash)
   pack-list.ts       → resolvePackFiles (npm-pack-compatible file resolution)
-  pm-detect.ts       → packageManager field + lockfile-based PM detection
+  package-manager.ts → project PM discovery, compatibility, layout, and command adapters
+  pm-detect.ts       → low-level packageManager, lockfile, and Yarn artifact probes
   workspace.ts       → workspace root detection, catalog: parsing, workspace graph building, reverse adjacency
   topo-sort.ts       → Kahn's algorithm topological sort for workspace dependency ordering
   preflight.ts       → pre-flight validation (exports, types, entry points, bin paths)

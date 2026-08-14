@@ -18,14 +18,7 @@ import {
   getConsumersPath,
   getStorePath,
 } from "../utils/paths.js";
-import {
-  detectPackageManager,
-  detectYarnNodeLinker,
-  hasYarnPnpMarkers,
-  hasYarnrcYml,
-  hasYarnPnpManifest,
-  isYarnPnpProject,
-} from "../utils/pm-detect.js";
+import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import {
   addPostinstall,
@@ -90,16 +83,12 @@ export async function runDoctorDiagnostics(
     results.push(result);
   }
 
-  const pm = await detectPackageManager(consumerPath);
-  const yarnrcExists = await hasYarnrcYml(consumerPath);
-  const pnpManifestExists = await hasYarnPnpManifest(consumerPath);
-  const hardPnpMarkers = await hasYarnPnpMarkers(consumerPath);
-  const shouldCheckYarnLinker = pm === "yarn" || yarnrcExists || pnpManifestExists;
-  const yarnLinker = shouldCheckYarnLinker
-    ? await detectYarnNodeLinker(consumerPath)
-    : null;
-  const isPnpProject =
-    hardPnpMarkers || (pm === "yarn" && await isYarnPnpProject(consumerPath));
+  const projectPackageManager = await inspectProjectPackageManager(
+    consumerPath
+  );
+  const resolvedPackageManager = projectPackageManager.resolve();
+  const pm = resolvedPackageManager.packageManager;
+  const isPnpProject = !resolvedPackageManager.nodeModulesCompatible;
   const canFixConsumerSetup = !isPnpProject;
   const pnpFixBlockedReason =
     "Yarn PnP has no node_modules tree for Knarr to manage. Set `nodeLinker: node-modules` or `nodeLinker: pnpm`, run `yarn install`, then re-run `knarr doctor --fix`.";
@@ -307,41 +296,11 @@ export async function runDoctorDiagnostics(
     message: pm,
   });
 
-  if (shouldCheckYarnLinker) {
-    if (yarnLinker === "node-modules") {
-      await addCheck({
-        name: "Yarn linker",
-        status: "pass",
-        message: "Yarn Berry with node-modules linker",
-      });
-    } else if (yarnLinker === "pnpm") {
-      await addCheck({
-        name: "Yarn linker",
-        status: "pass",
-        message: "Yarn pnpm linker mode (.store virtual store)",
-      });
-    } else if (isPnpProject) {
-      const reason = yarnLinker === "pnp" || pnpManifestExists
-        ? "Yarn PnP is not compatible."
-        : "Yarn Berry defaults to PnP.";
-      await addCheck({
-        name: "Yarn linker",
-        status: "fail",
-        message: `${reason} Set \`nodeLinker: node-modules\` or \`nodeLinker: pnpm\` in .yarnrc.yml`,
-      });
-    } else if (!yarnrcExists) {
-      await addCheck({
-        name: "Yarn linker",
-        status: "pass",
-        message: "Yarn Classic, node_modules mode",
-      });
-    } else {
-      await addCheck({
-        name: "Yarn linker",
-        status: "warn",
-        message: "Yarn Berry defaults to PnP. Add `nodeLinker: node-modules` or `nodeLinker: pnpm` to .yarnrc.yml",
-      });
-    }
+  if (resolvedPackageManager.yarnLinkerDiagnostic) {
+    await addCheck({
+      name: "Yarn linker",
+      ...resolvedPackageManager.yarnLinkerDiagnostic,
+    });
   }
 
   const bundler = await detectBundler(consumerPath);

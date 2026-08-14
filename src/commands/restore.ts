@@ -9,11 +9,7 @@ import { Timer } from "../utils/timer.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
-import {
-  detectPackageManagerInfo,
-  hasYarnPnpMarkers,
-  isYarnPnpProject,
-} from "../utils/pm-detect.js";
+import { inspectProjectPackageManager } from "../utils/package-manager.js";
 
 const restoreLimit = pLimit(4);
 
@@ -37,20 +33,12 @@ export default defineCommand({
     const state = await readConsumerState(consumerPath);
 
     // Check for Yarn PnP incompatibility
-    const currentPm = await detectPackageManagerInfo(consumerPath);
-    if (
-      await hasYarnPnpMarkers(consumerPath) ||
-      (currentPm.packageManager === "yarn" && await isYarnPnpProject(consumerPath))
-    ) {
-      consola.error(
-        `Yarn PnP mode is not compatible with Knarr.\n\n` +
-        `Knarr works by copying files into node_modules/, but PnP eliminates\n` +
-        `node_modules/ entirely. To use Knarr with Yarn Berry, add one of these\n` +
-        `to .yarnrc.yml:\n\n` +
-        `  nodeLinker: node-modules\n` +
-        `  nodeLinker: pnpm\n\n` +
-        `Then run: yarn install`
-      );
+    const projectPackageManager = await inspectProjectPackageManager(
+      consumerPath
+    );
+    const currentPackageManager = projectPackageManager.resolve();
+    if (!currentPackageManager.nodeModulesCompatible) {
+      consola.error(currentPackageManager.incompatibilityReason);
       process.exit(1);
     }
 
@@ -78,9 +66,9 @@ export default defineCommand({
           }
 
           try {
-            const packageManager = currentPm.source === "default"
-              ? link.packageManager
-              : currentPm.packageManager;
+            const packageManager = projectPackageManager.resolve(
+              link.packageManager
+            ).packageManager;
             const result = await inject(entry, consumerPath, packageManager);
             // Update state so contentHash and linkedAt stay current
             await addLink(consumerPath, packageName, {

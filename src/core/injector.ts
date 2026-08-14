@@ -15,14 +15,7 @@ import {
 import { createBinLinks, removeBinLinks } from "../utils/bin-linker.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
-import {
-  detectPackageManagerInfo,
-  detectYarnNodeLinker,
-  detectYarnPnpmStoreFolder,
-  hasYarnPnpMarkers,
-  isYarnPnpProject,
-} from "../utils/pm-detect.js";
-import type { PackageManagerDetectionSource } from "../utils/pm-detect.js";
+import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import { invalidateBundlerCache } from "../utils/bundler-cache.js";
 
 export interface InjectResult {
@@ -245,31 +238,19 @@ export async function resolveInjectionTarget(
   options: { warnOnFallback?: boolean; repairMissingLink?: boolean } = {}
 ): Promise<string> {
   const directPath = getNodeModulesPackagePath(consumerPath, packageName);
-  const currentPm = await detectPackageManagerInfo(consumerPath);
-  const useTrackedPm = currentPm.source === "default";
-  const effectiveYarn = currentPm.packageManager === "yarn" || (useTrackedPm && pm === "yarn");
-  if (
-    await hasYarnPnpMarkers(consumerPath) ||
-    (effectiveYarn && await isYarnPnpProject(consumerPath))
-  ) {
-    throw new Error(
-      "Yarn PnP mode is not compatible with Knarr. Set `nodeLinker: node-modules` or `nodeLinker: pnpm` in .yarnrc.yml, then run `yarn install`."
-    );
+  const projectPackageManager = await inspectProjectPackageManager(consumerPath);
+  const resolvedPackageManager = projectPackageManager.resolve(pm);
+  if (!resolvedPackageManager.nodeModulesCompatible) {
+    throw new Error(resolvedPackageManager.incompatibilityReason);
   }
 
-  const yarnLinker = effectiveYarn
-    ? await detectYarnNodeLinker(consumerPath)
+  const storeKind = resolvedPackageManager.layout === "pnpm" ||
+    resolvedPackageManager.layout === "yarn-pnpm"
+    ? resolvedPackageManager.layout
     : null;
-  const storeKind = getEffectiveStoreKind(
-    pm,
-    currentPm.packageManager,
-    currentPm.source,
-    yarnLinker
-  );
-  const effectiveBun = currentPm.packageManager === "bun" || (useTrackedPm && pm === "bun");
 
   if (!storeKind) {
-    if (effectiveBun) {
+    if (resolvedPackageManager.layout === "bun") {
       return resolveBunTarget(consumerPath, directPath, packageName, version);
     }
     return directPath;
@@ -277,7 +258,10 @@ export async function resolveInjectionTarget(
 
   const virtualStoreDirs = storeKind === "pnpm"
     ? await getPnpmVirtualStoreDirs(consumerPath)
-    : await getYarnPnpmStoreDirs(consumerPath);
+    : await getYarnPnpmStoreDirs(
+      consumerPath,
+      resolvedPackageManager.virtualStoreFolder
+    );
 
   // pnpm / Yarn pnpm-linker: follow the package symlink into its virtual store.
   try {
@@ -445,27 +429,6 @@ async function resolveBunTarget(
 function isPathInside(parentDir: string, childPath: string): boolean {
   const rel = relative(resolve(parentDir), resolve(childPath));
   return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel));
-}
-
-function getEffectiveStoreKind(
-  storedPm: PackageManager,
-  currentPm: PackageManager,
-  currentSource: PackageManagerDetectionSource,
-  yarnLinker: "node-modules" | "pnpm" | "pnp" | null
-): "pnpm" | "yarn-pnpm" | null {
-  if (currentSource !== "default") {
-    if (currentPm === "yarn") {
-      return yarnLinker === "pnpm" ? "yarn-pnpm" : null;
-    }
-    return currentPm === "pnpm" ? "pnpm" : null;
-  }
-
-  // No local evidence was found, so keep the tracked package manager as a
-  // fallback for existing links.
-  if (storedPm === "yarn") {
-    return yarnLinker === "pnpm" ? "yarn-pnpm" : null;
-  }
-  return storedPm === "pnpm" ? "pnpm" : null;
 }
 
 async function resolvePackageEntrySymlink(
@@ -652,7 +615,10 @@ async function getPnpmVirtualStoreDirs(consumerPath: string): Promise<string[]> 
   return dirs;
 }
 
-async function getYarnPnpmStoreDirs(consumerPath: string): Promise<string[]> {
+async function getYarnPnpmStoreDirs(
+  consumerPath: string,
+  configured: string | null
+): Promise<string[]> {
   const nodeModulesDir = join(consumerPath, "node_modules");
   const dirs: string[] = [];
   const defaultDir = join(nodeModulesDir, ".store");
@@ -660,7 +626,6 @@ async function getYarnPnpmStoreDirs(consumerPath: string): Promise<string[]> {
     dirs.push(defaultDir);
   }
 
-  const configured = await detectYarnPnpmStoreFolder(consumerPath);
   if (!configured) return dirs;
 
   const configuredDir = isAbsolute(configured)

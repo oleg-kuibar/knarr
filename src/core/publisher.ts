@@ -16,11 +16,7 @@ import type { Catalogs } from "../utils/workspace.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
 import { validatePackageIdentity } from "../utils/validators.js";
-import {
-  detectPackageManagerInfo,
-  hasYarnPnpMarkers,
-  isYarnPnpProject,
-} from "../utils/pm-detect.js";
+import { inspectProjectPackageManager } from "../utils/package-manager.js";
 
 export interface PublishOptions {
   allowPrivate?: boolean;
@@ -420,12 +416,8 @@ async function resolveLifecycleCommand(
   hookName: string,
   script: string
 ): Promise<string> {
-  const shouldUseYarn =
-    await hasYarnPnpMarkers(packageDir) ||
-    (
-      (await detectPackageManagerInfo(packageDir)).packageManager === "yarn" &&
-      await isYarnPnpProject(packageDir)
-    );
+  const projectPackageManager = await inspectProjectPackageManager(packageDir);
+  const shouldUseYarn = !projectPackageManager.resolve().nodeModulesCompatible;
 
   return shouldUseYarn ? `yarn run ${hookName}` : script;
 }

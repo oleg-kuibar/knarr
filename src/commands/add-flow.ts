@@ -8,21 +8,11 @@ import { publish } from "../core/publisher.js";
 import { inject, backupExisting, checkMissingDeps } from "../core/injector.js";
 import { addLink, registerConsumer, getLink } from "../core/tracker.js";
 import { exists } from "../utils/fs.js";
-import {
-  detectPackageManager,
-  hasYarnPnpMarkers,
-  isYarnPnpProject,
-} from "../utils/pm-detect.js";
+import { inspectProjectPackageManager } from "../utils/package-manager.js";
+import type { ResolvedPackageManager } from "../utils/package-manager.js";
 import { detectBuildCommand } from "../utils/build-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { ensureConsumerInit } from "../utils/init-helpers.js";
-import {
-  buildDevInstallCommand,
-  buildInstallCommand,
-  formatPackageManagerCommand,
-  runPackageManagerCommand,
-  type PackageManagerCommand,
-} from "../utils/pm-commands.js";
 import { addToTranspilePackages } from "../utils/nextjs-config.js";
 import { getConsumerStatePath } from "../utils/paths.js";
 import { Timer } from "../utils/timer.js";
@@ -35,7 +25,7 @@ import {
   validatePackageName as validatePackageNameStrict,
   validatePackageVersion,
 } from "../utils/validators.js";
-import type { LinkEntry, PackageManager } from "../types.js";
+import type { LinkEntry } from "../types.js";
 
 interface AddPackageOptions {
   packageArg: string;
@@ -79,20 +69,11 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
     }
   }
 
-  const pm = await detectPackageManager(consumerPath);
-  if (
-    await hasYarnPnpMarkers(consumerPath) ||
-    (pm === "yarn" && await isYarnPnpProject(consumerPath))
-  ) {
-    consola.error(
-      `Yarn PnP mode is not compatible with knarr.\n\n` +
-      `knarr works by copying files into node_modules/, but PnP eliminates\n` +
-      `node_modules/ entirely. To use knarr with Yarn Berry, add one of these\n` +
-      `to .yarnrc.yml:\n\n` +
-      `  nodeLinker: node-modules\n` +
-      `  nodeLinker: pnpm\n\n` +
-      `Then run: yarn install`
-    );
+  const projectPackageManager = await inspectProjectPackageManager(consumerPath);
+  const resolvedPackageManager = projectPackageManager.resolve();
+  const pm = resolvedPackageManager.packageManager;
+  if (!resolvedPackageManager.nodeModulesCompatible) {
+    consola.error(resolvedPackageManager.incompatibilityReason);
     process.exit(1);
   }
 
@@ -146,8 +127,13 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
   }
 
   await warnVersionMismatch(consumerPath, packageName, entry.version);
-  await configureBundler(consumerPath, packageName, pm);
-  await handleMissingDeps(entry, consumerPath, pm, options.yes ?? false);
+  await configureBundler(consumerPath, packageName, resolvedPackageManager);
+  await handleMissingDeps(
+    entry,
+    consumerPath,
+    resolvedPackageManager,
+    options.yes ?? false
+  );
 
   const result = await inject(entry, consumerPath, pm);
   consola.success(
@@ -276,7 +262,9 @@ async function maybeBuildSource(
   let buildCmd = options.build;
   let explicit = !!buildCmd;
   if (!buildCmd) {
-    const sourcePm = await detectPackageManager(sourcePath);
+    const sourcePm = (
+      await inspectProjectPackageManager(sourcePath)
+    ).resolve().packageManager;
     buildCmd = (await detectBuildCommand(sourcePath, sourcePm)) ?? undefined;
   }
 
@@ -315,9 +303,10 @@ async function maybeBuildSource(
 async function handleMissingDeps(
   entry: NonNullable<Awaited<ReturnType<typeof findStoreEntry>>>,
   consumerPath: string,
-  pm: PackageManager,
+  packageManager: ResolvedPackageManager,
   yes: boolean,
 ): Promise<void> {
+  const pm = packageManager.packageManager;
   const missing = await checkMissingDeps(entry, consumerPath, pm);
   if (missing.length === 0) return;
 
@@ -327,14 +316,14 @@ async function handleMissingDeps(
   }
 
   if (yes) {
-    const cmd = buildInstallCommand(pm, missing);
-    const display = formatPackageManagerCommand(cmd);
+    const cmd = packageManager.installCommand(missing);
+    const display = packageManager.formatCommand(cmd);
     consola.info(
       isDryRun()
         ? `[dry-run] Would install missing dependencies: ${missing.join(", ")}`
         : `Installing missing dependencies: ${missing.join(", ")}`
     );
-    const ok = await runInstallCommand(cmd, consumerPath);
+    const ok = await packageManager.run(cmd);
     if (ok && !isDryRun()) {
       consola.success("Installed missing dependencies");
     } else if (!ok) {
@@ -348,18 +337,19 @@ async function handleMissingDeps(
     { type: "confirm", initial: true },
   );
   if (confirm) {
-    const cmd = buildInstallCommand(pm, missing);
-    const display = formatPackageManagerCommand(cmd);
-    const ok = await runInstallCommand(cmd, consumerPath);
+    const cmd = packageManager.installCommand(missing);
+    const display = packageManager.formatCommand(cmd);
+    const ok = await packageManager.run(cmd);
     if (ok && !isDryRun()) {
       consola.success("Installed missing dependencies");
     } else if (!ok) {
       consola.warn(`Install failed. Run manually: ${display}`);
     }
   } else {
+    const command = packageManager.installCommand(missing);
     consola.warn(
       `Missing transitive dependencies: ${missing.join(", ")}\n` +
-        `  Run: ${formatPackageManagerCommand(buildInstallCommand(pm, missing))}`,
+        `  Run: ${packageManager.formatCommand(command)}`,
     );
   }
 }
@@ -367,7 +357,7 @@ async function handleMissingDeps(
 async function configureBundler(
   consumerPath: string,
   packageName: string,
-  pm: PackageManager,
+  packageManager: ResolvedPackageManager,
 ): Promise<void> {
   const bundler = await detectBundler(consumerPath);
   if (bundler.type === "next" && bundler.configFile) {
@@ -389,14 +379,16 @@ async function configureBundler(
     const viteResult = await addKnarrVitePlugin(bundler.configFile);
     if (viteResult.modified) {
       consola.success(`Added knarr plugin to ${basename(bundler.configFile)}`);
-      const installCmd = buildDevInstallCommand(pm, "knarr");
-      const installDisplay = formatPackageManagerCommand(installCmd);
+      const installCmd = packageManager.installCommand(["knarr"], {
+        dev: true,
+      });
+      const installDisplay = packageManager.formatCommand(installCmd);
       consola.info(
         isDryRun()
           ? "[dry-run] Would install knarr as devDependency"
           : "Installing knarr as devDependency..."
       );
-      const ok = await runInstallCommand(installCmd, consumerPath);
+      const ok = await packageManager.run(installCmd);
       if (ok && !isDryRun()) {
         consola.success("Installed knarr");
       } else if (!ok) {
@@ -419,10 +411,6 @@ async function configureBundler(
       consola.info(`Add to your CSS manually: @source "../node_modules/${packageName}";`);
     }
   }
-}
-
-function runInstallCommand(cmd: PackageManagerCommand, cwd: string): Promise<boolean> {
-  return runPackageManagerCommand(cmd, cwd);
 }
 
 function runShellCommand(cmd: string, cwd: string): Promise<boolean> {

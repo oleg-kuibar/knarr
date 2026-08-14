@@ -6,7 +6,7 @@ import { getStoreEntry } from "./store.js";
 import { inject } from "./injector.js";
 import { addLink, getConsumers, getLink } from "./tracker.js";
 import { detectBuildCommand } from "../utils/build-detect.js";
-import { detectPackageManager, detectPackageManagerInfo } from "../utils/pm-detect.js";
+import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import { loadKnarrConfig } from "../utils/config.js";
 import type { KnarrConfig } from "../utils/config.js";
 import { Timer } from "../utils/timer.js";
@@ -233,10 +233,12 @@ export async function pushStoreEntry(
         }
 
         try {
-          const currentPm = await detectPackageManagerInfo(consumerPath);
-          const packageManager = currentPm.source === "default"
-            ? link.packageManager
-            : currentPm.packageManager;
+          const projectPackageManager = await inspectProjectPackageManager(
+            consumerPath
+          );
+          const packageManager = projectPackageManager.resolve(
+            link.packageManager
+          ).packageManager;
           const injectResult = await inject(
             entry,
             consumerPath,
@@ -563,7 +565,9 @@ export async function resolveWatchConfig(
     consola.info(`Using build command from config: ${buildCmd}`);
   } else {
     // Auto-detect from package.json scripts
-    const pm = await detectPackageManager(packageDir);
+    const pm = (
+      await inspectProjectPackageManager(packageDir)
+    ).resolve().packageManager;
     const detected = await detectBuildCommand(packageDir, pm);
     if (detected) {
       buildCmd = detected;

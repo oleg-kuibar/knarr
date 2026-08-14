@@ -4,18 +4,9 @@ import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
 import pc from "picocolors";
 import { exists, ensureDir, atomicWriteFile } from "../utils/fs.js";
-import {
-  detectPackageManager,
-  hasYarnPnpMarkers,
-  isYarnPnpProject,
-} from "../utils/pm-detect.js";
+import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { detectBuildCommand as detectBuildCmd } from "../utils/build-detect.js";
-import {
-  buildDevInstallCommand,
-  formatPackageManagerCommand,
-  runPackageManagerCommand,
-} from "../utils/pm-commands.js";
 import {
   ensureGitignore,
   addPostinstall,
@@ -61,7 +52,10 @@ export default defineCommand({
     consola.info(`Initializing knarr in ${pc.cyan(projectDir)}\n`);
 
     // 1. Detect and confirm package manager
-    const detectedPm = await detectPackageManager(projectDir);
+    const detectedProjectPackageManager = await inspectProjectPackageManager(
+      projectDir
+    );
+    const detectedPm = detectedProjectPackageManager.resolve().packageManager;
     consola.success(`Detected package manager: ${pc.cyan(detectedPm)}`);
 
     let pm = detectedPm;
@@ -112,22 +106,12 @@ export default defineCommand({
 
     consola.success(`Project role: ${pc.cyan(role)}`);
 
-    if (
-      role === "consumer" &&
-      (
-        await hasYarnPnpMarkers(projectDir) ||
-        (pm === "yarn" && await isYarnPnpProject(projectDir))
-      )
-    ) {
-      consola.error(
-        `Yarn PnP mode is not compatible with Knarr.\n\n` +
-        `Knarr works by copying files into node_modules/, but PnP eliminates\n` +
-        `node_modules/ entirely. To use Knarr with Yarn Berry, add one of these\n` +
-        `to .yarnrc.yml:\n\n` +
-        `  nodeLinker: node-modules\n` +
-        `  nodeLinker: pnpm\n\n` +
-        `Then run: yarn install`
-      );
+    const projectPackageManager = pm === detectedPm
+      ? detectedProjectPackageManager
+      : await inspectProjectPackageManager(projectDir, { packageManager: pm });
+    const resolvedPackageManager = projectPackageManager.resolve();
+    if (role === "consumer" && !resolvedPackageManager.nodeModulesCompatible) {
+      consola.error(resolvedPackageManager.incompatibilityReason);
       process.exit(1);
     }
 
@@ -216,14 +200,16 @@ export default defineCommand({
         const viteResult = await addKnarrVitePlugin(bundler.configFile);
         if (viteResult.modified) {
           consola.success(`Added knarr plugin to ${basename(bundler.configFile)}`);
-          const installCmd = buildDevInstallCommand(pm, "knarr");
-          const installDisplay = formatPackageManagerCommand(installCmd);
+          const installCmd = resolvedPackageManager.installCommand(["knarr"], {
+            dev: true,
+          });
+          const installDisplay = resolvedPackageManager.formatCommand(installCmd);
           consola.info(
             isDryRun()
               ? "[dry-run] Would install knarr as devDependency"
               : "Installing knarr as devDependency..."
           );
-          const ok = await runPackageManagerCommand(installCmd, projectDir);
+          const ok = await resolvedPackageManager.run(installCmd);
           if (ok && !isDryRun()) {
             consola.success("Installed knarr");
           } else if (!ok) {

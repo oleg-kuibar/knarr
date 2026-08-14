@@ -10,11 +10,7 @@ import { suppressHumanOutput, output } from "../utils/output.js";
 import { errorWithSuggestion } from "../utils/errors.js";
 import { verbose } from "../utils/logger.js";
 import { warnVersionMismatch } from "../utils/validators.js";
-import {
-  detectPackageManagerInfo,
-  hasYarnPnpMarkers,
-  isYarnPnpProject,
-} from "../utils/pm-detect.js";
+import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import type { LinkEntry } from "../types.js";
 
 const updateLimit = pLimit(4);
@@ -36,20 +32,12 @@ export default defineCommand({
     const timer = new Timer();
     const consumerPath = resolve(".");
     const state = await readConsumerState(consumerPath);
-    const currentPm = await detectPackageManagerInfo(consumerPath);
-    if (
-      await hasYarnPnpMarkers(consumerPath) ||
-      (currentPm.packageManager === "yarn" && await isYarnPnpProject(consumerPath))
-    ) {
-      consola.error(
-        `Yarn PnP mode is not compatible with Knarr.\n\n` +
-        `Knarr works by copying files into node_modules/, but PnP eliminates\n` +
-        `node_modules/ entirely. To use Knarr with Yarn Berry, add one of these\n` +
-        `to .yarnrc.yml:\n\n` +
-        `  nodeLinker: node-modules\n` +
-        `  nodeLinker: pnpm\n\n` +
-        `Then run: yarn install`
-      );
+    const projectPackageManager = await inspectProjectPackageManager(
+      consumerPath
+    );
+    const currentPackageManager = projectPackageManager.resolve();
+    if (!currentPackageManager.nodeModulesCompatible) {
+      consola.error(currentPackageManager.incompatibilityReason);
       process.exit(1);
     }
     const links = Object.entries(state.links);
@@ -85,9 +73,9 @@ export default defineCommand({
             return "missing" as const;
           }
 
-          const packageManager = currentPm.source === "default"
-            ? link.packageManager
-            : currentPm.packageManager;
+          const packageManager = projectPackageManager.resolve(
+            link.packageManager
+          ).packageManager;
           const packageManagerChanged = packageManager !== link.packageManager;
 
           // Check if content hash has changed

@@ -42,7 +42,7 @@ src/
 |-- cli.ts                # Entry point, citty command routing
 |-- commands/             # CLI command definitions (one file per command)
 |-- core/                 # Core logic (publisher, injector, store, tracker, watcher)
-|-- utils/                # Shared utilities (fs, hash, paths, pack-list, pm-detect, bin-linker)
+|-- utils/                # Shared utilities (fs, hash, paths, package-manager, pack-list, bin-linker)
 |-- vite-plugin.ts        # Vite plugin entry (exported as knarr/vite)
 |-- types.ts              # Shared TypeScript types
 `-- index.ts              # Public API exports
