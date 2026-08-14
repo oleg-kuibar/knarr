@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3
+
+- Centralize package-manager discovery, compatibility, installation layout, and command behavior behind npm, pnpm, Yarn, and Bun adapters.
+- Keep tracked package-manager fallback, Yarn linker diagnostics, and virtual-store resolution consistent across add, init, doctor, update, restore, publish, inject, and push workflows.
+- Expand adapter-level coverage for node_modules, pnpm, Yarn pnpm-linker, Yarn PnP, and Bun layouts.
+
+## 0.1.2
+
+- Fix watch mode on WSL Windows-mounted paths by enabling polling where native filesystem events are unreliable.
+
 ## 0.1.1
 
 - Clarify README, FAQ, comparison, and yalc migration docs around native package-manager workflows, yalc, and Knarr tradeoffs.
