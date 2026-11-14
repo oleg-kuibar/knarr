@@ -2,7 +2,7 @@
  * Scale benchmarks: synthetic 60-file package to stress-test incremental paths.
  * Validates that mtime fast-skip and hash-based diffing work at realistic scale.
  */
-import { describe, bench, beforeAll, afterAll } from "vitest";
+import { test, beforeAll, afterAll } from "vitest";
 import { mkdtemp, writeFile, mkdir, rm, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -105,100 +105,88 @@ afterAll(async () => {
   await rm(largePackageDir, { recursive: true, force: true });
 });
 
-describe("scale: resolvePackFiles", () => {
-  bench("60 files", async () => {
+// Vitest 5 bench API: benchmarks are registered from a test's context.
+// `beforeEach` hooks run before every iteration (excluded from timing);
+// `beforeAll` hooks run once per warmup/run phase.
+
+async function getLargeEntry(): Promise<StoreEntry> {
+  return (await getStoreEntry(largePkg.name, largePkg.version)) as StoreEntry;
+}
+
+async function injectLarge(): Promise<void> {
+  await inject(await getLargeEntry(), consumerDir, "npm");
+}
+
+async function publishAndInjectLarge(): Promise<void> {
+  await publish(largePackageDir, { force: true });
+  await injectLarge();
+}
+
+test("scale: resolvePackFiles", async ({ bench }) => {
+  await bench("60 files", async () => {
     await resolvePackFiles(largePackageDir, largePkg);
-  });
+  }).run();
 });
 
-describe("scale: publish", () => {
-  bench(
-    "full (force, 60 files)",
-    async () => {
-      await publish(largePackageDir, { force: true });
-    },
-    {
-      async setup() {
-        const entryPath = join(KNARRHome, "store");
-        if (await exists(entryPath)) {
-          await removeDir(entryPath);
-        }
+test("scale: publish", async ({ bench }) => {
+  await bench.compare(
+    bench(
+      "full (force, 60 files)",
+      {
+        async beforeEach() {
+          const entryPath = join(KNARRHome, "store");
+          if (await exists(entryPath)) {
+            await removeDir(entryPath);
+          }
+        },
       },
-    }
+      async () => {
+        await publish(largePackageDir, { force: true });
+      }
+    ),
+    bench(
+      "skip (no changes, 60 files)",
+      { beforeAll: () => publish(largePackageDir, { force: true }).then(() => {}) },
+      async () => {
+        await publish(largePackageDir);
+      }
+    )
   );
-
-  bench("skip (no changes, 60 files)", async () => {
-    await publish(largePackageDir);
-  });
 });
 
-describe("scale: inject", () => {
-  bench(
-    "cold (60 files)",
-    async () => {
-      const entry = (await getStoreEntry(
-        largePkg.name,
-        largePkg.version
-      )) as StoreEntry;
-      await inject(entry, consumerDir, "npm");
-    },
-    {
-      async setup() {
-        await publish(largePackageDir, { force: true });
-        const pkgDir = join(consumerDir, "node_modules", largePkg.name);
-        if (await exists(pkgDir)) {
-          await removeDir(pkgDir);
-        }
+test("scale: inject", async ({ bench }) => {
+  await bench.compare(
+    bench(
+      "cold (60 files)",
+      {
+        beforeAll: () => publish(largePackageDir, { force: true }).then(() => {}),
+        async beforeEach() {
+          const pkgDir = join(consumerDir, "node_modules", largePkg.name);
+          if (await exists(pkgDir)) {
+            await removeDir(pkgDir);
+          }
+        },
       },
-    }
-  );
-
-  bench(
-    "incremental (no changes, 60 files)",
-    async () => {
-      const entry = (await getStoreEntry(
-        largePkg.name,
-        largePkg.version
-      )) as StoreEntry;
-      await inject(entry, consumerDir, "npm");
-    },
-    {
-      async setup() {
-        await publish(largePackageDir, { force: true });
-        const entry = (await getStoreEntry(
-          largePkg.name,
-          largePkg.version
-        )) as StoreEntry;
-        await inject(entry, consumerDir, "npm");
+      injectLarge
+    ),
+    bench(
+      "incremental (no changes, 60 files)",
+      { beforeAll: publishAndInjectLarge },
+      injectLarge
+    ),
+    bench(
+      "incremental (1 file changed, 60 files)",
+      {
+        beforeAll: publishAndInjectLarge,
+        async beforeEach() {
+          // Modify one file in the store entry with a newer mtime to simulate a change
+          const changedFile = join((await getLargeEntry()).packageDir, "dist", "index.js");
+          await writeFile(changedFile, randomBytes(2048));
+          const future = new Date(Date.now() + 1000);
+          await utimes(changedFile, future, future);
+        },
       },
-    }
-  );
-
-  bench(
-    "incremental (1 file changed, 60 files)",
-    async () => {
-      const entry = (await getStoreEntry(
-        largePkg.name,
-        largePkg.version
-      )) as StoreEntry;
-      await inject(entry, consumerDir, "npm");
-    },
-    {
-      async setup() {
-        // Publish and do initial inject
-        await publish(largePackageDir, { force: true });
-        const entry = (await getStoreEntry(
-          largePkg.name,
-          largePkg.version
-        )) as StoreEntry;
-        await inject(entry, consumerDir, "npm");
-        // Modify one file in the store entry to simulate a change
-        const changedFile = join(entry.packageDir, "dist", "index.js");
-        await writeFile(changedFile, randomBytes(2048));
-        // Touch the file with a new mtime to ensure mtime differs
-        const future = new Date(Date.now() + 1000);
-        await utimes(changedFile, future, future);
-      },
-    }
+      injectLarge
+    )
   );
 });

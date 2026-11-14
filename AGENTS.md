@@ -1,145 +1,119 @@
 # AGENTS.md
 
-## Project
+Knarr is a CLI and library for local npm package development without symlinks. It copies a package's publishable files into consumers' `node_modules/`, syncs them incrementally, and has a watch mode.
 
-Knarr — Local npm package development without symlinks. Copies built files into consumer `node_modules/` with incremental sync and watch mode.
+This file is the shared source of truth for coding agents (Codex reads it directly; Claude Code loads it via `CLAUDE.md`). Keep it short and factual. Put procedures in `.claude/skills/`, not here.
 
-## Tech stack
+## Setup
 
-- TypeScript (ESM, strict), Node.js >= 22.12
-- Package manager: pnpm
-- CLI: citty, picocolors, custom `consola` logger (`src/utils/console.ts`)
-- File watching: chokidar v5
-- File hashing: xxhash-wasm (per-file, incremental copy), SHA-256 (aggregate content hash)
-- Build: tsup (bundles all deps)
-- Tests: vitest
-
-## Key concepts
-
-- **Store** (`~/.knarr/store/`): mutable package cache, keyed by `name@version`
-- **Publish**: copy built files (respecting `files` field) to the store
-- **Inject**: copy from store into consumer's `node_modules/` (incremental, CoW)
-- **Push**: publish + inject to all registered consumers
-- **Tracker**: `.knarr/state.json` per consumer, `~/.knarr/consumers.json` globally
-- `KNARR_HOME` env var overrides the store location (used in tests)
+- Node.js >= 22.22 (`package.json#engines`). pnpm 12 is pinned in `packageManager`.
+- Node 25+ no longer bundles corepack. Use `npm i -g corepack && corepack enable`, or run pnpm as `npx pnpm@12.18.0 <cmd>`.
+- First run: `pnpm install`, then build the e2e fixtures (they use npm, not pnpm):
+  ```
+  cd examples/packages/api-client && npm ci && npx tsup
+  cd ../ui-kit && npm ci && npx tsup
+  ```
 
 ## Commands
 
 ```
-pnpm build       # tsup build (three entries: CLI, API, Vite plugin)
-pnpm test        # vitest run (requires example packages to be built)
-pnpm lint        # tsc --noEmit
-pnpm dev         # tsup --watch (builds Knarr itself, NOT the knarr dev CLI command)
-pnpm bench       # vitest bench
+pnpm lint                                   # tsc --noEmit (this is the only typecheck)
+pnpm build                                  # tsup: CLI, API, Vite plugin, Webpack plugin
+pnpm test                                   # vitest run (needs the fixtures above)
+pnpm vitest run src/__tests__/watcher.test.ts      # one file
+pnpm vitest run -t "pnpm injection > honors"        # by name; vitest 5 joins suite > test with ">"
+pnpm bench                                  # vitest bench (Vitest 5 API: test(..., ({ bench }) => ...))
+pnpm compat:smoke                           # real npm/pnpm/Yarn 4/Bun/Vite/Webpack/rspack/Next consumers
+pnpm dev                                    # tsup --watch for Knarr itself, NOT `knarr dev`
 ```
 
-## Testing
+Before calling work done: `pnpm lint && pnpm build && pnpm test`. Run `pnpm compat:smoke` (after `pnpm build`) when injection, package-manager layout, or bundler code changes.
 
-E2E tests use `examples/packages/` as real fixtures. They must be built first:
+## Key concepts
+
+- **Store** `~/.knarr/store/<name>@<version>/`: mutable package cache. `KNARR_HOME` overrides the root (tests always set it).
+- **Publish**: resolve files like `npm pack` (`files`, `.npmignore`/`.gitignore`), hash, and atomically swap into the store. Old builds go to `history/` (default limit 3).
+- **Inject**: incremental copy (xxhash per file, CoW where available) from store into the consumer's real package dir.
+- **Push**: publish, then inject into every registered consumer. `--all` runs in workspace topological order.
+- **Tracker**: per-consumer `.knarr/state.json`, global `~/.knarr/consumers.json`.
+
+## Code map
+
 ```
-cd examples/packages/api-client && pnpm install && pnpm tsup
-cd ../ui-kit && pnpm install && pnpm tsup
-```
-
-Tests redirect the store via `process.env.KNARR_HOME` to temp dirs. Coverage threshold: 70% lines (`vitest.config.ts`).
-
-## Architecture
-
-```
-src/cli.ts           → citty entry point, global flags (--verbose, --dry-run, --json), interactive menu
-src/commands/*.ts    → one file per CLI command (17 commands)
-src/core/
-  publisher.ts       → file resolution, hashing, atomic store write, lifecycle hooks, history capture
-  injector.ts        → incremental copy from store to node_modules, backup/restore
-  store.ts           → store CRUD, meta read/write
-  tracker.ts         → consumer state (state.json) + global registry (consumers.json)
-  push-engine.ts     → doPush() orchestrator, watch config resolution, multi-watch mode
-  watcher.ts         → chokidar watcher with debounce + cooldown, build subprocess, bell notify
-  watch-orchestrator.ts → cascading rebuild orchestrator for dev --all (reverse adjacency + state machine)
-  batch-push.ts      → workspace batch push in topological order (push --all / dev --all)
-  history.ts         → build history capture, list, restore, prune (knarr rollback)
-src/utils/           → shared helpers
-  fs.ts              → copyWithCoW, incrementalCopy, ensureDir
-  hash.ts            → xxHash64 per-file, SHA-256 aggregate (computeContentHash)
-  pack-list.ts       → resolvePackFiles (npm-pack-compatible file resolution)
-  package-manager.ts → project PM discovery, compatibility, layout, and command adapters
-  pm-detect.ts       → low-level packageManager, lockfile, and Yarn artifact probes
-  workspace.ts       → workspace root detection, catalog: parsing, workspace graph building, reverse adjacency
-  topo-sort.ts       → Kahn's algorithm topological sort for workspace dependency ordering
-  preflight.ts       → pre-flight validation (exports, types, entry points, bin paths)
-  dry-run.ts         → mutation recorder and summary reporter for --dry-run mode
-  bell.ts            → terminal bell notification (\x07 to stderr)
-  lockfile.ts        → withFileLock (mkdir-based atomic lock, skipped in dry-run)
-  concurrency.ts     → minimal pLimit reimplementation (two-pointer O(1) dequeue)
-  bin-linker.ts      → create/remove node_modules/.bin entries
-  bundler-detect.ts  → detect Vite, Webpack, etc.
-  bundler-cache.ts   → invalidate bundler caches after injection
-  vite-config.ts     → auto-inject/remove Knarr Vite plugin (balanced bracket parser, complexity detector)
-  nextjs-config.ts   → auto-add transpilePackages for Next.js (wrapper function detection)
-  tailwind-source.ts → auto-inject @source directive for Tailwind v4
-  init-helpers.ts    → ensureGitignore, addPostinstall
-  build-detect.ts    → auto-detect build command from package.json scripts
-  output.ts          → structured JSON output (--json mode)
-  logger.ts          → verbose() debug logging, flag init
-  console.ts         → custom consola instance
-  errors.ts          → errorWithSuggestion helper
-  validators.ts      → input validation
-  banner.ts          → CLI banner display
-  paths.ts           → store/consumer path helpers
-  timer.ts           → elapsed time tracker
-src/vite-plugin.ts   → Vite plugin entry (exported as knarr/vite)
-src/webpack-plugin.ts → Webpack/rspack plugin entry (exported as knarr/webpack)
-src/index.ts         → programmatic API entry (exported as knarr)
-src/types.ts         → shared interfaces
+src/cli.ts                 citty entry, global flags (--verbose, --dry-run, --json), TTY menu
+src/commands/*.ts          one defineCommand() per file, default export; 18 commands (+ gc alias of clean)
+                           add-flow.ts is shared add/use logic, not a command
+src/core/publisher.ts      file resolution, hashing, lifecycle hooks, atomic store swap, history capture
+src/core/injector.ts       incremental copy, pnpm/Yarn/Bun virtual-store targets, backup/restore
+src/core/store.ts, tracker.ts, history.ts
+src/core/push-engine.ts    doPush(), watch config resolution
+src/core/batch-push.ts     push --all; watch-orchestrator.ts is the cascading rebuild state machine
+src/core/watcher.ts        chokidar 6 watcher, debounce/cooldown, build subprocess
+src/utils/package-manager.ts  PM adapters (layout, compatibility, commands); pm-detect.ts = raw probes
+src/utils/workspace.ts     workspace root (walks up to pnpm-workspace.yaml), catalog:, graph
+src/utils/vite-config.ts, nextjs-config.ts, tailwind-source.ts   consumer config rewriters
+src/utils/shell.ts         spawnShell() for command lines, spawnCommand() for executable + args
+src/index.ts               public API (`knarr`); vite-plugin.ts (`knarr/vite`); webpack-plugin.ts (`knarr/webpack`)
 ```
 
-## Code style
+## Rules for changes
 
-- One `defineCommand()` per file in `src/commands/`, default-exported
-- Utils are named exports, no default exports
-- Use `consola` for user-facing messages, `verbose()` for debug-only logs
-- Use `import type` for type-only imports
-- Dynamic `import()` for heavy deps only loaded in some code paths (chokidar, vite-config)
+- **Commands**: `--json` output goes through `output()` in `src/utils/output.ts`. Nothing else may write to stdout in JSON mode. Diagnostics go to `consola`/`verbose()`.
+- **Dry run**: every mutation must check `isDryRun()` and call `recordMutation()` instead of touching disk.
+- **Child processes**: run user command lines (build commands, hooks) with `spawnShell()`, and an executable plus arguments (package-manager installs) with `spawnCommand()`. Never hand-build `cmd /c` or pass an args array with `shell: true`: Windows quoting breaks on paths with spaces, and Node warns with DEP0190.
+- **Paths**: never assume `/`. Use `node:path` joins, and use `normalizePath()` only for comparison or storage.
+- **Filesystem scope**: write only inside the store (`KNARR_HOME`), the consumer's `.knarr/`, and the resolved package target. Follow pnpm `.pnpm/` and Yarn `.store/` symlinks to the real dir; never replace the top-level symlink.
+- **Public surface**: a new flag, command, export, env var, or `package.json#knarr` field needs tests plus docs in `docs/commands.md` or `docs/api.md`, and a `CHANGELOG.md` "Unreleased" entry.
+- **Style**: strict ESM TypeScript, `import type` for types, named exports in utils, dynamic `import()` for heavy optional deps (chokidar, config rewriters).
 
-## Agent team
+## Testing notes
 
-Use project-scoped Codex agents in `.codex/agents/` for parallel maintenance and PR review:
+- Tests isolate the store with `process.env.KNARR_HOME` set to a temp dir and clean up in `afterEach`.
+- Tests that create symlinks use `it.skipIf(!canCreateSymlinks)` from `src/__tests__/helpers/symlinks.ts`. On Windows without Developer Mode they are reported as skipped, not failed; CI runs them.
+- `src/__tests__/watcher.test.ts` exercises real chokidar. Keep it when you touch watcher options.
+- Coverage threshold: 70% lines (`vitest.config.ts`).
 
-- `knarr_pr_mapper`: read-only exploration of changed code paths and ownership boundaries.
-- `knarr_reviewer`: correctness, regression, concurrency, cross-platform, and missing-test review.
-- `knarr_docs_checker`: docs, CLI help, README, and release-note consistency review.
+## Security rules
 
-Project agent settings live in `.codex/config.toml`; keep `max_depth = 1` unless there is a deliberate reason to allow recursive delegation.
+These are enforced in CI (zizmor, dependency review, audit, verify-pack). Don't weaken them without a comment explaining why. See `SECURITY.md`.
 
-Use `@codex review` on GitHub for the standard PR review pass guided by the review guidelines below. Use the project agents from the Codex app or CLI when a PR needs a broader parallel review. For broad PR review, ask Codex to compare the branch against `master`, spawn the three agents above, wait for all results, and consolidate only actionable findings.
+- **Workflows**: `permissions: {}` at the top, with per-job permissions that each carry a comment. Pin actions to a full commit SHA with a `# vX.Y.Z` comment. Use `persist-credentials: false` on checkout and no dependency cache in the release pipeline. Before pushing, run `zizmor --persona pedantic .github/workflows`; it must report no findings.
+- **Publishing**: only `publish.yml`. Its `publish` job holds OIDC and must stay free of checkout, installs, and repo scripts. Never publish locally.
+- **Dependencies**: no dependency may run install scripts (`allowBuilds` in `pnpm-workspace.yaml`; `--ignore-scripts` for npm fixtures). New dependencies need a license from the dependency-review allowlist and must pass `pnpm audit --audit-level=low`.
+- **Package contents**: `scripts/verify-pack.mjs` allowlists the tarball. Widen it deliberately, never to make CI pass.
 
-## Review guidelines
+## Dependencies
 
-Codex GitHub review should focus on P0/P1 risks, not style-only preferences:
-
-- Store, publish, inject, push, watch, rollback, and workspace changes need checks for data loss, stale state, accidental mutation outside the intended roots, and broken dry-run behavior.
-- File operations must preserve `KNARR_HOME`, package manager layouts, pnpm virtual store symlinks, bin links, lifecycle hook order, and cross-platform paths.
-- Watch and cascading rebuild changes need debounce/cooldown, race, process cleanup, and infinite-loop review.
-- Config rewriting changes need balanced bracket, string/comment, and complex-config fallback coverage.
-- Public CLI or API behavior changes need tests plus docs updates in `docs/commands.md`, `docs/api.md`, README, or changelog as appropriate.
-- JSON output must remain machine-readable on stdout; verbose or human diagnostics should not corrupt JSON mode.
-- Prefer focused tests near the touched behavior. Broaden to integration/e2e tests when changes cross publisher, injector, tracker, watcher, or workspace orchestration boundaries.
+- The CLI bundles every runtime dependency (`noExternal`). A dependency's `engines.node` therefore becomes Knarr's. Check it before bumping (chokidar 6 is why the floor is 22.22).
+- TypeScript is held at 6.x: TypeScript 7 (native) ships no JS compiler API, and tsup needs one for `.d.ts`. Unblocking means migrating to tsdown. Dependabot ignores TypeScript majors.
+- pnpm settings live in `pnpm-workspace.yaml` (pnpm 11+ ignores `package.json#pnpm`). The file has no `packages:` list, and `minimumReleaseAge` enforces a 7-day cooldown on new versions.
+- `src/utils/workspace.ts` walks up to the nearest `pnpm-workspace.yaml`. That includes the repo root's file when Knarr runs inside `examples/`.
 
 ## Gotchas
 
-- `pnpm dev` (in the Commands section above) is `tsup --watch` for building Knarr itself — not the same as the `knarr dev` CLI command
-- pnpm injects into `.pnpm/` virtual store by following symlinks — see `src/core/injector.ts`
-- `workspace:*` and `catalog:` protocol versions are rewritten to real versions in the store copy (source untouched) — see `src/core/publisher.ts` and `src/utils/workspace.ts`
-- Vite plugin watches `.knarr/state.json` and triggers server restart (new package) or full reload (existing package update) — not HMR
-- Lifecycle hooks run in order: `preknarr` → `prepack` → [publish] → `postpack` → `postknarr`. Default timeout 30s (`KNARR_HOOK_TIMEOUT` env var)
-- tsup has four build entries: CLI (bundled+minified, `noExternal: [/.*/]`), API lib (with .d.ts), Vite plugin (with .d.ts, vite external), Webpack plugin (with .d.ts, webpack external)
-- Watch mode defaults: 500ms debounce, 500ms cooldown between builds
-- `knarr clean` / `knarr gc` are aliases (same command registered twice in `src/cli.ts`)
-- Build history: publisher captures old builds to `store/<pkg>/history/<buildId>/` before atomic swap; default limit 3, configurable via `package.json#knarr.historyLimit`
-- `knarr push --all` / `knarr dev --all`: discovers workspace packages, topologically sorts by deps+devDeps, pushes/watches in dependency-first order
-- `knarr dev --all` supports cascading rebuilds (default ON): when package A rebuilds, packages depending on A also rebuild. `--no-cascade` disables this. State machine (idle/building/queued) prevents infinite loops.
-- Pre-flight checks run automatically on `knarr publish` (suppress with `--no-check`), also available standalone via `knarr check`
-- `--dry-run` records all skipped mutations via `recordMutation()` in `src/utils/dry-run.ts`; commands print a grouped summary at exit
-- Interactive CLI: running `knarr` with no subcommand in a TTY shows a select menu; non-TTY/CI shows banner only
-- Webpack plugin (`knarr/webpack`): mirrors Vite plugin pattern — excludes linked packages from snapshot cache, watches state.json, invalidates compiler on changes
-- Config rewriting uses balanced bracket scanner (handles nested `[]`, `()`, `{}`, strings, comments) and complexity detector (`isComplexConfig`) that gracefully falls back to manual instructions
+- Restore hook: the committed `postinstall` runs the gitignored `.knarr/restore.cjs`, which `ensureRestoreHook()` regenerates on every link with the running CLI's path. It must stay a no-op without `.knarr/` and never fail an install. `knarr restore` runs inside installs, so it may rewrite only that script, never `package.json`.
+- Prompts: without a TTY, `consola.prompt` answers from an explicit `initial`/`default` and otherwise exits 1 with a hint. Give destructive confirms no `initial`, and add a `--yes`-style flag for each new prompt.
+- Injection identity: a target reached through the consumer's own `node_modules/<pkg>` link is checked by name only, because version bumps mid-development are normal. Virtual-store scan candidates must match name and version.
+- Lifecycle order: `preknarr` → `prepack` → publish → `postpack` → `postknarr`. Timeout 30s (`KNARR_HOOK_TIMEOUT`).
+- `workspace:` and `catalog:` versions are rewritten in the store copy only; the source is untouched.
+- The Vite plugin watches `.knarr/state.json`: new package → server restart, update → full reload (not HMR). The Webpack plugin mirrors this.
+- `src/vite-plugin.ts` configures Vite's own bundled watcher; its `usePolling` options are Vite's, not chokidar 6's.
+- Watch defaults: 500ms debounce, 500ms cooldown. `dev --all` cascades rebuilds by default (`--no-cascade`), with an idle/building/queued state machine to prevent loops.
+- Config rewriters use a balanced-bracket scanner plus `isComplexConfig()`. When unsure, they print manual instructions rather than rewrite.
+
+## Review guidelines
+
+Reviews should flag P0/P1 risks, not style:
+
+- Store, publish, inject, push, watch, rollback, and workspace changes: data loss, stale state, writes outside the intended roots, broken dry-run.
+- File operations: `KNARR_HOME` isolation, PM layouts (pnpm virtual store, Yarn pnpm-linker, Bun), bin links, hook order, Windows paths and junctions.
+- Watch and cascade: debounce/cooldown, races, child-process cleanup, infinite rebuild loops.
+- Config rewriting: nested brackets, strings and comments, complex-config fallback.
+- Public CLI/API changes: tests and docs updated; `--json` stdout stays machine-readable.
+- Prefer focused tests near the change. Add integration or e2e tests when a change crosses publisher, injector, tracker, watcher, or workspace boundaries.
+
+## Agent tooling
+
+- Claude Code: `CLAUDE.md`, subagents in `.claude/agents/`, skills in `.claude/skills/` (`/knarr-review`, `/verify`, `/upgrade-deps`, `/release`), permissions in `.claude/settings.json`.
+- Codex: agents in `.codex/agents/` (`knarr_pr_mapper`, `knarr_reviewer`, `knarr_docs_checker`), config in `.codex/config.toml` (keep `max_depth = 1`). Request a GitHub review with `@codex review`.
+- When you update a rule here, check whether an agent prompt repeats it.

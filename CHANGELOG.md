@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased
+
+### Breaking
+
+- Require Node.js 22.22 or newer (was 22.12), the minimum for chokidar 6. `knarr doctor` now checks the minor version too.
+
+### Fixes
+
+- **Installs no longer silently drop linked packages.** After `npx knarr use` (the Quick Start path), every `npm install` removed the link with no message. The old `postinstall` hook needed `knarr` on PATH, and its `|| exit 0` hid the failure. The new hook runs a local, gitignored `.knarr/restore.cjs` that records the Knarr CLI that made the links. It works without a global install, does nothing for teammates without Knarr, and warns when it can't restore. The next `knarr use`/`add`, `knarr init`, or `knarr doctor --fix` upgrades existing hooks.
+- **Version bumps no longer break the dev loop.** After the library bumped its version, pushes to pnpm, Yarn pnpm-linker, and Bun consumers failed with "target contains version 1.0.0". The consumer's own `node_modules/<pkg>` link is now checked by package name. Scanned virtual-store entries still must match the version. `push` also records the new version, so `status` stays accurate.
+- **No more silent no-ops without a terminal.** In CI, scripts, or agents, commands showed a prompt they couldn't read and exited 0 having done nothing. Prompts with a safe default now take it and say so. Destructive confirmations exit 1 and ask for `--yes`, and `init` names `--role`.
+- Windows: build commands and lifecycle scripts with quoted paths (for example `node "C:\Program Files\tool\build.js"`) work. Package-manager installs run by Knarr quote their arguments and no longer print Node's `DEP0190` warning.
+- Windows: `knarr use`/`add` no longer fail with `EPERM` without symlink privilege when the installed package is an npm `file:` junction. Backups now recreate directory links as junctions.
+- `knarr init --role library` writes `knarr:publish`/`knarr:dev` scripts that work without a global install (`npx --yes knarr …`, or plain `knarr` when it is a dependency).
+- `dev`/`push --watch`: a failed rebuild says consumers keep the last pushed build, instead of the misleading "No successful push yet".
+- pnpm/Yarn pnpm-linker: no fallback warning when linking a package that isn't installed yet. A declared-but-missing package warns once (it printed twice) and names the install command.
+- Auto-configuring an empty Vite `defineConfig({})` produces a properly formatted config.
+- Webpack/rspack plugin: no `add()` on a closing watcher.
+
+### Improvements
+
+- Upgrade the file watcher to chokidar 6. It confirms events against the filesystem, fixes false `change` events on Windows and ignored paths on WSL, and stops dropping updates while throttling.
+- Clearer next steps:
+  - "Next" hints use short relative paths and say `npx knarr` when `knarr` isn't on PATH.
+  - `use` on a workspace package suggests `knarr dev --all` from the workspace root.
+  - `knarr publish` says when linked projects still have the previous build.
+  - `use`/`add` point out when the linked package isn't in `package.json`, because `npm install <pkg>` skips `postinstall` and prunes it.
+  - A failed pre-publish build suggests installing the library's dependencies or using `--skip-build`.
+- `dev --all`: log lines name their package, and cascades say which dependents rebuild and why.
+- Quieter output: the Vite plugin's watcher setup details need `knarr({ verbose: true })` or `KNARR_VERBOSE=1`, and the detected build command is logged once. `--dry-run` reports show short paths; `--json` keeps absolute paths.
+- Examples: packages list `types` first in `exports` (they pass `knarr check`), and apps use the new restore hook.
+
+### Maintenance
+
+- Security: every lockfile is on the latest patch releases, using the same 7-day release-age policy, and `pnpm audit`, `npm audit`, and `bun audit` are clean. Examples require `vite ^6.4.5`; the old `^6.0.0` floor allowed versions with six known advisories (GHSA-587h-7wmj-h5pm is high severity). CI uses `actions/setup-node@v7`, and the publish job no longer restores a shared dependency cache, which removes a cache-poisoning risk for releases.
+- Security hardening:
+  - Every GitHub Action is pinned to a commit SHA. Workflows default to `permissions: {}` and drop checkout credentials, and zizmor (pedantic) lints them.
+  - The publish workflow is split: a read-only job builds, tests, and packs; an isolated OIDC job publishes the hash-verified tarball with provenance and blocked network egress.
+  - New checks: dependency review on PRs (any severity, license allowlist), an all-severity audit of every lockfile, a tarball file allowlist, and OpenSSF Scorecard.
+  - pnpm settings: `minimumReleaseAgeStrict`, `trustPolicy: no-downgrade`, no dependency install scripts, `blockExoticSubdeps`, `engineStrict`.
+  - Dependabot also covers the example lockfiles. Added CODEOWNERS, a tighter `SECURITY.md`, and stricter Claude Code permissions.
+- Toolchain: pnpm 12, Vitest 5 (benchmarks ported to the test-context `bench` API), tsup 9, Vite 8.3, and Node 26 in the CI matrix. TypeScript stays on 6.x until the build moves off tsup. `pnpm audit` is clean.
+- Agent setup for Claude Code (`CLAUDE.md`, `.claude/agents`, `.claude/skills`, `.claude/settings.json`) and refreshed Codex agents.
+
 ## 0.1.3
 
 - Centralize package-manager discovery, compatibility, installation layout, and command behavior behind npm, pnpm, Yarn, and Bun adapters.

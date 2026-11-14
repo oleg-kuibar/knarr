@@ -30,7 +30,7 @@ reviews:
   path_filters:
     - "!dist/**"
     - "!coverage/**"
-    - "!bench-results.json"
+    - "!.vitest/**"
     - "!docs/assets/**"
     - "!examples/**/dist/**"
     - "!examples/**/node_modules/**"

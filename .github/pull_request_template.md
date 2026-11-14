@@ -4,16 +4,17 @@
 
 ## Review focus
 
-<!-- Call out risk areas for reviewers and Codex, e.g. store writes, symlink handling, watch mode, config rewriting, JSON output, docs-only. -->
+<!-- Risk areas for reviewers and AI review: store writes, symlink/junction handling, PM layouts, watch mode, config rewriting, JSON output, Windows paths, docs-only, ... -->
 
 ## Verification
 
-<!-- Example: pnpm lint, pnpm test, manual CLI smoke test -->
+<!-- e.g. pnpm lint, pnpm build, pnpm test (N passed / M skipped), pnpm compat:smoke, manual CLI smoke test -->
 
-## Codex review
+## Checklist
 
-- [ ] Requested standard GitHub review with `@codex review` or noted why it is not needed.
-- [ ] For broad/risky changes, ran a separate Codex app/CLI agent review with `knarr_pr_mapper`, `knarr_reviewer`, and `knarr_docs_checker`, or noted why it is not needed.
+- [ ] Tests cover the risky behavior (or this is docs/tooling only).
+- [ ] Public CLI/API changes are documented in `docs/commands.md` / `docs/api.md`, and `CHANGELOG.md` has an "Unreleased" entry.
+- [ ] AI review: `@codex review`, Claude Code `/knarr-review`, or a note on why it isn't needed.
 
 ## Notes
 

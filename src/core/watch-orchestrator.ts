@@ -117,6 +117,7 @@ export class WatchOrchestrator {
           debounce: parseMs(args.debounce) ?? config.debounce,
           cooldown: parseMs(args.cooldown) ?? config.cooldown,
           notify,
+          label: name,
         },
         wrappedOnChange
       );
@@ -143,7 +144,7 @@ export class WatchOrchestrator {
     const deps = this.dependents.get(name);
     if (!deps || deps.size === 0) return;
 
-    verbose(`[cascade] ${name} pushed, triggering dependents: ${[...deps].join(", ")}`);
+    consola.info(`${name} changed, rebuilding dependents: ${[...deps].join(", ")}`);
 
     for (const depName of deps) {
       await this.requestRebuild(depName);
@@ -191,7 +192,7 @@ export class WatchOrchestrator {
 
       if (entry.buildCmd) {
         const { runBuildCommand } = await import("./watcher.js");
-        const success = await runBuildCommand(entry.buildCmd, entry.dir);
+        const success = await runBuildCommand(entry.buildCmd, entry.dir, name);
         if (!success) {
           consola.warn(`[cascade] Build failed for ${name}, skipping dependents`);
           return;

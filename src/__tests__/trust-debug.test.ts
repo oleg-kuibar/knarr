@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { exists } from "../utils/fs.js";
 import { initFlags } from "../utils/logger.js";
 import { resetMutations } from "../utils/dry-run.js";
+import { canCreateSymlinks } from "./helpers/symlinks.js";
 
 const originalArgv = [...process.argv];
 
@@ -66,7 +67,27 @@ describe("doctor --fix", () => {
     expect(await exists(join(testConsumer, ".knarr", "state.json"))).toBe(true);
     expect(await readFile(join(testConsumer, ".gitignore"), "utf-8")).toContain(".knarr/");
     const pkg = JSON.parse(await readFile(join(testConsumer, "package.json"), "utf-8"));
-    expect(pkg.scripts.postinstall).toContain("knarr restore");
+    expect(pkg.scripts.postinstall).toContain(".knarr/restore.cjs");
+    expect(await exists(join(testConsumer, ".knarr", "restore.cjs"))).toBe(true);
+  });
+
+  it("upgrades the legacy postinstall hook when no knarr binary can run it", async () => {
+    const { runDoctorDiagnostics } = await import("../commands/doctor.js");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({
+        name: "test-app",
+        version: "1.0.0",
+        scripts: { postinstall: 'knarr restore --silent || node -e "process.exit(0)"' },
+      })
+    );
+
+    const result = await runDoctorDiagnostics(testConsumer, { fix: true });
+
+    expect(result.results.find((r) => r.name === "Postinstall restore")?.fixed).toBe(true);
+    const pkg = JSON.parse(await readFile(join(testConsumer, "package.json"), "utf-8"));
+    expect(pkg.scripts.postinstall).toContain(".knarr/restore.cjs");
+    expect(await exists(join(testConsumer, ".knarr", "restore.cjs"))).toBe(true);
   });
 
   it("reports planned repairs without writing in dry-run mode", async () => {
@@ -222,7 +243,7 @@ describe("doctor --fix", () => {
     expect(pkg.scripts?.postinstall).toBeUndefined();
   });
 
-  it("fails node_modules checks for wrong pnpm virtual-store package identity", async () => {
+  it.skipIf(!canCreateSymlinks)("fails node_modules checks for wrong pnpm virtual-store package identity", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { addLink } = await import("../core/tracker.js");

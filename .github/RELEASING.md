@@ -27,17 +27,16 @@ Inspect the dry-run output and tarball contents. The CLI name, docs, generated d
 
 ## Publish Knarr
 
-Use GitHub Actions -> Publish.
+Use GitHub Actions -> Publish, from `master` only. The workflow has two jobs:
 
-1. Run with **Dry run** enabled.
-2. Inspect the `npm pack --dry-run` output.
-3. Re-run with **Dry run** disabled after npm Trusted Publishing is configured.
+- **verify release** (read-only): audit, lint, build, test, `scripts/verify-pack.mjs`, then `npm pack` and upload the tarball with its SHA-256.
+- **publish to npm** (`npm` environment, OIDC): no checkout or install. It checks the tarball's SHA-256, refuses an already-published version, and runs `npm publish --provenance` with network egress limited by harden-runner.
 
-Manual fallback, from a clean local checkout:
+1. Run with **Dry run** enabled. The publish job runs `npm publish --dry-run`, which also checks the egress allowlist. If harden-runner blocks a host, review it before adding it to `allowed-endpoints`.
+2. Inspect the packed file list in the verify job log.
+3. Re-run with **Dry run** disabled.
 
-```bash
-npm publish --provenance --access public
-```
+There is no manual fallback: don't publish from a local machine. It would skip provenance and the isolated publish job. If the workflow is broken, fix the workflow.
 
 After publish:
 

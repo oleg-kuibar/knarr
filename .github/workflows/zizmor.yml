@@ -1,0 +1,35 @@
+name: Workflow security
+
+# No path filters: this is a required check, so it must report on every PR.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # read workflow files; online audits query public action metadata
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Static analysis for GitHub Actions: template injection, unpinned actions,
+      # excessive permissions, credential persistence, cache poisoning, and more.
+      # Fails the job on any finding (no SARIF upload, so no write permission needed).
+      - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          persona: pedantic
+          advanced-security: false
+          version: 1.32.0

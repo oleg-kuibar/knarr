@@ -1,0 +1,26 @@
+# pnpm settings (pnpm 11+ ignores the package.json "pnpm" field).
+# No `packages:` list: this repo is a single package, not a workspace.
+# examples/monorepo has its own pnpm-workspace.yaml.
+#
+# Supply-chain policy. Loosen a setting only with a comment explaining why.
+
+# Resolve only versions published at least 7 days ago, and fail instead of
+# falling back to a younger version when nothing older satisfies a range.
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: true
+
+# Fail when a package's trust evidence (provenance / trusted publisher) is
+# weaker than in an earlier version: a common sign of a hijacked release.
+trustPolicy: no-downgrade
+
+# No dependency may run install scripts. esbuild works from its prebuilt
+# platform package without its postinstall step.
+strictDepBuilds: true
+allowBuilds:
+  esbuild: false
+
+# Transitive dependencies must come from the registry (no git/tarball URLs).
+blockExoticSubdeps: true
+
+# Respect "engines" of every installed package.
+engineStrict: true

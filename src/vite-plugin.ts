@@ -17,7 +17,17 @@ function readLinkedPackagesSync(stateFile: string): string[] {
   }
 }
 
-export default function knarrPlugin(): Plugin {
+export interface KnarrVitePluginOptions {
+  /** Log watcher setup details (default: false, or true when KNARR_VERBOSE=1). */
+  verbose?: boolean;
+}
+
+export default function knarrPlugin(options: KnarrVitePluginOptions = {}): Plugin {
+  const verbose = options.verbose ?? process.env.KNARR_VERBOSE === "1";
+  /** Setup and bookkeeping details: only with verbose. User-facing events use console.log. */
+  const debug = (msg: string) => {
+    if (verbose) console.log(msg);
+  };
   let knarrStateFile: string;
   let nodeModulesDir: string;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -67,7 +77,7 @@ export default function knarrPlugin(): Plugin {
     configResolved(config) {
       nodeModulesDir = join(config.root, "node_modules");
       knarrStateFile = normalize(join(config.root, ".knarr", "state.json"));
-      console.log(`[knarr] Watching state file: ${knarrStateFile}`);
+      debug(`[knarr] Watching state file: ${knarrStateFile}`);
     },
 
     configureServer(server) {
@@ -116,7 +126,7 @@ export default function knarrPlugin(): Plugin {
           for (const pkg of watchedPackages) {
             const pkgPath = join(nodeModulesDir, pkg);
             server.watcher.add(pkgPath);
-          console.log(`[knarr] Added watcher for package: ${pkgPath}`);
+          debug(`[knarr] Added watcher for package: ${pkgPath}`);
           }
         }
       }
@@ -125,7 +135,7 @@ export default function knarrPlugin(): Plugin {
       async function restartServer(source: string) {
         if (isRestarting) {
           pendingRestart = true;
-          console.log(`[knarr] Restart already in progress, queued: ${source}`);
+          debug(`[knarr] Restart already in progress, queued: ${source}`);
           return;
         }
         isRestarting = true;
@@ -188,7 +198,7 @@ export default function knarrPlugin(): Plugin {
       }
 
       server.watcher.add(knarrStateFile);
-      console.log(`[knarr] Added watcher for: ${knarrStateFile}`);
+      debug(`[knarr] Added watcher for: ${knarrStateFile}`);
 
       // Initial sync
       syncPackageWatchers();

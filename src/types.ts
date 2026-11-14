@@ -66,6 +66,8 @@ export interface WatchOptions {
   cooldown?: number;
   /** Ring terminal bell on push success/failure */
   notify?: boolean;
+  /** Prefix for log lines, e.g. the package name when several watchers run (dev --all) */
+  label?: string;
   /** Enable awaitWriteFinish for large/slow writes (auto-enabled when no buildCmd) */
   awaitWriteFinish?:
     | boolean

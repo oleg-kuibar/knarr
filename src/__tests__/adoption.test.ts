@@ -73,7 +73,7 @@ describe("build-aware use/add flow", () => {
   it("runs an explicit build command before publishing", async () => {
     await writePackage(testLib);
     const buildScript = await writeBuildScript("explicit");
-    const cmd = `${process.execPath} ${buildScript}`;
+    const cmd = `"${process.execPath}" "${buildScript}"`;
 
     const result = await runAddFromConsumer({
       from: testLib,
@@ -119,6 +119,21 @@ describe("library init adoption defaults", () => {
 
     const pkg = JSON.parse(await readFile(join(testLib, "package.json"), "utf-8"));
     expect(pkg.knarr.buildCmd).toBe("npm run build");
+    // knarr isn't a dependency here, so the committed scripts must not assume it's on PATH.
+    expect(pkg.scripts["knarr:dev"]).toBe("npx --yes knarr dev");
+    expect(pkg.scripts["knarr:publish"]).toBe("npx --yes knarr publish");
+  });
+
+  it("uses plain knarr in scripts when knarr is a devDependency", async () => {
+    await writePackage(testLib, {
+      scripts: { build: "tsup" },
+      devDependencies: { knarr: "^0.2.0" },
+    });
+    await writeFile(join(testLib, "package-lock.json"), "{}");
+
+    await runInitIn(testLib, { yes: true, role: "library" });
+
+    const pkg = JSON.parse(await readFile(join(testLib, "package.json"), "utf-8"));
     expect(pkg.scripts["knarr:dev"]).toBe("knarr dev");
   });
 
@@ -242,6 +257,7 @@ async function writePackage(
   options: {
     scripts?: Record<string, string>;
     knarr?: Record<string, unknown>;
+    devDependencies?: Record<string, string>;
     prebuilt?: string;
   } = {}
 ): Promise<void> {
@@ -255,6 +271,7 @@ async function writePackage(
         files: ["dist"],
         ...(options.scripts ? { scripts: options.scripts } : {}),
         ...(options.knarr ? { knarr: options.knarr } : {}),
+        ...(options.devDependencies ? { devDependencies: options.devDependencies } : {}),
       },
       null,
       2

@@ -89,7 +89,10 @@ export async function backupExisting(
   packageName: string,
   pm: PackageManager
 ): Promise<boolean> {
-  const installedDir = await resolveInjectionTarget(consumerPath, packageName, pm);
+  const installedDir = await resolveInjectionTarget(consumerPath, packageName, pm, undefined, {
+    // inject() resolves the same target right after and owns the fallback warning.
+    warnOnFallback: false,
+  });
   if (!(await exists(installedDir))) return false;
 
   const backupDir = getConsumerBackupPath(consumerPath, packageName);
@@ -275,7 +278,10 @@ export async function resolveInjectionTarget(
           `Refusing to inject ${packageName}: node_modules entry resolves outside a configured ${storeKindLabel(storeKind)} virtual store (${realPath})`
         );
       }
-      await validateResolvedPackageIdentity(realPath, packageName, version, storeKind);
+      // The consumer's own node_modules/<pkg> link: check the name only. A different
+      // version here is expected after the library bumps its version mid-development.
+      // Scanned virtual-store candidates (no direct link) still require the version.
+      await validateResolvedPackageIdentity(realPath, packageName, undefined, storeKind);
       verbose(`[inject] ${storeKindLabel(storeKind)}: resolved symlink → ${realPath}`);
       return realPath;
     }
@@ -381,12 +387,20 @@ export async function resolveInjectionTarget(
     }
   }
 
-  // Fall back to direct path
+  // Fall back to direct path. That's expected for a package the consumer doesn't
+  // depend on yet (linking a brand-new dependency), so only warn when the
+  // package is declared but missing: then an install was skipped or broken.
   if (options.warnOnFallback !== false) {
-    consola.warn(
-      `${storeKindLabel(storeKind)}: Could not find ${packageName} in a configured virtual store, using direct node_modules path. ` +
-      `If this causes issues, run your package manager's install command to rebuild the virtual store, then 'knarr add' again.`
-    );
+    if (await isDeclaredConsumerDependency(consumerPath, packageName)) {
+      const pmName = storeKind === "pnpm" ? "pnpm" : "yarn";
+      consola.warn(
+        `${packageName} is in package.json but not installed in the ${storeKindLabel(storeKind)} virtual store, ` +
+        `so Knarr is linking it at node_modules/${packageName} directly. ` +
+        `Run \`${pmName} install\` and then \`knarr add ${packageName}\` to update the installed copy instead.`
+      );
+    } else {
+      verbose(`[inject] ${storeKindLabel(storeKind)}: ${packageName} not installed yet, linking at node_modules/${packageName}`);
+    }
   }
   return directPath;
 }
@@ -421,7 +435,8 @@ async function resolveBunTarget(
     );
   }
 
-  await validateResolvedPackageIdentity(realPath, packageName, version, "Bun isolated");
+  // Direct node_modules/<pkg> link: name only (see the pnpm case in resolveInjectionTarget).
+  await validateResolvedPackageIdentity(realPath, packageName, undefined, "Bun isolated");
   verbose(`[inject] Bun isolated: resolved symlink → ${realPath}`);
   return realPath;
 }
@@ -747,7 +762,8 @@ function isYarnPnpmStorePackagePathFromRoot(
   return parts.length === 2 && parts[1] === "package";
 }
 
-async function isDeclaredConsumerDependency(
+/** Whether the consumer's package.json declares packageName in any dependency field. */
+export async function isDeclaredConsumerDependency(
   consumerPath: string,
   packageName: string
 ): Promise<boolean> {

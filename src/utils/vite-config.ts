@@ -350,8 +350,12 @@ export async function addKnarrVitePlugin(
     if (configObjMatch) {
       const insertPos = configObjMatch.index + configObjMatch[0].length;
       const newSection = `\n${indent}plugins: [knarr()],`;
-      content =
-        content.slice(0, insertPos) + newSection + content.slice(insertPos);
+      // Empty object (`defineConfig({})`): put the closing brace on its own line.
+      const rest = content.slice(insertPos);
+      const emptyObject = /^\s*\}/.exec(rest);
+      content = emptyObject
+        ? content.slice(0, insertPos) + newSection + "\n" + rest.slice(emptyObject[0].length - 1)
+        : content.slice(0, insertPos) + newSection + rest;
     } else {
       return {
         modified: false,

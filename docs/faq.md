@@ -47,7 +47,7 @@ See [Migrating from yalc](migrating-from-yalc.md) for a step-by-step migration g
 
 Knarr never rewrites dependency version specifiers to local `file:` or `link:` paths. Some setup and repair helpers can edit `package.json`:
 
-- `knarr init` may add a `postinstall` script (`knarr restore --silent || node -e "process.exit(0)"`)
+- `knarr init`, `use`, and `add` may add a `postinstall` restore hook (see [What happens when I run npm install](#what-happens-when-i-run-npm-install--pnpm-install) below)
 - Vite auto-configuration may install `knarr` as a dev dependency so `knarr/vite` resolves from the consumer project
 - Missing dependency prompts may install dependencies if you accept them
 
@@ -173,4 +173,17 @@ Running `npm install` or `pnpm install` replaces files in `node_modules/`, which
 knarr restore
 ```
 
-If you ran `knarr init`, this can happen automatically via the `postinstall` hook. The hook runs `knarr restore --silent || node -e "process.exit(0)"`, which re-injects all linked packages when `knarr` is available on the install script `PATH` (for example, installed globally or as a devDependency). The Node fallback ensures the install does not fail if Knarr is not available.
+Usually you don't have to. `knarr init`, `use`, and `add` add a `postinstall` hook that re-applies your links after every plain install (`npm install`, `pnpm install`, `yarn`, `bun install`):
+
+```json
+"postinstall": "node -e \"try{require('./.knarr/restore.cjs')}catch(e){if(e.code!=='MODULE_NOT_FOUND')throw e}\""
+```
+
+- The hook runs `.knarr/restore.cjs`, a local file (`.knarr/` is gitignored) that Knarr rewrites each time you link. It records the Knarr CLI that created the links, so it works after `npx knarr use` without a global install.
+- For teammates and CI without `.knarr/`, the hook does nothing and never fails the install.
+- If it can't find Knarr, it prints `[knarr] Linked packages were NOT restored` instead of failing silently.
+
+Two cases still need a manual `knarr restore`:
+
+- `npm install <pkg>` and `npm uninstall <pkg>` don't run the root `postinstall`, and they prune packages that aren't in `package.json`. A linked package that *is* declared in `package.json` survives them.
+- Projects set up by Knarr 0.1.x have the old hook (`knarr restore --silent || ...`), which only works with `knarr` on PATH. Run `knarr doctor --fix` or re-run `knarr use` to upgrade it.

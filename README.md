@@ -11,7 +11,7 @@
   <a href="https://github.com/oleg-kuibar/knarr/actions/workflows/ci.yml"><img src="https://github.com/oleg-kuibar/knarr/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/oleg-kuibar/knarr/actions/workflows/compat.yml"><img src="https://github.com/oleg-kuibar/knarr/actions/workflows/compat.yml/badge.svg" alt="Compatibility" /></a>
   <a href="https://github.com/oleg-kuibar/knarr/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license" /></a>
-  <img src="https://img.shields.io/badge/node-%3E%3D22.12-brightgreen" alt="node version" />
+  <img src="https://img.shields.io/badge/node-%3E%3D22.22-brightgreen" alt="node version" />
 </p>
 
 # Knarr

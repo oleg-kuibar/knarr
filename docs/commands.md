@@ -12,7 +12,7 @@ What it does:
 
 1. **Detects package manager** from `package.json#packageManager` or lockfiles (pnpm, bun, yarn, npm) and confirms with you
 2. **Adds `.knarr/` to `.gitignore`**
-3. **Wires up `"postinstall": "knarr restore --silent || node -e \"process.exit(0)\""`** in `package.json` for safe auto-restore when `knarr` is available on the install script `PATH`
+3. **Wires up a `postinstall` restore hook** in `package.json` that re-applies links after installs. It runs the local `.knarr/restore.cjs`, works without a global `knarr`, and is a no-op for teammates without Knarr ([details](faq.md#what-happens-when-i-run-npm-install--pnpm-install))
 4. **Creates `.knarr/` state directory** and stores the confirmed package manager
 5. **Detects bundler** — if Vite, auto-injects the Knarr Vite plugin into your config. Other bundlers (Webpack, Turbopack, etc.) need no config.
 
@@ -217,6 +217,8 @@ Flags:
 | `--no-cascade` | Disable cascading rebuilds in `--all` mode (default: cascade enabled) |
 
 **Cascading rebuilds:** When using `--all` in a workspace, cascading rebuilds are enabled by default. When package A changes and is pushed, any workspace packages that depend on A are automatically rebuilt and pushed too. A state machine (idle/building/queued) per package prevents infinite loops. Use `--no-cascade` to disable this and watch packages independently.
+
+In `--all` mode, every watcher and build line is prefixed with its package name (`@scope/a: Running: pnpm build`), and a cascade prints `@scope/a changed, rebuilding dependents: @scope/b`. After `knarr use` links a package from a workspace, its "Next" hint points at `knarr dev --all` in the workspace root.
 
 On startup, `knarr dev`:
 
@@ -526,6 +528,16 @@ knarr push --json --verbose 2>debug.log   # JSON to stdout, debug logs to stderr
 ```
 
 When `--json` is active, structured output goes to stdout and all human-readable messages from consola are suppressed. Verbose logs (when combined with `--json`) still go to stderr, so you can capture them separately.
+
+### Scripts, CI, and agents (no TTY)
+
+Knarr never waits on a prompt when stdin is not a terminal:
+
+- A question with a safe default (for example, "Run detected build command?") takes that default and prints a note on stderr.
+- A confirmation for a destructive step (`remove`, `clean`, `reset`, `rollback`, `migrate`) exits with code 1 and asks you to re-run with `--yes`.
+- A choice (`knarr init` role) exits with code 1 and names the flag to pass (`--role consumer` or `--role library`).
+
+Pass `--yes` (and `--role` for `init`) to make scripted runs explicit.
 
 ---
 

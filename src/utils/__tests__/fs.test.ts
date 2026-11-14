@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, writeFile, readFile, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, mkdir, rm, symlink, lstat, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initFlags } from "../logger.js";
@@ -11,6 +11,7 @@ import {
   collectFiles,
   moveDir,
   ensurePrivateDir,
+  copyDir,
 } from "../fs.js";
 
 const originalArgv = [...process.argv];
@@ -231,6 +232,46 @@ describe("moveDir", () => {
     const dest = join(tempDir, "dest-dir");
 
     await expect(moveDir(src, dest)).rejects.toThrow();
+  });
+});
+
+describe("copyDir", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "KNARR-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("copies a directory tree", async () => {
+    const src = join(tempDir, "src");
+    await mkdir(join(src, "nested"), { recursive: true });
+    await writeFile(join(src, "nested", "a.txt"), "hello");
+
+    await copyDir(src, join(tempDir, "dest"));
+
+    expect(await readFile(join(tempDir, "dest", "nested", "a.txt"), "utf-8")).toBe("hello");
+  });
+
+  // npm links file: deps with junctions on Windows. Junctions need no
+  // privilege, so this runs on every Windows machine (and as a plain
+  // directory symlink elsewhere).
+  it("preserves a top-level directory link (npm file: dep layout)", async () => {
+    const target = join(tempDir, "lib");
+    await mkdir(target);
+    await writeFile(join(target, "index.js"), "module.exports = 1;");
+    const link = join(tempDir, "node_modules-lib");
+    await symlink(target, link, process.platform === "win32" ? "junction" : "dir");
+
+    const dest = join(tempDir, "backups", "lib");
+    await copyDir(link, dest);
+
+    expect((await lstat(dest)).isSymbolicLink()).toBe(true);
+    expect(await realpath(dest)).toBe(await realpath(target));
+    expect(await readFile(join(dest, "index.js"), "utf-8")).toBe("module.exports = 1;");
   });
 });
 

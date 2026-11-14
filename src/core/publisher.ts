@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { delimiter, join, relative, dirname, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { spawnShell } from "../utils/shell.js";
 import { platform } from "node:os";
 import { consola } from "../utils/console.js";
 import pLimit from "../utils/concurrency.js";
@@ -379,12 +379,9 @@ async function runLifecycleHook(
   const command = await resolveLifecycleCommand(packageDir, hookName, script);
   verbose(`[lifecycle] Running ${hookName}: ${command}`);
   return new Promise((resolve, reject) => {
-    const isWin = platform() === "win32";
-    const shell = isWin ? "cmd" : "sh";
-    const shellFlag = isWin ? "/c" : "-c";
     const env = buildLifecycleEnv(packageDir, pkg, hookName, script);
 
-    const child = spawn(shell, [shellFlag, command], {
+    const child = spawnShell(command, {
       cwd: packageDir,
       env,
       stdio: "inherit",

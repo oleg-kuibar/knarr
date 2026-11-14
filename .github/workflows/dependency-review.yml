@@ -1,0 +1,30 @@
+name: Dependency review
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: dependency review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # read the dependency graph diff for this PR
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Block any newly introduced vulnerability, whatever its severity or scope.
+          fail-on-severity: low
+          fail-on-scopes: runtime, development, unknown
+          # Anything else needs an explicit, reviewed change to this list.
+          # MPL-2.0 (lightningcss, via Vite) and CC-BY-4.0 (caniuse-lite data) are dev-only today.
+          allow-licenses: MIT, ISC, Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, BlueOak-1.0.0, CC0-1.0, Unlicense, MPL-2.0, CC-BY-4.0
+          show-openssf-scorecard: true
+          warn-only: false

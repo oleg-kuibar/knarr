@@ -1,9 +1,10 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
 import { platform, release } from "node:os";
 import { join } from "node:path";
 import { consola } from "../utils/console.js";
 import { ringBell } from "../utils/bell.js";
+import { spawnShell } from "../utils/shell.js";
 import type { WatchOptions } from "../types.js";
 
 /** Module-level references to active child processes for signal cleanup */
@@ -113,6 +114,7 @@ export async function startWatcher(
     p.startsWith("/") || p.includes(":") ? p : `${watchDir}/${p}`
   );
 
+  const prefix = options.label ? `${options.label}: ` : "";
   const debounceMs = options.debounce ?? 500;
   const cooldownMs = options.cooldown ?? 500;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -143,15 +145,16 @@ export async function startWatcher(
     cycle++;
 
     try {
-      consola.info(`Change cycle #${cycle} started`);
+      consola.info(`${prefix}Change cycle #${cycle} started`);
       if (options.buildCmd) {
-        const success = await runBuildCommand(options.buildCmd, watchDir);
+        const success = await runBuildCommand(options.buildCmd, watchDir, options.label);
         if (!success) {
+          // The initial push happens before the watcher starts, so only
+          // pushes made by this watcher are known here.
           consola.warn(
-            "Build failed (see output above), skipping push" +
-              (lastSuccessfulPush
-                ? `. Last successful push: ${lastSuccessfulPush.toLocaleTimeString()}`
-                : ". No successful push yet.")
+            prefix + "Build failed (see output above), skipping push. Consumers keep the last pushed build" +
+              (lastSuccessfulPush ? ` (${lastSuccessfulPush.toLocaleTimeString()})` : "") +
+              ". Fix the error and save to retry."
           );
           if (options.notify) {
             const { ringBell } = await import("../utils/bell.js");
@@ -235,8 +238,8 @@ export async function startWatcher(
       /[/\\]\.knarr[/\\]/,
     ],
     awaitWriteFinish: awfOption,
-    usePolling,
-    ...(usePolling && { interval: 1000 }),
+    backend: usePolling ? "polling" : "auto",
+    ...(usePolling && { pollingInterval: 1000 }),
   });
 
   watcher.on("change", onFileEvent);
@@ -296,7 +299,7 @@ export async function startWatcher(
 
   activeWatcher = watcherHandle;
 
-  consola.info(`Watching for changes in: ${patterns.join(", ")}`);
+  consola.info(`${prefix}Watching for changes in: ${patterns.join(", ")}`);
 
   return watcherHandle;
 }
@@ -304,14 +307,10 @@ export async function startWatcher(
 /**
  * Run a build command and return true if it succeeds.
  */
-export function runBuildCommand(cmd: string, cwd: string): Promise<boolean> {
+export function runBuildCommand(cmd: string, cwd: string, label?: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const isWin = platform() === "win32";
-    const shell = isWin ? "cmd" : "sh";
-    const shellFlag = isWin ? "/c" : "-c";
-
-    consola.start(`Running: ${cmd}`);
-    const child = spawn(shell, [shellFlag, cmd], {
+    consola.start(`${label ? `${label}: ` : ""}Running: ${cmd}`);
+    const child = spawnShell(cmd, {
       cwd,
       stdio: "inherit",
     });

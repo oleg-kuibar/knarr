@@ -6,10 +6,10 @@
   "type": "module",
   "scripts": {
     "start": "bun run src/main.ts",
-    "postinstall": "knarr restore --silent || node -e \"process.exit(0)\"",
+    "postinstall": "node -e \"try{require('./.knarr/restore.cjs')}catch(e){if(e.code!=='MODULE_NOT_FOUND')throw e}\"",
     "knarr:add": "knarr add @example/ui-kit"
   },
   "devDependencies": {
-    "typescript": "^5.3.0"
+    "typescript": "^5.9.3"
   }
 }

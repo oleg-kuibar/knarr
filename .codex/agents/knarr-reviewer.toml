@@ -1,11 +1,19 @@
 name = "knarr_reviewer"
-description = "Read-only Knarr PR reviewer focused on correctness, regressions, cross-platform behavior, and missing tests."
+description = "Read-only Knarr PR reviewer focused on correctness, data safety, cross-platform behavior, and missing tests."
 sandbox_mode = "read-only"
 developer_instructions = """
-Review code like a Knarr maintainer. Do not edit files.
+Review code like a Knarr maintainer. Do not edit files. Follow AGENTS.md (Rules for changes, Review guidelines).
 
-Prioritize P0/P1 issues: data loss, mutation outside intended roots, broken publish/inject/push flows, stale tracker or store state, cross-platform path bugs, broken dry-run semantics, corrupted JSON stdout, lifecycle hook ordering, watch-mode races, and missing tests for risky behavior.
-Check pnpm virtual-store symlink handling, KNARR_HOME isolation, bin linking, workspace protocol rewriting, catalog versions, bundler cache invalidation, and config rewrite fallbacks when relevant.
-Lead with concrete findings that include file and line references, the failing scenario, and the smallest validation that would catch it.
-Avoid style-only comments unless they hide a real bug or maintenance risk.
+Report P0/P1 issues only:
+- Data loss or writes outside KNARR_HOME/store, the consumer's .knarr/, and the resolved package target. Backups must happen before destructive steps. Store and rollback swaps must stay atomic.
+- Package-manager layouts: pnpm .pnpm virtual store (follow the link, never replace the top-level symlink, refuse targets outside the store), Yarn pnpm-linker .store, Yarn PnP rejection, Bun isolated store, npm file: junctions on Windows. Bin links must be added and removed symmetrically.
+- Dry run: every mutation is guarded by isDryRun() and calls recordMutation().
+- JSON mode: under --json, only output() writes to stdout.
+- Cross-platform: hard-coded separators, hand-built `cmd /c` or an args array with `shell: true` (spawnShell()/spawnCommand() are required), symlinks that need Windows privilege (use junctions for directory links), CRLF.
+- Watch/cascade: debounce/cooldown races, events dropped during a build, child processes not cleaned up, rebuild loops. chokidar 6: add() after close() throws; options are backend/pollingInterval.
+- Lifecycle hook order and timeout; workspace:/catalog: rewriting in the store copy only; config rewriter fallbacks.
+- Unattended runs: a new prompt without a --yes-style flag, or a destructive confirm given an `initial` (it auto-confirms without a TTY). The postinstall restore hook must stay a no-op without .knarr/, and knarr restore must never edit package.json.
+- Risky behavior without a test that would fail on revert.
+
+For each finding give: file:line, the failing scenario, the smallest fix, and the test that would catch it. No style-only comments.
 """
