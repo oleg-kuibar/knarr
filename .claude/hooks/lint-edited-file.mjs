@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Claude Code PostToolUse hook: lint each file Claude edits against the
- * project's secure-coding ESLint rules, and hand violations back to Claude
+ * project's secure-coding oxlint rules (.oxlintrc.json), and hand violations back to Claude
  * (exit code 2) so they get fixed in the same turn instead of in CI.
  *
  * Input: the hook payload as JSON on stdin ({ tool_input: { file_path } }).
@@ -27,11 +27,11 @@ if (typeof filePath !== "string") process.exit(0);
 const rel = relative(root, resolve(filePath)).replaceAll("\\", "/");
 if (rel.startsWith("..") || !LINTED.test(rel) || !existsSync(join(root, rel))) process.exit(0);
 
-const eslintBin = join(root, "node_modules", "eslint", "bin", "eslint.js");
-if (!existsSync(eslintBin)) process.exit(0); // dependencies not installed yet
+const oxlintBin = join(root, "node_modules", "oxlint", "bin", "oxlint");
+if (!existsSync(oxlintBin)) process.exit(0); // dependencies not installed yet
 
-// Run ESLint's JS entry with this Node binary: no shell, no PATH lookup.
-const result = spawnSync(process.execPath, [eslintBin, "--no-warn-ignored", "--max-warnings=0", rel], {
+// Run oxlint's JS launcher with this Node binary: no shell, no PATH lookup.
+const result = spawnSync(process.execPath, [oxlintBin, rel], {
   cwd: root,
   encoding: "utf8",
   timeout: 55_000,
@@ -40,7 +40,7 @@ const result = spawnSync(process.execPath, [eslintBin, "--no-warn-ignored", "--m
 if (result.status === 0) process.exit(0);
 
 process.stderr.write(
-  `ESLint (secure-coding rules) failed for ${rel}. Fix these before continuing; ` +
+  `oxlint (secure-coding rules) failed for ${rel}. Fix these before continuing; ` +
     `see "Secure coding" in AGENTS.md.\n\n${result.stdout || ""}${result.stderr || ""}`
 );
 process.exit(2);

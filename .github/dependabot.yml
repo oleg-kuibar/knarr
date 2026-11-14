@@ -13,15 +13,10 @@ updates:
         dependency-type: "development"
       production-dependencies:
         dependency-type: "production"
-    ignore:
-      # TypeScript 7 (native) ships no JS compiler API, which tsup needs for
-      # .d.ts generation. Unblock by migrating the build to tsdown.
-      - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
 
   # Example lockfiles: security and version updates, so fixtures never lag.
-  # The library fixtures build .d.ts with tsup, so they share the root's
-  # TypeScript 6 hold. The apps only type-check and can take TypeScript majors.
+  # The library fixtures build .d.ts with tsup, which needs TypeScript's JS
+  # compiler API (TypeScript 6). The apps only type-check and can take TypeScript majors.
   - package-ecosystem: "npm"
     directories:
       - "/examples/packages/api-client"

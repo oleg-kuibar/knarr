@@ -27,14 +27,14 @@ knarr --help
 
 | Command | What it does |
 |---|---|
-| `pnpm build` | Build with tsup |
+| `pnpm build` | Build with tsdown |
 | `pnpm dev` | Build in watch mode |
 | `pnpm test` | Run tests |
 | `pnpm test:watch` | Run tests in watch mode |
 | `pnpm bench` | Run benchmarks |
 | `pnpm compat:smoke` | Install the packed CLI into real npm, pnpm, Yarn, and Bun apps plus Vite, Webpack, rspack, and Next builds (run `pnpm build` first) |
-| `pnpm lint` | Strict type-check (source and tests), then ESLint secure-coding rules |
-| `pnpm lint:fix` | Auto-fix ESLint issues |
+| `pnpm lint` | Strict type-check (source and tests), then oxlint secure-coding rules |
+| `pnpm lint:fix` | Auto-fix oxlint issues |
 
 ## Requirements
 
@@ -139,7 +139,7 @@ Publishing uses npm Trusted Publishing (OIDC) - no secrets needed. The `knarr` p
 
 ## Code style
 
-- TypeScript strict mode plus `noUncheckedIndexedAccess`, `noUnusedLocals`/`Parameters`, `noImplicitReturns`/`Override`. Tests are type-checked too (`tsconfig.test.json`).
+- TypeScript strict mode plus `noUncheckedIndexedAccess`, `noUnusedLocals`/`Parameters`, `noImplicitReturns`/`Override`. Tests are type-checked too, and the public API uses `isolatedDeclarations` (`tsconfig.dts.json`).
 - Secure-coding rules (untrusted JSON, processes, async safety, and more) are in [AGENTS.md](AGENTS.md#secure-coding) and enforced by `pnpm lint`.
 - ESM (`type: "module"`)
 - No default exports (except CLI commands for citty)

@@ -1,8 +1,0 @@
-{
-  // Type-checks everything under src/, tests included. tsconfig.json (used by the
-  // build for .d.ts output) excludes *.test.ts; "pnpm typecheck" uses this file.
-  "extends": "./tsconfig.json",
-  "compilerOptions": { "noEmit": true },
-  "include": ["src"],
-  "exclude": ["node_modules", "dist"]
-}

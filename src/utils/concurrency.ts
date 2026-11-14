@@ -29,8 +29,7 @@ export default function pLimit(concurrency: number) {
       const run = () => {
         fn().then(
           (val) => { active--; resolve(val); next(); },
-          // A generic limiter must pass rejections through unchanged.
-          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+          // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- a generic limiter must pass rejections through unchanged
           (err) => { active--; reject(err); next(); },
         );
       };

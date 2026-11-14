@@ -14,7 +14,7 @@ const PACKAGE_NAME_RE =
 const SEMVER_RE =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 // Matches control characters so names containing them can be rejected.
-// eslint-disable-next-line no-control-regex
+// oxlint-disable-next-line no-control-regex -- matching control characters is the point
 const CONTROL_CHARS_RE = /[\x00-\x1F\x7F]/;
 
 /**
