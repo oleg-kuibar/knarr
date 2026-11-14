@@ -21,6 +21,13 @@
 
 ### Improvements
 
+- Secure-coding enforcement: `pnpm lint` now runs strict TypeScript over source and tests plus ESLint security rules. The rules ban `JSON.parse` outside `src/utils/json.ts`, `child_process` outside `src/utils/shell.ts`, `eval`, unsafe `any`, floating promises, and non-null assertions. Fixes found along the way:
+  - Ctrl+C no longer hangs `dev`/`push --watch` when a watcher fails to close.
+  - A failed Vite dev-server restart is logged instead of becoming an unhandled rejection that kills the dev server.
+  - `pnpm-workspace.yaml` catalogs named `__proto__`, `constructor`, or `toString` no longer resolve to injected or built-in values.
+  - A malformed scoped package name (`"@scope"`) no longer creates a bin called `undefined`.
+  - Manifests whose `name` or `version` aren't strings are rejected before they reach store paths.
+
 - Upgrade the file watcher to chokidar 6. It confirms events against the filesystem, fixes false `change` events on Windows and ignored paths on WSL, and stops dropping updates while throttling.
 - Clearer next steps:
   - "Next" hints use short relative paths and say `npx knarr` when `knarr` isn't on PATH.
@@ -42,7 +49,7 @@
   - pnpm settings: `minimumReleaseAgeStrict`, `trustPolicy: no-downgrade`, no dependency install scripts, `blockExoticSubdeps`, `engineStrict`.
   - Dependabot also covers the example lockfiles. Added CODEOWNERS, a tighter `SECURITY.md`, and stricter Claude Code permissions.
 - Toolchain: pnpm 12, Vitest 5 (benchmarks ported to the test-context `bench` API), tsup 9, Vite 8.3, and Node 26 in the CI matrix. TypeScript stays on 6.x until the build moves off tsup. `pnpm audit` is clean.
-- Agent setup for Claude Code (`CLAUDE.md`, `.claude/agents`, `.claude/skills`, `.claude/settings.json`) and refreshed Codex agents.
+- Agent setup for Claude Code (`CLAUDE.md` imports `AGENTS.md`, the single source of guidance; `.claude/agents`, `.claude/skills`, `.claude/settings.json`) and refreshed Codex agents.
 
 ## 0.1.3
 

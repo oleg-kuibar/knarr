@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { consola } from "./console.js";
 import pc from "picocolors";
 import { exists, ensureDir, atomicWriteFile } from "./fs.js";
+import { detectJsonIndent, objectField, parseJsonObject } from "./json.js";
 import { getConsumerStatePath, getConsumerKnarrDir } from "./paths.js";
 import { readConsumerState, writeConsumerState } from "../core/tracker.js";
 import type { PackageManager } from "../types.js";
@@ -126,16 +127,18 @@ export async function ensureGitignore(
  */
 export async function addPostinstall(pkgPath: string): Promise<boolean> {
   const content = await readFile(pkgPath, "utf-8");
-  const pkg = JSON.parse(content);
-  const indent = content.match(/^(\s+)"/m)?.[1] || "  ";
+  const pkg = parseJsonObject(content, pkgPath);
+  const indent = detectJsonIndent(content);
+  const scripts = objectField(pkg, "scripts") ?? {};
+  const existing = scripts["postinstall"];
 
-  if (pkg.scripts?.postinstall) {
-    const existing: string = pkg.scripts.postinstall;
+  if (typeof existing === "string" && existing) {
     if (existing.includes(LEGACY_POSTINSTALL_RESTORE_COMMAND)) {
-      pkg.scripts.postinstall = existing.replace(
+      scripts["postinstall"] = existing.replace(
         LEGACY_POSTINSTALL_RESTORE_COMMAND,
         POSTINSTALL_RESTORE_COMMAND
       );
+      pkg["scripts"] = scripts;
       await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
       return true;
     }
@@ -146,8 +149,8 @@ export async function addPostinstall(pkgPath: string): Promise<boolean> {
     return false;
   }
 
-  if (!pkg.scripts) pkg.scripts = {};
-  pkg.scripts.postinstall = POSTINSTALL_RESTORE_COMMAND;
+  scripts["postinstall"] = POSTINSTALL_RESTORE_COMMAND;
+  pkg["scripts"] = scripts;
 
   await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
   return true;
@@ -176,18 +179,19 @@ export async function removePostinstall(pkgPath: string): Promise<boolean> {
   } catch {
     return false;
   }
-  const pkg = JSON.parse(content);
-  if (!pkg.scripts?.postinstall || !isStandaloneKnarrRestoreCommand(pkg.scripts.postinstall)) {
+  const pkg = parseJsonObject(content, pkgPath);
+  const scripts = objectField(pkg, "scripts");
+  const postinstall = scripts?.["postinstall"];
+  if (!scripts || typeof postinstall !== "string" || !isStandaloneKnarrRestoreCommand(postinstall)) {
     return false;
   }
 
-  delete pkg.scripts.postinstall;
+  delete scripts["postinstall"];
   // Clean up empty scripts object
-  if (Object.keys(pkg.scripts).length === 0) {
-    delete pkg.scripts;
+  if (Object.keys(scripts).length === 0) {
+    delete pkg["scripts"];
   }
-  const indent = content.match(/^(\s+)"/m)?.[1] || "  ";
-  await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
+  await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, detectJsonIndent(content)) + "\n");
   return true;
 }
 

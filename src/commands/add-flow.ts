@@ -26,6 +26,7 @@ import {
   validatePackageVersion,
 } from "../utils/validators.js";
 import type { LinkEntry } from "../types.js";
+import { parseJson } from "../utils/json.js";
 
 interface AddPackageOptions {
   packageArg: string;
@@ -210,7 +211,7 @@ export async function readPackageNameFromSource(sourcePath: string): Promise<str
 
   let pkg: unknown;
   try {
-    pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
+    pkg = parseJson(await readFile(pkgPath, "utf-8"));
   } catch (err) {
     errorWithSuggestion(
       `Could not read package.json at ${pkgPath}: ${err instanceof Error ? err.message : String(err)}`
@@ -270,7 +271,7 @@ async function maybeBuildSource(
   }
 
   let buildCmd = options.build;
-  let explicit = !!buildCmd;
+  const explicit = !!buildCmd;
   if (!buildCmd) {
     const sourcePm = (
       await inspectProjectPackageManager(sourcePath)

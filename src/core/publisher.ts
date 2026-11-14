@@ -5,18 +5,19 @@ import { platform } from "node:os";
 import { consola } from "../utils/console.js";
 import pLimit from "../utils/concurrency.js";
 import { availableParallelism } from "node:os";
-import type { PackageJson, KnarrMeta, StoreEntry } from "../types.js";
-import { getStorePackagePath, getStoreEntryPath } from "../utils/paths.js";
+import type { PackageJson, KnarrMeta } from "../types.js";
+import { getStoreEntryPath } from "../utils/paths.js";
 import { resolvePackFiles } from "../utils/pack-list.js";
 import { computeContentHash } from "../utils/hash.js";
 import { copyWithCoW, ensureDir, ensurePrivateDir, removeDir, moveDir, exists, atomicWriteFile } from "../utils/fs.js";
-import { readMeta, writeMeta } from "./store.js";
+import { readMeta } from "./store.js";
 import { withFileLock } from "../utils/lockfile.js";
 import type { Catalogs } from "../utils/workspace.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
 import { validatePackageIdentity } from "../utils/validators.js";
 import { inspectProjectPackageManager } from "../utils/package-manager.js";
+import { asPackageJson, parseJsonObject, readJsonObject } from "../utils/json.js";
 
 export interface PublishOptions {
   allowPrivate?: boolean;
@@ -64,9 +65,12 @@ export async function publish(
     throw new Error(`No package.json found in ${packageDir}`);
   }
 
-  const pkg = JSON.parse(pkgContent) as PackageJson;
-  if (!pkg.name) throw new Error("package.json missing 'name' field");
-  if (!pkg.version) throw new Error("package.json missing 'version' field");
+  // The library's manifest is untrusted input: its name and version become store paths.
+  const pkgObject = parseJsonObject(pkgContent, pkgPath);
+  if (typeof pkgObject["name"] !== "string" || !pkgObject["name"]) throw new Error("package.json missing 'name' field");
+  if (typeof pkgObject["version"] !== "string" || !pkgObject["version"]) throw new Error("package.json missing 'version' field");
+  const pkg = asPackageJson(pkgObject);
+  if (!pkg) throw new Error("package.json missing 'name' or 'version' field");
   validatePackageIdentity(pkg.name, pkg.version);
 
   await runLifecycleHook(packageDir, pkg, "preknarr");
@@ -87,7 +91,7 @@ export async function publish(
       }
     } catch (err) {
       if (err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new Error(`publishConfig.directory "${pkg.publishConfig.directory}" does not exist`);
+        throw new Error(`publishConfig.directory "${pkg.publishConfig.directory}" does not exist`, { cause: err });
       }
       throw err;
     }
@@ -98,9 +102,9 @@ export async function publish(
   const publishPkgPath = join(publishDir, "package.json");
   const publishDirHasPackageJson = publishDir === packageDir || await exists(publishPkgPath);
   const filePkg = publishDirHasPackageJson
-    ? JSON.parse(await readFile(publishPkgPath, "utf-8")) as PackageJson
+    ? asPackageJson(parseJsonObject(await readFile(publishPkgPath, "utf-8"), publishPkgPath))
     : pkg;
-  if (!filePkg.name) throw new Error("publish package.json missing 'name' field");
+  if (!filePkg?.name) throw new Error("publish package.json missing 'name' field");
   if (!filePkg.version) throw new Error("publish package.json missing 'version' field");
   validatePackageIdentity(filePkg.name, filePkg.version);
   if (filePkg.private && !options.allowPrivate) {
@@ -610,10 +614,8 @@ async function preloadWorkspaceVersions(
   await Promise.all(
     pkgDirs.map(async (dir) => {
       try {
-        const depPkg = JSON.parse(
-          await readFile(join(dir, "package.json"), "utf-8")
-        ) as PackageJson;
-        if (depPkg.name && depPkg.version) {
+        const depPkg = asPackageJson(await readJsonObject(join(dir, "package.json")));
+        if (depPkg?.name && depPkg.version) {
           versions.set(depPkg.name, depPkg.version);
         }
       } catch {

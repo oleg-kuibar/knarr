@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { verbose } from "./logger.js";
 import { atomicWriteFile } from "./fs.js";
+import { detectJsonIndent, objectField, parseJsonObject } from "./json.js";
 
 /**
  * knarr configuration stored in package.json under the "knarr" key.
@@ -16,39 +17,36 @@ export interface KnarrConfig {
   notify?: boolean;
 }
 
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 /**
- * Load knarr configuration from package.json#knarr.
+ * Load knarr configuration from package.json#knarr. Every field is validated:
+ * wrong types are ignored rather than trusted.
  */
 export async function loadKnarrConfig(
   projectDir: string
 ): Promise<KnarrConfig> {
   try {
     const raw = await readFile(join(projectDir, "package.json"), "utf-8");
-    const pkg = JSON.parse(raw);
-    const source = pkg.knarr;
-    if (!source || typeof source !== "object") return {};
+    const source = objectField(parseJsonObject(raw, "package.json"), "knarr");
+    if (!source) return {};
 
     const config: KnarrConfig = {};
-    const p = source;
 
-    if (typeof p.buildCmd === "string") config.buildCmd = p.buildCmd;
-    if (Array.isArray(p.watchPatterns)) {
-      config.watchPatterns = p.watchPatterns.filter(
-        (v: unknown) => typeof v === "string"
-      );
+    if (typeof source["buildCmd"] === "string") config.buildCmd = source["buildCmd"];
+    const watchPatterns = source["watchPatterns"];
+    if (Array.isArray(watchPatterns)) {
+      config.watchPatterns = watchPatterns.filter((v): v is string => typeof v === "string");
     }
-    if (typeof p.debounce === "number" && Number.isFinite(p.debounce)) {
-      config.debounce = p.debounce;
-    }
-    if (typeof p.cooldown === "number" && Number.isFinite(p.cooldown)) {
-      config.cooldown = p.cooldown;
-    }
-    if (typeof p.historyLimit === "number" && Number.isFinite(p.historyLimit)) {
-      config.historyLimit = Math.max(0, Math.floor(p.historyLimit));
-    }
-    if (typeof p.notify === "boolean") {
-      config.notify = p.notify;
-    }
+    const debounce = finiteNumber(source["debounce"]);
+    if (debounce !== undefined) config.debounce = debounce;
+    const cooldown = finiteNumber(source["cooldown"]);
+    if (cooldown !== undefined) config.cooldown = cooldown;
+    const historyLimit = finiteNumber(source["historyLimit"]);
+    if (historyLimit !== undefined) config.historyLimit = Math.max(0, Math.floor(historyLimit));
+    if (typeof source["notify"] === "boolean") config.notify = source["notify"];
 
     verbose(`[config] Loaded knarr config from package.json: ${JSON.stringify(config)}`);
     return config;
@@ -68,17 +66,15 @@ export async function setKnarrBuildCmdIfMissing(
   if (!buildCmd) return false;
 
   const raw = await readFile(pkgPath, "utf-8");
-  const pkg = JSON.parse(raw);
-  const current = pkg.knarr;
+  const pkg = parseJsonObject(raw, pkgPath);
+  const current = objectField(pkg, "knarr");
 
-  if (current && typeof current === "object" && typeof current.buildCmd === "string") {
+  if (current && typeof current["buildCmd"] === "string") {
     return false;
   }
 
-  pkg.knarr = current && typeof current === "object" ? current : {};
-  pkg.knarr.buildCmd = buildCmd;
+  pkg["knarr"] = { ...current, buildCmd };
 
-  const indent = raw.match(/^(\s+)"/m)?.[1] || "  ";
-  await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
+  await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, detectJsonIndent(raw)) + "\n");
   return true;
 }

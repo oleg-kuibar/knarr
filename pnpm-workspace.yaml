@@ -24,3 +24,9 @@ blockExoticSubdeps: true
 
 # Respect "engines" of every installed package.
 engineStrict: true
+
+# Security overrides. Delete each one once normal resolution picks up the fix.
+overrides:
+  # GHSA-g3hv-75wg-m249 (ReDoS-style DoS, fixed in 11.0.1). eslint 10.14 still
+  # asks for minimatch ^10; eslint 10.15 moved to ^11 but is inside the cooldown.
+  "minimatch@>=7.0.0 <11.0.1": "^11.0.3"

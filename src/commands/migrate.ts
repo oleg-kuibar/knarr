@@ -10,19 +10,7 @@ import { isDryRun, isJsonOutput } from "../utils/logger.js";
 import { printDryRunReport, recordMutation } from "../utils/dry-run.js";
 import { addPackageToConsumer, readPackageNameFromSource } from "./add-flow.js";
 import { devLoopHint } from "../utils/hints.js";
-
-interface YalcLockEntry {
-  version: string;
-  file?: string;
-  link?: string;
-  replaced?: string;
-  signature?: string;
-}
-
-interface YalcLock {
-  version: string;
-  packages: Record<string, YalcLockEntry>;
-}
+import { objectField, parseJsonObject } from "../utils/json.js";
 
 interface MigrateOptions {
   yes?: boolean;
@@ -196,8 +184,8 @@ async function readYalcPackages(
 
   try {
     const lockContent = await readFile(yalcLockPath, "utf-8");
-    const lock = JSON.parse(lockContent) as YalcLock;
-    return lock.packages ? Object.keys(lock.packages) : [];
+    const packages = objectField(parseJsonObject(lockContent, "yalc.lock"), "packages");
+    return packages ? Object.keys(packages) : [];
   } catch {
     consola.warn("Could not parse yalc.lock - the file may be corrupted. Continuing with cleanup.");
     return [];
@@ -209,11 +197,11 @@ async function cleanupPackageJson(pkgPath: string): Promise<void> {
 
   try {
     const pkgContent = await readFile(pkgPath, "utf-8");
-    const pkg = JSON.parse(pkgContent);
+    const pkg = parseJsonObject(pkgContent, pkgPath);
     let changed = false;
 
     for (const depField of ["dependencies", "devDependencies", "peerDependencies"]) {
-      const deps = pkg[depField];
+      const deps = objectField(pkg, depField);
       if (!deps) continue;
 
       for (const [name, version] of Object.entries(deps)) {

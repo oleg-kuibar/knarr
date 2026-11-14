@@ -128,10 +128,14 @@ export class WatchOrchestrator {
     consola.info(`Watching ${this.packages.size} workspace packages`);
 
     await new Promise<void>((resolve) => {
-      const cleanup = async () => {
+      // Always resolve: a failing close() must not leave Ctrl+C hanging.
+      const cleanup = () => {
         consola.info("Stopping watchers...");
-        await this.close();
-        resolve();
+        this.close()
+          .catch((err: unknown) => {
+            consola.warn(`Watchers did not close cleanly: ${err instanceof Error ? err.message : String(err)}`);
+          })
+          .finally(resolve);
       };
       process.once("SIGINT", cleanup);
       process.once("SIGTERM", cleanup);

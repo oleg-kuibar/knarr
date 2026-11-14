@@ -116,8 +116,8 @@ async function removeDestinationConflicts(
   const parts = relPath.split(/[\\/]/).filter(Boolean);
   let current = destDir;
 
-  for (let i = 0; i < parts.length; i++) {
-    current = join(current, parts[i]);
+  for (const [i, part] of parts.entries()) {
+    current = join(current, part);
     try {
       const s = await stat(current);
       const isLeaf = i === parts.length - 1;
@@ -167,7 +167,6 @@ export async function incrementalCopy(
 
   const [srcFiles, destFiles] = await Promise.all([srcFilesPromise, destFilesPromise]);
   let copied = 0;
-  let removed = 0;
   let skipped = 0;
 
   // Compare and copy files in parallel
@@ -272,7 +271,7 @@ export async function incrementalCopy(
       })
     )
   );
-  removed = filesToRemove.length;
+  const removed = filesToRemove.length;
 
   return { copied, removed, skipped };
 }

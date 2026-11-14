@@ -5,7 +5,6 @@ import type {
   ConsumerState,
   ConsumersRegistry,
   LinkEntry,
-  PackageManager,
 } from "../types.js";
 import {
   getConsumersPath,
@@ -16,6 +15,7 @@ import {
 import { ensureDir, ensurePrivateDir, exists, atomicWriteFile, isNodeError } from "../utils/fs.js";
 import { withFileLock } from "../utils/lockfile.js";
 import { isConsumerState, isConsumersRegistry } from "../utils/validators.js";
+import { parseJson } from "../utils/json.js";
 
 // ── Consumer State (.knarr/state.json in each consumer project) ──
 
@@ -39,7 +39,7 @@ export async function readConsumerStateSafe(
   const statePath = getConsumerStatePath(consumerPath);
   try {
     const content = await readFile(statePath, "utf-8");
-    const parsed = JSON.parse(content);
+    const parsed = parseJson(content);
     if (!isConsumerState(parsed)) {
       consola.warn(`Invalid consumer state in ${statePath}, using defaults`);
       return { state: { version: "1", links: {} }, reliable: false };
@@ -120,7 +120,7 @@ export async function readConsumersRegistry(): Promise<ConsumersRegistry> {
   const regPath = getConsumersPath();
   try {
     const content = await readFile(regPath, "utf-8");
-    const parsed = JSON.parse(content);
+    const parsed = parseJson(content);
     if (!isConsumersRegistry(parsed)) {
       consola.warn(`Invalid consumers registry, using empty registry`);
       return {};

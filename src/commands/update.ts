@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { consola } from "../utils/console.js";
 import pLimit from "../utils/concurrency.js";
 import { readConsumerState, addLink } from "../core/tracker.js";
-import { findStoreEntry, getStoreEntry } from "../core/store.js";
+import { findStoreEntry } from "../core/store.js";
 import { inject } from "../core/injector.js";
 import { Timer } from "../utils/timer.js";
 import { suppressHumanOutput, output } from "../utils/output.js";

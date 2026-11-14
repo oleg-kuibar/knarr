@@ -33,6 +33,7 @@ import {
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, isJsonOutput } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
+import { objectField, readJsonObject, stringField, type JsonObject } from "../utils/json.js";
 
 export interface CheckResult {
   name: string;
@@ -264,18 +265,20 @@ export async function runDoctorDiagnostics(
       });
     } else {
       try {
-        const nmPkg = JSON.parse(await readFile(join(nmPath, "package.json"), "utf-8"));
-        if (nmPkg.name && nmPkg.name !== name) {
+        const nmPkg = await readJsonObject(join(nmPath, "package.json"));
+        const nmName = stringField(nmPkg, "name");
+        const nmVersion = stringField(nmPkg, "version");
+        if (nmName && nmName !== name) {
           await addCheck({
             name: `node_modules: ${name}`,
             status: "fail",
-            message: `node_modules target contains package "${nmPkg.name}". Run your package manager install, then 'knarr restore'.`,
+            message: `node_modules target contains package "${nmName}". Run your package manager install, then 'knarr restore'.`,
           });
-        } else if (nmPkg.version && nmPkg.version !== link.version) {
+        } else if (nmVersion && nmVersion !== link.version) {
           await addCheck({
             name: `node_modules: ${name}`,
             status: "warn",
-            message: `node_modules has v${nmPkg.version} but Knarr linked v${link.version}. Run 'knarr restore'.`,
+            message: `node_modules has v${nmVersion} but Knarr linked v${link.version}. Run 'knarr restore'.`,
           });
         } else {
           await addCheck({
@@ -426,7 +429,7 @@ export async function runDoctorDiagnostics(
   const pkgPath = join(consumerPath, "package.json");
   if (await exists(pkgPath)) {
     const pkg = await readJsonFile(pkgPath);
-    const postinstall = pkg?.scripts?.postinstall;
+    const postinstall = pkg ? objectField(pkg, "scripts")?.["postinstall"] : undefined;
     if (typeof postinstall === "string" && usesLocalRestoreScript(postinstall)) {
       if (await exists(join(consumerPath, ".knarr", RESTORE_SCRIPT_NAME))) {
         await addCheck({
@@ -512,7 +515,7 @@ export async function runDoctorDiagnostics(
   }
 
   // Keep in sync with package.json#engines.node.
-  const [nodeMajor, nodeMinor] = process.versions.node.split(".").map((n) => parseInt(n, 10));
+  const [nodeMajor = 0, nodeMinor = 0] = process.versions.node.split(".").map((n) => parseInt(n, 10));
   if (nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 22)) {
     await addCheck({
       name: "Node.js version",
@@ -671,7 +674,7 @@ async function pathKind(path: string): Promise<"missing" | "file" | "dir"> {
 
 async function canVerifyKnarrForPostinstall(
   consumerPath: string,
-  pkg: Record<string, any> | null,
+  pkg: JsonObject | null,
   postinstall: string
 ): Promise<boolean> {
   if (usesSelfResolvingKnarrCommand(postinstall)) return true;
@@ -682,19 +685,16 @@ async function canVerifyKnarrForPostinstall(
   );
 }
 
-function declaresKnarrDependency(pkg: Record<string, any> | null): boolean {
+function declaresKnarrDependency(pkg: JsonObject | null): boolean {
   if (!pkg) return false;
-  return [
-    pkg.dependencies,
-    pkg.devDependencies,
-    pkg.optionalDependencies,
-    pkg.peerDependencies,
-  ].some((deps) => deps && typeof deps === "object" && "knarr" in deps);
+  return ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].some(
+    (field) => objectField(pkg, field)?.["knarr"] !== undefined
+  );
 }
 
-async function readJsonFile(path: string): Promise<Record<string, any> | null> {
+async function readJsonFile(path: string): Promise<JsonObject | null> {
   try {
-    return JSON.parse(await readFile(path, "utf-8"));
+    return await readJsonObject(path);
   } catch {
     return null;
   }

@@ -1,6 +1,5 @@
 import { defineCommand } from "citty";
 import { join, resolve } from "node:path";
-import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
 import pc from "picocolors";
 import { getStoreEntry, findStoreEntry } from "../core/store.js";
@@ -15,6 +14,7 @@ import {
 } from "../utils/paths.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import type { LinkEntry, PackageManager } from "../types.js";
+import { readJsonObject, stringField } from "../utils/json.js";
 
 export interface ConsumerRegistrationExplanation {
   path: string;
@@ -116,7 +116,7 @@ export default defineCommand({
     if (!result.stateReliable) {
       consola.error("Consumer state is corrupt or unreadable");
       consola.info("Delete .knarr/state.json and re-run 'knarr add' for each package.");
-    } else if (result.packages.length === 0) {
+    } else if (!result.packages[0]) {
       consola.info("No linked packages in this project");
     } else if (args.package) {
       renderDetailed(result.packages[0]);
@@ -293,7 +293,7 @@ function renderDetailed(pkg: PackageExplanation): void {
 function summarize(name: string, link: LinkEntry | null, issues: string[]): string {
   if (!link) return `${name} is not linked in this project`;
   if (issues.length === 0) return "link, store, and node_modules are in sync";
-  return issues[0];
+  return issues[0] ?? "link, store, and node_modules are in sync";
 }
 
 function suggestAction(
@@ -330,8 +330,8 @@ function suggestAction(
 
 async function readPackageVersion(packageDir: string): Promise<string | null> {
   try {
-    const pkg = JSON.parse(await readFile(join(packageDir, "package.json"), "utf-8"));
-    return typeof pkg.version === "string" ? pkg.version : null;
+    const pkg = await readJsonObject(join(packageDir, "package.json"));
+    return stringField(pkg, "version") ?? null;
   } catch {
     return null;
   }

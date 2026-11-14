@@ -1,5 +1,4 @@
 import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
 import { consola } from "../utils/console.js";
 import type { KnarrMeta, StoreEntry } from "../types.js";
 import {
@@ -10,8 +9,9 @@ import {
   encodePackageName,
   decodePackageName,
 } from "../utils/paths.js";
-import { ensureDir, ensurePrivateDir, exists, removeDir, atomicWriteFile, isNodeError } from "../utils/fs.js";
+import { ensurePrivateDir, exists, removeDir, atomicWriteFile, isNodeError } from "../utils/fs.js";
 import { isKnarrMeta } from "../utils/validators.js";
+import { parseJson } from "../utils/json.js";
 
 /** Read the .knarr-meta.json for a store entry */
 export async function readMeta(
@@ -21,7 +21,7 @@ export async function readMeta(
   const metaPath = getStoreMetaPath(name, version);
   try {
     const content = await readFile(metaPath, "utf-8");
-    const parsed = JSON.parse(content);
+    const parsed = parseJson(content);
     if (!isKnarrMeta(parsed)) {
       consola.warn(`Invalid metadata for ${name}@${version}, ignoring`);
       return null;

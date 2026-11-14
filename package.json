@@ -45,8 +45,10 @@
     "test:watch": "vitest",
     "compat:smoke": "node scripts/compat-smoke.mjs",
     "bench": "vitest bench --reporter=verbose",
-    "lint": "tsc --noEmit",
-    "prepublishOnly": "pnpm build"
+    "lint": "tsc -p tsconfig.test.json && eslint .",
+    "prepublishOnly": "pnpm build",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "lint:fix": "eslint . --fix"
   },
   "keywords": [
     "npm",
@@ -86,10 +88,13 @@
     "node": ">=22.22.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.6",
     "@types/picomatch": "^4.0.3",
+    "eslint": "^10.14.0",
     "tsup": "^9.0.0",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1",
     "vite": "^8.3.6",
     "vitest": "^5.1.0"
   },

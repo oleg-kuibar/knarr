@@ -94,9 +94,8 @@ async function listStore() {
 
   consola.info(`Store entries (${entries.length}, ${formatBytes(totalSize)} total):\n`);
   const storeEntries = [];
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    const size = sizes[i];
+  for (const [i, entry] of entries.entries()) {
+    const size = sizes[i] ?? 0;
     const age = getRelativeTime(new Date(entry.meta.publishedAt));
     const buildTag = entry.meta.buildId ? `[${entry.meta.buildId}]` : "[--------]";
     const consumers = registry[entry.name]?.length ?? 0;

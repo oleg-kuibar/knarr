@@ -1,5 +1,6 @@
 import { join, normalize } from "node:path";
 import { readFileSync } from "node:fs";
+import { objectField, parseJsonObject } from "./utils/json.js";
 
 // Loose interfaces to avoid importing webpack or rspack
 interface Compiler {
@@ -24,16 +25,12 @@ interface Compilation {
   contextDependencies: Set<string>;
 }
 
-interface KnarrState {
-  links?: Record<string, unknown>;
-}
-
 /** Synchronously read linked package names from state.json */
 function readLinkedPackagesSync(stateFile: string): string[] {
   try {
     const content = readFileSync(stateFile, "utf-8");
-    const state = JSON.parse(content) as KnarrState;
-    return Object.keys(state.links ?? {});
+    const links = objectField(parseJsonObject(content, stateFile), "links");
+    return links ? Object.keys(links) : [];
   } catch {
     return [];
   }
@@ -198,10 +195,11 @@ export class KnarrWebpackPlugin {
     // watches them for changes (belt-and-suspenders with chokidar)
     compiler.hooks.afterCompile.tapPromise(
       "KnarrWebpackPlugin",
-      async (compilation) => {
+      (compilation) => {
         for (const pkg of watchedPackages) {
           compilation.contextDependencies.add(join(nodeModulesDir, pkg));
         }
+        return Promise.resolve();
       }
     );
 
@@ -216,7 +214,7 @@ export class KnarrWebpackPlugin {
         pollTimer = undefined;
       }
       if (watcher) {
-        watcher.close();
+        watcher.close().catch(() => { /* already closing; nothing to report */ });
         watcher = null;
       }
     });

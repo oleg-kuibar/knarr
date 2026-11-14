@@ -117,4 +117,5 @@ const main = defineCommand({
   },
 });
 
-runMain(main);
+// runMain reports errors and sets the exit code itself.
+void runMain(main);

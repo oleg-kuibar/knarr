@@ -9,7 +9,6 @@ import type { WatchOptions } from "../types.js";
 
 /** Module-level references to active child processes for signal cleanup */
 const activeChildren = new Set<ChildProcess>();
-let activeWatcher: { close: () => Promise<void> } | null = null;
 
 interface PollingEnvironment {
   platform: string;
@@ -135,7 +134,7 @@ export async function startWatcher(
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         debounceTimer = null;
-        doBuild();
+        void doBuild(); // doBuild catches and logs its own errors
       }, remaining);
       return;
     }
@@ -179,13 +178,13 @@ export async function startWatcher(
         hasPendingChanges = false;
         debounceTimer = setTimeout(() => {
           debounceTimer = null;
-          doBuild();
+          void doBuild(); // doBuild catches and logs its own errors
         }, cooldownMs);
       }
     }
   };
 
-  const onFileEvent = (path: string) => {
+  const onFileEvent = (_path: string) => {
     if (closed) return;
 
     // Ignore events while a build is running
@@ -202,7 +201,7 @@ export async function startWatcher(
       const remainingCooldown = cooldownMs - timeSinceLastBuild;
       debounceTimer = setTimeout(() => {
         debounceTimer = null;
-        doBuild();
+        void doBuild(); // doBuild catches and logs its own errors
       }, remainingCooldown + debounceMs);
       return;
     }
@@ -214,7 +213,7 @@ export async function startWatcher(
 
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
-      doBuild();
+      void doBuild(); // doBuild catches and logs its own errors
     }, debounceMs);
   };
 
@@ -255,7 +254,8 @@ export async function startWatcher(
   let pollInterval: ReturnType<typeof setInterval> | null = null;
   if (usePolling) {
     let lastSnapshot = await buildSnapshot(watchPaths);
-    pollInterval = setInterval(async () => {
+    // Never rejects: every error inside is caught below.
+    const poll = async (): Promise<void> => {
       if (closed) return;
       try {
         const current = await buildSnapshot(watchPaths);
@@ -283,7 +283,8 @@ export async function startWatcher(
       } catch {
         // Ignore transient errors during polling
       }
-    }, 1000);
+    };
+    pollInterval = setInterval(() => void poll(), 1000);
   }
 
   const watcherHandle = {
@@ -293,11 +294,8 @@ export async function startWatcher(
       if (debounceTimer) clearTimeout(debounceTimer);
       killActiveBuild();
       await watcher.close();
-      activeWatcher = null;
     },
   };
-
-  activeWatcher = watcherHandle;
 
   consola.info(`${prefix}Watching for changes in: ${patterns.join(", ")}`);
 

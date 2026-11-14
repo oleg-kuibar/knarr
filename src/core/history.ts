@@ -4,6 +4,15 @@ import { exists, ensureDir, removeDir, moveDir, atomicWriteFile } from "../utils
 import { getStoreHistoryPath, getHistoryEntryPath, getStoreEntryPath } from "../utils/paths.js";
 import { verbose } from "../utils/logger.js";
 import type { KnarrMeta, HistoryEntry } from "../types.js";
+import { parseJson } from "../utils/json.js";
+import { isKnarrMeta } from "../utils/validators.js";
+
+/** Read and validate a .knarr-meta.json file. Throws when it is missing or malformed. */
+async function readMetaFile(metaPath: string): Promise<KnarrMeta> {
+  const meta = parseJson(await readFile(metaPath, "utf-8"));
+  if (!isKnarrMeta(meta)) throw new Error(`Invalid build metadata: ${metaPath}`);
+  return meta;
+}
 
 const DEFAULT_HISTORY_LIMIT = 3;
 
@@ -21,7 +30,7 @@ export async function captureHistory(
   const metaPath = join(oldEntryDir, ".knarr-meta.json");
   let meta: KnarrMeta;
   try {
-    meta = JSON.parse(await readFile(metaPath, "utf-8"));
+    meta = await readMetaFile(metaPath);
   } catch {
     verbose(`[history] Could not read meta from ${metaPath}, skipping history capture`);
     return;
@@ -96,7 +105,7 @@ export async function listHistory(
     const entryDir = join(historyDir, buildId);
     const metaPath = join(entryDir, ".knarr-meta.json");
     try {
-      const meta = JSON.parse(await readFile(metaPath, "utf-8")) as KnarrMeta;
+      const meta = await readMetaFile(metaPath);
       result.push({
         buildId: meta.buildId ?? buildId,
         contentHash: meta.contentHash,
@@ -126,7 +135,7 @@ export async function getHistoryEntry(
   const metaPath = join(entryDir, ".knarr-meta.json");
 
   try {
-    const meta = JSON.parse(await readFile(metaPath, "utf-8")) as KnarrMeta;
+    const meta = await readMetaFile(metaPath);
     return {
       buildId: meta.buildId ?? buildId,
       contentHash: meta.contentHash,

@@ -39,7 +39,7 @@ async function createLargeFixture(dir: string): Promise<PackageJson> {
 
   // 40 small JS files (1-4KB) — typical component output
   for (let i = 0; i < 40; i++) {
-    const sub = ["components", "utils", "hooks"][i % 3];
+    const sub = ["components", "utils", "hooks"][i % 3] ?? "components";
     const size = 1024 + i * 80; // 1KB to ~4KB
     await writeFile(join(distDir, sub, `file-${i}.js`), randomBytes(size));
   }

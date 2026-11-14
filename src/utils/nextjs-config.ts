@@ -18,7 +18,7 @@ function parseArrayItems(str: string): string[] {
   const regex = /['"]([^'"]*)['"]/g;
   let match;
   while ((match = regex.exec(str)) !== null) {
-    items.push(match[1]);
+    items.push(match[1] ?? "");
   }
   return items;
 }
@@ -41,7 +41,7 @@ export async function hasTranspilePackage(
   }
 
   return {
-    configured: parseArrayItems(transpileMatch[1]).includes(packageName),
+    configured: parseArrayItems(transpileMatch[1] ?? "").includes(packageName),
   };
 }
 
@@ -107,7 +107,7 @@ export async function addToTranspilePackages(
   const transpileRegex = /transpilePackages\s*:\s*\[([^\]]*)\]/s;
   const transpileMatch = transpileRegex.exec(content);
   if (transpileMatch) {
-    const items = parseArrayItems(transpileMatch[1]);
+    const items = parseArrayItems(transpileMatch[1] ?? "");
     if (items.includes(packageName)) {
       return { modified: false }; // already present
     }
@@ -162,7 +162,7 @@ export async function removeFromTranspilePackages(
   const transpileMatch = transpileRegex.exec(content);
   if (!transpileMatch) return { modified: false };
 
-  const items = parseArrayItems(transpileMatch[1]);
+  const items = parseArrayItems(transpileMatch[1] ?? "");
   const filtered = items.filter((i) => i !== packageName);
   if (filtered.length === items.length) return { modified: false }; // wasn't present
 

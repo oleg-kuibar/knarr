@@ -48,8 +48,7 @@ export function topoSort(graph: Map<string, Set<string>>): string[] {
 
   const sorted: string[] = [];
 
-  while (queue.length > 0) {
-    const node = queue.shift()!;
+  for (let node = queue.shift(); node !== undefined; node = queue.shift()) {
     sorted.push(node);
 
     for (const dependent of dependents.get(node) ?? []) {

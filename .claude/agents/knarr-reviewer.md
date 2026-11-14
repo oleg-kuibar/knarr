@@ -24,7 +24,8 @@ Review the diff you are given. Without one, use `git diff master...HEAD` plus un
 8. **Workspace/versions**: `workspace:` and `catalog:` rewritten in the store copy only; topological order; a failed dependency skips its dependents.
 9. **Config rewriters** (vite/next/tailwind): strings, comments, nested brackets, idempotence, and falling back to manual instructions on complex configs.
 10. **Unattended runs**: a new prompt without a `--yes`-style flag, or a destructive confirm given an `initial` (without a TTY it would auto-confirm). The `postinstall` restore hook must stay a no-op without `.knarr/`, and `knarr restore` must never edit `package.json`.
-11. **Tests**: risky behavior without a test that would fail if the change were reverted. Name the smallest test that would catch it.
+11. **Secure coding** (AGENTS.md): untrusted JSON narrowed through `src/utils/json.ts` (no `as` on unvalidated data), `Map`/`Object.create(null)` for untrusted keys, path containment before symlink-follow or delete, no untrusted values in command strings. Lint catches most of this; review what lint can't see, like logic that validates the wrong field or a check done after the write.
+12. **Tests**: risky behavior without a test that would fail if the change were reverted. Name the smallest test that would catch it.
 
 ## Output
 

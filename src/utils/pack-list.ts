@@ -45,9 +45,9 @@ export async function resolvePackFiles(
         if (s.isDirectory()) {
           // Filter cached array by prefix instead of re-walking
           const prefix = normalizePath(relative(absDir, target)) + "/";
-          for (let i = 0; i < allRelPaths.length; i++) {
-            if (allRelPaths[i].startsWith(prefix)) {
-              files.push(allFiles[i]);
+          for (const [i, file] of allFiles.entries()) {
+            if (allRelPaths[i]?.startsWith(prefix)) {
+              files.push(file);
             }
           }
           matched = true;
@@ -66,11 +66,12 @@ export async function resolvePackFiles(
         // Treat as glob pattern
         const isMatch = picomatch(pattern, { dot: true });
         let globMatched = 0;
-        for (let i = 0; i < allRelPaths.length; i++) {
-          if (isMatch(allRelPaths[i])) {
-            const absFile = resolve(allFiles[i]);
+        for (const [i, file] of allFiles.entries()) {
+          const relPath = allRelPaths[i];
+          if (relPath !== undefined && isMatch(relPath)) {
+            const absFile = resolve(file);
             if (!absFile.startsWith(absDir + sep) && absFile !== absDir) continue;
-            files.push(allFiles[i]);
+            files.push(file);
             globMatched++;
           }
         }
@@ -82,9 +83,10 @@ export async function resolvePackFiles(
   } else {
     // No `files` field — include everything except common ignores
     const ignoreMatchers = await loadNpmIgnore(absDir);
-    for (let i = 0; i < allRelPaths.length; i++) {
-      if (!shouldIgnore(allRelPaths[i], ignoreMatchers)) {
-        files.push(allFiles[i]);
+    for (const [i, file] of allFiles.entries()) {
+      const relPath = allRelPaths[i];
+      if (relPath !== undefined && !shouldIgnore(relPath, ignoreMatchers)) {
+        files.push(file);
       }
     }
   }

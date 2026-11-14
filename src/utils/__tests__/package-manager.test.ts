@@ -47,7 +47,7 @@ describe("inspectProjectPackageManager", () => {
     },
   ] satisfies Array<{
     packageManager: PackageManager;
-    files: string[][];
+    files: Array<[string, string]>;
     layout: PackageInstallLayout;
     command: string;
   }>)(

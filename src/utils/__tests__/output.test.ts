@@ -28,7 +28,7 @@ describe("json dry-run output", () => {
     printDryRunReport();
 
     expect(log).toHaveBeenCalledTimes(1);
-    const payload = JSON.parse(log.mock.calls[0][0] as string);
+    const payload = JSON.parse(String(log.mock.calls[0]?.[0]));
     expect(payload).toMatchObject({ ok: true, dryRun: true });
     expect(payload.mutations).toHaveLength(1);
   });

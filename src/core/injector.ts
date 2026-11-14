@@ -17,6 +17,7 @@ import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
 import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import { invalidateBundlerCache } from "../utils/bundler-cache.js";
+import { asPackageJson, parseJsonObject, stringField } from "../utils/json.js";
 
 export interface InjectResult {
   copied: number;
@@ -254,7 +255,7 @@ export async function resolveInjectionTarget(
 
   if (!storeKind) {
     if (resolvedPackageManager.layout === "bun") {
-      return resolveBunTarget(consumerPath, directPath, packageName, version);
+      return resolveBunTarget(consumerPath, directPath, packageName);
     }
     return directPath;
   }
@@ -412,8 +413,7 @@ function storeKindLabel(kind: "pnpm" | "yarn-pnpm"): string {
 async function resolveBunTarget(
   consumerPath: string,
   directPath: string,
-  packageName: string,
-  version: string | undefined
+  packageName: string
 ): Promise<string> {
   try {
     const linkStat = await lstat(directPath);
@@ -598,8 +598,7 @@ function requireSingleVirtualStoreCandidate(
   storeKind: "pnpm" | "yarn-pnpm",
   matches: string[]
 ): string | null {
-  if (matches.length === 0) return null;
-  if (matches.length === 1) return matches[0];
+  if (matches.length <= 1) return matches[0] ?? null;
   throw new Error(
     `Refusing to repair ${packageName}: multiple ${storeKindLabel(storeKind)} virtual-store entries match. Run your package manager's install command, then try again.`
   );
@@ -681,10 +680,8 @@ async function readConfiguredPnpmVirtualStoreDir(nodeModulesDir: string): Promis
 
 function parsePnpmVirtualStoreDir(content: string): string | null {
   try {
-    const parsed = JSON.parse(content) as { virtualStoreDir?: unknown };
-    if (typeof parsed.virtualStoreDir === "string" && parsed.virtualStoreDir.trim()) {
-      return parsed.virtualStoreDir.trim();
-    }
+    const virtualStoreDir = stringField(parseJsonObject(content), "virtualStoreDir")?.trim();
+    if (virtualStoreDir) return virtualStoreDir;
   } catch {
     // pnpm has used YAML-compatible metadata; fall back to a top-level scalar scan.
   }
@@ -692,7 +689,7 @@ function parsePnpmVirtualStoreDir(content: string): string | null {
   const match = content.match(/^virtualStoreDir:\s*(.+?)\s*$/m);
   if (!match) return null;
 
-  let value = match[1].trim().replace(/\s+#.*$/, "");
+  let value = (match[1] ?? "").trim().replace(/\s+#.*$/, "");
   if (
     (value.startsWith("\"") && value.endsWith("\"")) ||
     (value.startsWith("'") && value.endsWith("'"))
@@ -780,7 +777,7 @@ export async function isDeclaredConsumerDependency(
 async function readPackageJson(dir: string): Promise<PackageJson | null> {
   try {
     const content = await readFile(join(dir, "package.json"), "utf-8");
-    return JSON.parse(content) as PackageJson;
+    return asPackageJson(parseJsonObject(content, join(dir, "package.json")));
   } catch (err) {
     if (isNodeError(err) && err.code !== "ENOENT") {
       consola.warn(`Failed to read package.json in ${dir}: ${err instanceof Error ? err.message : String(err)}`);
