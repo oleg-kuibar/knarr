@@ -20,11 +20,25 @@ updates:
         update-types: ["version-update:semver-major"]
 
   # Example lockfiles: security and version updates, so fixtures never lag.
+  # The library fixtures build .d.ts with tsup, so they share the root's
+  # TypeScript 6 hold. The apps only type-check and can take TypeScript majors.
   - package-ecosystem: "npm"
     directories:
       - "/examples/packages/api-client"
       - "/examples/packages/ui-kit"
-      - "/examples/standalone/npm-app"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      examples:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "npm"
+    directory: "/examples/standalone/npm-app"
     schedule:
       interval: "weekly"
     cooldown:
