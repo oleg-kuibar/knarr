@@ -31,7 +31,7 @@ export function parseJsonObject(text: string, label = "JSON"): JsonObject {
   return value;
 }
 
-export async function readJsonObject(path: string, label = path): Promise<JsonObject> {
+export async function readJsonObject(path: string, label: string = path): Promise<JsonObject> {
   return parseJsonObject(await readFile(path, "utf-8"), label);
 }
 

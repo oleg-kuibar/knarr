@@ -18,7 +18,7 @@ import { normalizePath } from "./paths.js";
 import { recordMutation } from "./dry-run.js";
 
 // Matches control characters so names containing them can be rejected.
-// eslint-disable-next-line no-control-regex
+// oxlint-disable-next-line no-control-regex -- matching control characters is the point
 const CONTROL_CHARS_RE = /[\x00-\x1F\x7F]/;
 const SAFE_INTERPRETER_RE = /^[A-Za-z0-9._+-]+$/;
 

@@ -1,0 +1,87 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "oxc"],
+  "categories": { "correctness": "error" },
+  "options": { "typeAware": true, "reportUnusedDisableDirectives": "error", "denyWarnings": true },
+  "ignorePatterns": ["dist/**", "coverage/**", ".vitest/**", "examples/**"],
+  "rules": {
+    "no-eval": "error",
+    "no-new-func": "error",
+    "no-script-url": "error",
+    "typescript/no-implied-eval": "error",
+
+    "no-restricted-imports": ["error", {
+      "paths": [
+        { "name": "node:child_process", "allowTypeImports": true, "message": "Use spawnShell() or spawnCommand() from src/utils/shell.ts." },
+        { "name": "child_process", "allowTypeImports": true, "message": "Use spawnShell() or spawnCommand() from src/utils/shell.ts." }
+      ]
+    }],
+    "no-restricted-properties": ["error",
+      { "object": "JSON", "property": "parse", "message": "JSON from disk is untrusted: use parseJson/parseJsonObject/readJsonObject from src/utils/json.ts and narrow the result." },
+      { "object": "Math", "property": "random", "message": "Math.random() is not for IDs or anything security-relevant. Use node:crypto (randomUUID / randomBytes)." }
+    ],
+
+    "no-proto": "error",
+    "no-extend-native": "error",
+    "no-prototype-builtins": "error",
+
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/await-thenable": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/require-await": "error",
+    "typescript/unbound-method": "error",
+
+    "typescript/no-explicit-any": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/no-unsafe-enum-comparison": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-redundant-type-constituents": "error",
+    "typescript/no-for-in-array": "error",
+    "typescript/no-array-delete": "error",
+
+    "eqeqeq": ["error", "always"],
+    "no-console": "error",
+    "no-useless-assignment": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/consistent-type-imports": ["error", { "fixStyle": "inline-type-imports", "disallowTypeAnnotations": false }],
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "destructuredArrayIgnorePattern": "^_", "caughtErrors": "none" }],
+    "typescript/switch-exhaustiveness-check": "error"
+  },
+  "overrides": [
+    {
+      "files": ["src/utils/shell.ts", "src/utils/json.ts"],
+      "rules": { "no-restricted-imports": "off", "no-restricted-properties": "off" }
+    },
+    {
+      "files": ["src/utils/console.ts", "src/utils/output.ts", "src/utils/dry-run.ts", "src/utils/banner.ts", "src/vite-plugin.ts"],
+      "rules": { "no-console": "off" }
+    },
+    {
+      "files": ["src/**/__tests__/**", "src/**/*.test.ts", "src/**/*.bench.ts", "scripts/**", ".claude/hooks/**", "*.config.{js,ts}"],
+      "rules": {
+        "no-console": "off",
+        "no-restricted-imports": "off",
+        "no-restricted-properties": "off",
+        "no-useless-assignment": "off",
+        "typescript/no-non-null-assertion": "off",
+        "typescript/no-explicit-any": "off",
+        "typescript/require-await": "off",
+        "typescript/unbound-method": "off",
+        "typescript/no-unsafe-argument": "off",
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-member-access": "off",
+        "typescript/no-unsafe-return": "off"
+      }
+    }
+  ]
+}

@@ -98,35 +98,36 @@ function answerNonInteractive(message: string, options: PromptOptions): boolean 
 }
 
 export const consola = {
-  get level() {
+  get level(): number {
     return _level;
   },
   set level(n: number) {
     _level = n;
   },
 
-  info(msg: string, ...args: unknown[]) {
+  info(msg: string, ...args: unknown[]): void {
     if (_level >= 3) console.log(pc.cyan("i"), msg, ...args);
   },
-  success(msg: string, ...args: unknown[]) {
+  success(msg: string, ...args: unknown[]): void {
     if (_level >= 3) console.log(pc.green("OK"), msg, ...args);
   },
-  warn(msg: string, ...args: unknown[]) {
+  warn(msg: string, ...args: unknown[]): void {
     if (_level >= 2) console.warn(pc.yellow("!"), msg, ...args);
   },
-  error(msg: string, ...args: unknown[]) {
+  error(msg: string, ...args: unknown[]): void {
     if (_level >= 1) console.error(pc.red("x"), msg, ...args);
   },
-  start(msg: string, ...args: unknown[]) {
+  start(msg: string, ...args: unknown[]): void {
     if (_level >= 3) console.log(pc.cyan("..."), msg, ...args);
   },
-  debug(msg: string, ...args: unknown[]) {
+  debug(msg: string, ...args: unknown[]): void {
     if (_level >= 4) console.debug(pc.dim("D"), msg, ...args);
   },
   /** Plain log (no icon) that still respects level suppression */
-  log(msg: string, ...args: unknown[]) {
+  log(msg: string, ...args: unknown[]): void {
     if (_level >= 3) console.log(msg, ...args);
   },
 
-  prompt,
+  // oxlint-disable-next-line typescript/no-unnecessary-type-assertion -- isolatedDeclarations (tsconfig.dts.json) needs the explicit type
+  prompt: prompt as typeof prompt,
 };

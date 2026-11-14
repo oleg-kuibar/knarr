@@ -13,7 +13,7 @@
 ## Checklist
 
 - [ ] Tests cover the risky behavior (or this is docs/tooling only).
-- [ ] `pnpm lint` passes with no new `eslint-disable`, or each one has a comment explaining why.
+- [ ] `pnpm lint` passes with no new `oxlint-disable`, or each one has a comment explaining why.
 - [ ] Public CLI/API changes are documented in `docs/commands.md` / `docs/api.md`, and `CHANGELOG.md` has an "Unreleased" entry.
 - [ ] AI review: `@codex review`, Claude Code `/knarr-review`, or a note on why it isn't needed.
 

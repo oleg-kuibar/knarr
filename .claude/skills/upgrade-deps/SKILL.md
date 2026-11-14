@@ -12,8 +12,8 @@ disable-model-invocation: true
 
 ## 2. Knarr-specific checks
 
-- **Runtime deps are bundled into the CLI** (`noExternal` in `tsup.config.ts`). Check each bumped dependency's `engines.node` (`npm view <pkg>@<ver> engines`). If it is above Knarr's floor, either raise `package.json#engines.node` as a **breaking change** (update the README badge, docs/getting-started.md, CONTRIBUTING.md, AGENTS.md, the bug-report template, and the Node check in `src/commands/doctor.ts`) or hold the bump.
-- **TypeScript 7+**: blocked while the build uses tsup, which needs the JS compiler API that TS 7 no longer ships. Don't bump it unless the build has moved to tsdown.
+- **Runtime deps are bundled into the CLI** (`deps.alwaysBundle` in `tsdown.config.ts`). Check each bumped dependency's `engines.node` (`npm view <pkg>@<ver> engines`). If it is above Knarr's floor, either raise `package.json#engines.node` as a **breaking change** (update the README badge, docs/getting-started.md, CONTRIBUTING.md, AGENTS.md, the bug-report template, and the Node check in `src/commands/doctor.ts`) or hold the bump.
+- **TypeScript**: the build, `.d.ts`, and lint don't use TypeScript's JS compiler API, so majors are fine. Don't add tooling that needs it (tsup `.d.ts`, typescript-eslint).
 - **chokidar**: the options are used in `src/core/watcher.ts` and `src/webpack-plugin.ts`. `src/vite-plugin.ts` uses Vite's own watcher options, so leave it alone. `src/__tests__/watcher.test.ts` is the real-filesystem check.
 - **vitest**: the bench files use the test-context `bench` API. Run `pnpm bench --run` after a bump.
 - **pnpm**: settings go in `pnpm-workspace.yaml`. Keep it without a `packages:` list. Declare packages with build scripts in `allowBuilds`.

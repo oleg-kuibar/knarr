@@ -17,15 +17,15 @@ This file is the shared source of truth for coding agents (Codex reads it direct
 ## Commands
 
 ```
-pnpm lint                                   # strict tsc over src + tests, then ESLint secure-coding rules
-pnpm lint:fix                               # auto-fix what ESLint can
-pnpm build                                  # tsup: CLI, API, Vite plugin, Webpack plugin
+pnpm lint                                   # strict tsc (TypeScript 7) over src + tests, then oxlint secure-coding rules
+pnpm lint:fix                               # auto-fix what oxlint can
+pnpm build                                  # tsdown: CLI, API, Vite plugin, Webpack plugin
 pnpm test                                   # vitest run (needs the fixtures above)
 pnpm vitest run src/__tests__/watcher.test.ts      # one file
 pnpm vitest run -t "pnpm injection > honors"        # by name; vitest 5 joins suite > test with ">"
 pnpm bench                                  # vitest bench (Vitest 5 API: test(..., ({ bench }) => ...))
 pnpm compat:smoke                           # real npm/pnpm/Yarn 4/Bun/Vite/Webpack/rspack/Next consumers
-pnpm dev                                    # tsup --watch for Knarr itself, NOT `knarr dev`
+pnpm dev                                    # tsdown --watch for Knarr itself, NOT `knarr dev`
 ```
 
 Before calling work done: `pnpm lint && pnpm build && pnpm test`. Run `pnpm compat:smoke` (after `pnpm build`) when injection, package-manager layout, or bundler code changes.
@@ -76,7 +76,7 @@ src/index.ts               public API (`knarr`); vite-plugin.ts (`knarr/vite`); 
 
 ## Secure coding
 
-Knarr reads files written by other people (a linked library's `package.json` and build output, consumer manifests, `pnpm-workspace.yaml`, lockfiles, state from older versions) and writes into their projects. Treat all of it as untrusted. `pnpm lint` enforces most of these rules (strict `tsconfig.json` flags plus `eslint.config.js`), and the Claude Code edit hook runs ESLint on every edited file.
+Knarr reads files written by other people (a linked library's `package.json` and build output, consumer manifests, `pnpm-workspace.yaml`, lockfiles, state from older versions) and writes into their projects. Treat all of it as untrusted. `pnpm lint` enforces most of these rules (strict `tsconfig.json` flags plus `.oxlintrc.json`, whose type-aware rules run on tsgolint), and the Claude Code edit hook runs oxlint on every edited file.
 
 - **Untrusted JSON**: never call `JSON.parse`. Use `parseJson`, `parseJsonObject` or `readJsonObject` from `src/utils/json.ts` and narrow the result with `stringField`, `objectField`, `stringRecordField` or `asPackageJson`. No `any` (`no-explicit-any`, `no-unsafe-*`), and no `as SomeType` on unvalidated data.
 - **Objects keyed by untrusted strings**: use a `Map` or `Object.create(null)`, never `{}`. A `__proto__` key would replace the object's prototype, and keys like `constructor` resolve to built-ins.
@@ -86,7 +86,7 @@ Knarr reads files written by other people (a linked library's `package.json` and
 - **Async**: no floating or misused promises. A callback in a timer, signal handler, or event listener must handle its own errors. A shutdown handler must always resolve, even when `close()` fails.
 - **Indexing**: `noUncheckedIndexedAccess` is on. Handle the `undefined` case (destructure, `entries()`, `?? fallback`) instead of using `!`, which is lint-banned in `src/`.
 - **Errors**: rethrow with `{ cause }`. Never log environment variables, tokens, or file contents that might hold secrets.
-- **Suppressions**: `eslint-disable` needs a comment explaining why, and unused disables fail lint.
+- **Suppressions**: `oxlint-disable-next-line <rule> -- <why>` needs the reason, and unused disables fail lint.
 - **Tests**: every security fix gets a regression test that fails on the old code.
 
 ## Security rules
@@ -101,7 +101,8 @@ These are enforced in CI (zizmor, dependency review, audit, verify-pack). Don't 
 ## Dependencies
 
 - The CLI bundles every runtime dependency (`noExternal`). A dependency's `engines.node` therefore becomes Knarr's. Check it before bumping (chokidar 6 is why the floor is 22.22).
-- TypeScript is held at 6.x: TypeScript 7 (native) ships no JS compiler API, and tsup needs one for `.d.ts`. Unblocking means migrating to tsdown. Dependabot ignores TypeScript majors.
+- Toolchain is native: TypeScript 7 (`tsc` type-checks only), tsdown (Rolldown) bundles, Oxc writes the public `.d.ts`, oxlint + tsgolint lint. Nothing here needs TypeScript's old JS compiler API, so stay off tools that do (tsup's `.d.ts` build, typescript-eslint).
+- Public declarations use Oxc isolated declarations: `tsconfig.dts.json` checks the public entry graph with `isolatedDeclarations`, so exported functions and objects there need explicit types.
 - pnpm settings live in `pnpm-workspace.yaml` (pnpm 11+ ignores `package.json#pnpm`). The file has no `packages:` list, and `minimumReleaseAge` enforces a 7-day cooldown on new versions.
 - `src/utils/workspace.ts` walks up to the nearest `pnpm-workspace.yaml`. That includes the repo root's file when Knarr runs inside `examples/`.
 
@@ -137,7 +138,7 @@ Reviews should flag P0/P1 risks, not style:
 
 `CLAUDE.md` only imports this file (`@AGENTS.md`, as the Claude Code memory docs recommend for repos that use `AGENTS.md`; a symlink doesn't survive a Windows checkout). Put Claude-specific guidance here, not in `CLAUDE.md`.
 
-- Permissions and hooks: `.claude/settings.json`. A `PostToolUse` hook (`.claude/hooks/lint-edited-file.mjs`) lints every edited file against the secure-coding rules. When it reports errors, fix them before moving on; don't add `eslint-disable` to get past it.
+- Permissions and hooks: `.claude/settings.json`. A `PostToolUse` hook (`.claude/hooks/lint-edited-file.mjs`) lints every edited file against the secure-coding rules. When it reports errors, fix them before moving on; don't add an `oxlint-disable` to get past it.
 - After code changes, run the `verify` skill (lint, build, test, plus compat smoke when injection or PM code changed) before reporting done. Report skipped symlink tests as skips, not passes.
 - Subagents in `.claude/agents/` for isolated work:
   - `knarr-reviewer`: correctness and data-safety review of a diff (read-only).

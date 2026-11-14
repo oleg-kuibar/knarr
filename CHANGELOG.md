@@ -21,7 +21,7 @@
 
 ### Improvements
 
-- Secure-coding enforcement: `pnpm lint` now runs strict TypeScript over source and tests plus ESLint security rules. The rules ban `JSON.parse` outside `src/utils/json.ts`, `child_process` outside `src/utils/shell.ts`, `eval`, unsafe `any`, floating promises, and non-null assertions. Fixes found along the way:
+- Secure-coding enforcement: `pnpm lint` now runs strict TypeScript over source and tests plus oxlint security rules, type-aware ones included. The rules ban `JSON.parse` outside `src/utils/json.ts`, `child_process` outside `src/utils/shell.ts`, `eval`, unsafe `any`, floating promises, and non-null assertions. Fixes found along the way:
   - Ctrl+C no longer hangs `dev`/`push --watch` when a watcher fails to close.
   - A failed Vite dev-server restart is logged instead of becoming an unhandled rejection that kills the dev server.
   - `pnpm-workspace.yaml` catalogs named `__proto__`, `constructor`, or `toString` no longer resolve to injected or built-in values.
@@ -48,7 +48,7 @@
   - New checks: dependency review on PRs (any severity, license allowlist), an all-severity audit of every lockfile, a tarball file allowlist, and OpenSSF Scorecard.
   - pnpm settings: `minimumReleaseAgeStrict`, `trustPolicy: no-downgrade`, no dependency install scripts, `blockExoticSubdeps`, `engineStrict`.
   - Dependabot also covers the example lockfiles. Added CODEOWNERS, a tighter `SECURITY.md`, and stricter Claude Code permissions.
-- Toolchain: pnpm 12, Vitest 5 (benchmarks ported to the test-context `bench` API), tsup 9, Vite 8.3, and Node 26 in the CI matrix. The example library fixtures also use tsup 9 (with TypeScript 6 for `.d.ts`), and the example apps use TypeScript 7. TypeScript stays on 6.x until the build moves off tsup. `pnpm audit` is clean.
+- Toolchain: native and Rust-based. TypeScript 7 type-checks, tsdown (Rolldown) bundles with Oxc isolated declarations for the public `.d.ts`, and oxlint with tsgolint replaces ESLint and typescript-eslint. The public types and the bundled CLI are unchanged. Also pnpm 12, Vitest 5 (benchmarks ported to the test-context `bench` API), Vite 8.3, and Node 26 in the CI matrix. The example library fixtures use tsup 9 with TypeScript 6 (tsup's `.d.ts` build needs TypeScript's JS compiler API); the example apps use TypeScript 7. `pnpm audit` is clean.
 - Agent setup for Claude Code (`CLAUDE.md` imports `AGENTS.md`, the single source of guidance; `.claude/agents`, `.claude/skills`, `.claude/settings.json`) and refreshed Codex agents.
 
 ## 0.1.3
