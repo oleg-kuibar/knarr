@@ -1,6 +1,5 @@
 import { defineCommand } from "citty";
 import { resolve } from "node:path";
-import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
 import pc from "picocolors";
 import { listHistory, restoreHistoryEntry, resolveHistoryLimit } from "../core/history.js";
@@ -13,6 +12,7 @@ import { errorWithSuggestion } from "../utils/errors.js";
 import { isDryRun } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
 import type { PackageJson } from "../types.js";
+import { asPackageJson, readJsonObject } from "../utils/json.js";
 
 interface RollbackOutput {
   rolledBack: boolean;
@@ -53,15 +53,15 @@ export default defineCommand({
     suppressHumanOutput();
     const packageDir = resolve(".");
 
-    let pkg: PackageJson;
+    let pkg: PackageJson | null;
     try {
-      pkg = JSON.parse(await readFile(resolve(packageDir, "package.json"), "utf-8"));
+      pkg = asPackageJson(await readJsonObject(resolve(packageDir, "package.json")));
     } catch {
       errorWithSuggestion("No package.json found in current directory");
       process.exit(1);
     }
 
-    if (!pkg.name || !pkg.version) {
+    if (!pkg?.name || !pkg.version) {
       errorWithSuggestion("package.json missing name or version field");
       process.exit(1);
     }
@@ -90,11 +90,14 @@ export default defineCommand({
         return;
       }
     } else {
-      // Default: previous build (most recent in history)
-      targetBuildId = entries[0].buildId;
+      // Default: previous build (most recent in history; entries is non-empty here)
+      const [latest] = entries;
+      if (!latest) throw new Error("No build history available");
+      targetBuildId = latest.buildId;
     }
 
-    const target = entries.find((e) => e.buildId === targetBuildId)!;
+    const target = entries.find((e) => e.buildId === targetBuildId);
+    if (!target) throw new Error(`Build ${targetBuildId} is not in history`);
 
     if (!args.yes) {
       const confirmed = await consola.prompt(

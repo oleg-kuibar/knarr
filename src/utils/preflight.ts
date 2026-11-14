@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { verbose } from "./logger.js";
+import { parseJsonObject } from "./json.js";
 
 export type PreflightSeverity = "warn" | "error";
 
@@ -34,7 +35,7 @@ export async function runPreflightChecks(
 
   let pkg: Record<string, unknown>;
   try {
-    pkg = JSON.parse(pkgContent);
+    pkg = parseJsonObject(pkgContent, "package.json");
   } catch {
     issues.push({
       code: "INVALID_PACKAGE_JSON",

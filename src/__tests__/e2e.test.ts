@@ -16,9 +16,7 @@ import {
   readFile,
   mkdir,
   rm,
-  stat,
   lstat,
-  readdir,
   symlink,
 } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
@@ -888,13 +886,12 @@ describe("full workflow: publish → add → push → restore → remove", () =>
   it("complete lifecycle with two packages and two consumers", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry, listStoreEntries } = await import("../core/store.js");
-    const { inject, backupExisting, restoreBackup, removeInjected } = await import(
+    const { inject, removeInjected } = await import(
       "../core/injector.js"
     );
     const {
       addLink,
       removeLink,
-      getLink,
       registerConsumer,
       unregisterConsumer,
       getConsumers,

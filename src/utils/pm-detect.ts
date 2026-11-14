@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import type { PackageManager } from "../types.js";
+import { parseJsonObject } from "./json.js";
 
 /** Valid package manager names */
 const VALID_PMS: ReadonlySet<string> = new Set(["npm", "pnpm", "yarn", "bun"]);
@@ -43,7 +44,7 @@ function parsePackageManagerSpec(value: unknown): PackageManagerSpec | null {
   if (!match) return null;
 
   const name = match[1];
-  if (!VALID_PMS.has(name)) return null;
+  if (!name || !VALID_PMS.has(name)) return null;
 
   return {
     name: name as PackageManager,
@@ -61,8 +62,7 @@ async function readPackageManagerSpec(
 ): Promise<PackageManagerSpec | null> {
   try {
     const raw = await readFile(join(dir, "package.json"), "utf-8");
-    const pkg = JSON.parse(raw);
-    return parsePackageManagerSpec(pkg.packageManager);
+    return parsePackageManagerSpec(parseJsonObject(raw)["packageManager"]);
   } catch {
     return null;
   }
@@ -191,7 +191,7 @@ function readYarnrcScalar(content: string, key: string): string | null {
     const trimmed = line.trim();
     if (trimmed.startsWith("#") || !trimmed.includes(key)) continue;
     const match = trimmed.match(new RegExp(`^${key}:\\s*(.+)$`));
-    if (!match) continue;
+    if (!match?.[1]) continue;
 
     const value = match[1]
       .trim()

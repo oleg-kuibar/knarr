@@ -147,11 +147,10 @@ export default defineCommand({
 
     // Remove unreferenced entries
     let removedEntries = 0;
-    for (let i = 0; i < entriesToRemove.length; i++) {
-      const entry = entriesToRemove[i];
+    for (const [i, entry] of entriesToRemove.entries()) {
       verbose(`[clean] Removing unreferenced store entry: ${entry.name}@${entry.version}`);
       await removeStoreEntry(entry.name, entry.version);
-      reclaimedBytes += entrySizes[i];
+      reclaimedBytes += entrySizes[i] ?? 0;
       removedEntries++;
     }
     if (removedEntries > 0) {
@@ -160,10 +159,10 @@ export default defineCommand({
 
     // Remove orphaned directories
     let removedOrphans = 0;
-    for (let i = 0; i < orphanDirs.length; i++) {
-      verbose(`[clean] Removing orphaned directory: ${orphanDirs[i]}`);
-      await removeDir(join(storePath, orphanDirs[i]));
-      reclaimedBytes += orphanSizes[i];
+    for (const [i, orphanDir] of orphanDirs.entries()) {
+      verbose(`[clean] Removing orphaned directory: ${orphanDir}`);
+      await removeDir(join(storePath, orphanDir));
+      reclaimedBytes += orphanSizes[i] ?? 0;
       removedOrphans++;
     }
     if (removedOrphans > 0) {

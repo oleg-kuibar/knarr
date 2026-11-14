@@ -12,11 +12,13 @@ import { join, relative, resolve, sep } from "node:path";
 import { platform } from "node:os";
 import { consola } from "./console.js";
 import type { PackageJson } from "../types.js";
-import { exists, isNodeError } from "./fs.js";
+import { isNodeError } from "./fs.js";
 import { isDryRun, verbose } from "./logger.js";
 import { normalizePath } from "./paths.js";
 import { recordMutation } from "./dry-run.js";
 
+// Matches control characters so names containing them can be rejected.
+// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS_RE = /[\x00-\x1F\x7F]/;
 const SAFE_INTERPRETER_RE = /^[A-Za-z0-9._+-]+$/;
 
@@ -30,9 +32,10 @@ export function parseShebangInterpreter(content: string): string {
 
   const command = firstLine.slice(2).trim();
   const parts = command.split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "node";
+  const [first] = parts;
+  if (first === undefined) return "node";
 
-  const executable = parts[0].replace(/\\/g, "/").split("/").pop();
+  const executable = first.replace(/\\/g, "/").split("/").pop();
   if (executable === "env") {
     const args = parts.slice(1);
     const interpreter = args[0] === "-S" ? args[1] : args[0];
@@ -87,8 +90,10 @@ export function resolveBinEntries(
 
   if (typeof pkg.bin === "string") {
     // Single bin: use package name (without scope)
+    // "@scope/name" -> "name". A malformed "@scope" keeps the full name rather
+    // than producing a bin literally called "undefined".
     const binName = pkg.name.startsWith("@")
-      ? pkg.name.split("/")[1]
+      ? (pkg.name.split("/")[1] || pkg.name)
       : pkg.name;
     return { [binName]: pkg.bin };
   }

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { consola } from "./console.js";
+import { parseJsonObject, stringRecordField } from "./json.js";
 import type {
   ConsumerState,
   KnarrMeta,
@@ -12,6 +13,8 @@ const PACKAGE_NAME_RE =
   /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
 const SEMVER_RE =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+// Matches control characters so names containing them can be rejected.
+// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS_RE = /[\x00-\x1F\x7F]/;
 
 /**
@@ -76,7 +79,7 @@ export function isLinkEntry(value: unknown): value is LinkEntry {
     typeof v.sourcePath === "string" &&
     typeof v.backupExists === "boolean" &&
     typeof v.packageManager === "string" &&
-    ["npm", "pnpm", "yarn", "bun"].includes(v.packageManager as string) &&
+    ["npm", "pnpm", "yarn", "bun"].includes(v.packageManager) &&
     (v.buildId === undefined || typeof v.buildId === "string")
   );
 }
@@ -105,11 +108,11 @@ export async function warnVersionMismatch(
 ): Promise<void> {
   try {
     const raw = await readFile(join(consumerPath, "package.json"), "utf-8");
-    const pkg = JSON.parse(raw) as Record<string, Record<string, string> | undefined>;
+    const pkg = parseJsonObject(raw, "package.json");
     const declared =
-      pkg.dependencies?.[packageName] ??
-      pkg.devDependencies?.[packageName] ??
-      pkg.peerDependencies?.[packageName];
+      stringRecordField(pkg, "dependencies")[packageName] ??
+      stringRecordField(pkg, "devDependencies")[packageName] ??
+      stringRecordField(pkg, "peerDependencies")[packageName];
     if (!declared) return;
 
     // Skip workspace/catalog protocols and wildcards
@@ -117,10 +120,10 @@ export async function warnVersionMismatch(
 
     // Extract the version part from the range (strip ^, ~, >=, etc.)
     const match = declared.match(/(\d+)\.\d+\.\d+/);
-    if (!match) return;
+    if (!match?.[1]) return;
 
     const declaredMajor = parseInt(match[1], 10);
-    const storeMajor = parseInt(storeVersion.split(".")[0], 10);
+    const storeMajor = parseInt(storeVersion.split(".")[0] ?? "", 10);
 
     if (declaredMajor !== storeMajor) {
       consola.warn(

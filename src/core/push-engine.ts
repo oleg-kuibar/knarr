@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import pLimit from "../utils/concurrency.js";
 import { publish } from "./publisher.js";
@@ -15,7 +14,8 @@ import { errorWithSuggestion } from "../utils/errors.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
 import { consola } from "../utils/console.js";
-import type { PackageJson, StoreEntry } from "../types.js";
+import type { StoreEntry } from "../types.js";
+import { readJsonObject } from "../utils/json.js";
 
 const consumerLimit = pLimit(4);
 
@@ -432,10 +432,15 @@ export async function startWatchMode(
   );
 
   await new Promise<void>((resolve) => {
-    const cleanup = async () => {
+    // Always resolve: a failing close() must not leave Ctrl+C hanging.
+    const cleanup = () => {
       consola.info("Stopping watcher...");
-      await watcher.close();
-      resolve();
+      watcher
+        .close()
+        .catch((err: unknown) => {
+          consola.warn(`Watcher did not close cleanly: ${err instanceof Error ? err.message : String(err)}`);
+        })
+        .finally(resolve);
     };
     process.once("SIGINT", cleanup);
     process.once("SIGTERM", cleanup);
@@ -605,11 +610,10 @@ export async function resolveWatchConfig(
     // Without a build command: watch the package.json `files` field (typically dist/)
     announceBuildCommand(packageDir, "No build command detected — watching output directories directly");
     try {
-      const pkg = JSON.parse(
-        await readFile(join(packageDir, "package.json"), "utf-8")
-      ) as PackageJson;
-      if (pkg.files && pkg.files.length > 0) {
-        patterns = pkg.files;
+      const files = (await readJsonObject(join(packageDir, "package.json")))["files"];
+      const fileList = Array.isArray(files) ? files.filter((f): f is string => typeof f === "string") : [];
+      if (fileList.length > 0) {
+        patterns = fileList;
         consola.info(`Watching from package.json "files": ${patterns.join(", ")}`);
       } else {
         consola.warn(

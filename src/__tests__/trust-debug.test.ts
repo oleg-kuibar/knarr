@@ -303,7 +303,8 @@ describe("knarr explain", () => {
     const { explainState } = await import("../commands/explain.js");
 
     const result = await explainState(testConsumer, "test-lib");
-    const pkg = result.packages[0];
+    const [pkg] = result.packages;
+    if (!pkg) throw new Error("expected one explained package");
 
     expect(pkg.status).toBe("ok");
     expect(pkg.store.exists).toBe(true);
@@ -324,7 +325,8 @@ describe("knarr explain", () => {
     });
 
     const result = await explainState(testConsumer, "test-lib");
-    const pkg = result.packages[0];
+    const [pkg] = result.packages;
+    if (!pkg) throw new Error("expected one explained package");
 
     expect(pkg.status).toBe("fail");
     expect(pkg.issues).toContain("store entry missing for test-lib@1.0.0");
@@ -340,7 +342,8 @@ describe("knarr explain", () => {
     await rm(testLib, { recursive: true, force: true });
 
     const result = await explainState(testConsumer, "test-lib");
-    const pkg = result.packages[0];
+    const [pkg] = result.packages;
+    if (!pkg) throw new Error("expected one explained package");
 
     expect(pkg.status).toBe("warn");
     expect(pkg.issues).toContain("store has newer content than the current link");
@@ -354,8 +357,8 @@ describe("knarr explain", () => {
 
     const result = await explainState(testConsumer, "@scope/test-lib");
 
-    expect(result.packages[0].name).toBe("@scope/test-lib");
-    expect(result.packages[0].status).toBe("ok");
+    expect(result.packages[0]?.name).toBe("@scope/test-lib");
+    expect(result.packages[0]?.status).toBe("ok");
   });
 });
 
@@ -373,7 +376,7 @@ describe("push summaries", () => {
     expect(summary.copied).toBeGreaterThanOrEqual(1);
     expect(summary.removed).toBe(1);
     expect(summary.skipped).toBeGreaterThanOrEqual(1);
-    expect(summary.consumerResults[0].status).toBe("updated");
+    expect(summary.consumerResults[0]?.status).toBe("updated");
   });
 
   it("separates skipped and failed consumers", async () => {
@@ -441,7 +444,7 @@ describe("push summaries", () => {
 
     expect(summary.failedConsumers).toBe(0);
     expect(summary.skippedConsumers).toBe(1);
-    expect(summary.consumerResults[0].reason).toContain("store entry was not written");
+    expect(summary.consumerResults[0]?.reason).toContain("store entry was not written");
     expect(
       await readFile(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"), "utf-8")
     ).toBe('module.exports = "v1";');

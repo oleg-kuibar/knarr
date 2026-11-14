@@ -2,7 +2,7 @@
 
 Knarr is a CLI and library for local npm package development without symlinks. It copies a package's publishable files into consumers' `node_modules/`, syncs them incrementally, and has a watch mode.
 
-This file is the shared source of truth for coding agents (Codex reads it directly; Claude Code loads it via `CLAUDE.md`). Keep it short and factual. Put procedures in `.claude/skills/`, not here.
+This file is the shared source of truth for coding agents (Codex reads it directly; Claude Code through the one-line `CLAUDE.md` import). Keep it short and factual. Put procedures in `.claude/skills/`, not here.
 
 ## Setup
 
@@ -17,7 +17,8 @@ This file is the shared source of truth for coding agents (Codex reads it direct
 ## Commands
 
 ```
-pnpm lint                                   # tsc --noEmit (this is the only typecheck)
+pnpm lint                                   # strict tsc over src + tests, then ESLint secure-coding rules
+pnpm lint:fix                               # auto-fix what ESLint can
 pnpm build                                  # tsup: CLI, API, Vite plugin, Webpack plugin
 pnpm test                                   # vitest run (needs the fixtures above)
 pnpm vitest run src/__tests__/watcher.test.ts      # one file
@@ -73,6 +74,21 @@ src/index.ts               public API (`knarr`); vite-plugin.ts (`knarr/vite`); 
 - `src/__tests__/watcher.test.ts` exercises real chokidar. Keep it when you touch watcher options.
 - Coverage threshold: 70% lines (`vitest.config.ts`).
 
+## Secure coding
+
+Knarr reads files written by other people (a linked library's `package.json` and build output, consumer manifests, `pnpm-workspace.yaml`, lockfiles, state from older versions) and writes into their projects. Treat all of it as untrusted. `pnpm lint` enforces most of these rules (strict `tsconfig.json` flags plus `eslint.config.js`), and the Claude Code edit hook runs ESLint on every edited file.
+
+- **Untrusted JSON**: never call `JSON.parse`. Use `parseJson`, `parseJsonObject` or `readJsonObject` from `src/utils/json.ts` and narrow the result with `stringField`, `objectField`, `stringRecordField` or `asPackageJson`. No `any` (`no-explicit-any`, `no-unsafe-*`), and no `as SomeType` on unvalidated data.
+- **Objects keyed by untrusted strings**: use a `Map` or `Object.create(null)`, never `{}`. A `__proto__` key would replace the object's prototype, and keys like `constructor` resolve to built-ins.
+- **Paths**: run `validatePackageIdentity()` on names and versions before building store or `node_modules` paths from them. Before following a symlink or deleting, check that the resolved path stays inside the allowed root (see `isPathInside` in `src/core/injector.ts`).
+- **Processes**: only `src/utils/shell.ts` may import `child_process` (lint-enforced). `spawnShell()` is only for command lines the user configured (build commands, lifecycle hooks). Everything else uses `spawnCommand(executable, args)`; never splice untrusted values into a command string.
+- **Code execution**: no `eval`, `new Function`, string timers, or `Math.random()` for anything security-relevant (use `node:crypto`).
+- **Async**: no floating or misused promises. A callback in a timer, signal handler, or event listener must handle its own errors. A shutdown handler must always resolve, even when `close()` fails.
+- **Indexing**: `noUncheckedIndexedAccess` is on. Handle the `undefined` case (destructure, `entries()`, `?? fallback`) instead of using `!`, which is lint-banned in `src/`.
+- **Errors**: rethrow with `{ cause }`. Never log environment variables, tokens, or file contents that might hold secrets.
+- **Suppressions**: `eslint-disable` needs a comment explaining why, and unused disables fail lint.
+- **Tests**: every security fix gets a regression test that fails on the old code.
+
 ## Security rules
 
 These are enforced in CI (zizmor, dependency review, audit, verify-pack). Don't weaken them without a comment explaining why. See `SECURITY.md`.
@@ -114,6 +130,18 @@ Reviews should flag P0/P1 risks, not style:
 
 ## Agent tooling
 
-- Claude Code: `CLAUDE.md`, subagents in `.claude/agents/`, skills in `.claude/skills/` (`/knarr-review`, `/verify`, `/upgrade-deps`, `/release`), permissions in `.claude/settings.json`.
 - Codex: agents in `.codex/agents/` (`knarr_pr_mapper`, `knarr_reviewer`, `knarr_docs_checker`), config in `.codex/config.toml` (keep `max_depth = 1`). Request a GitHub review with `@codex review`.
 - When you update a rule here, check whether an agent prompt repeats it.
+
+### Claude Code
+
+`CLAUDE.md` only imports this file (`@AGENTS.md`, as the Claude Code memory docs recommend for repos that use `AGENTS.md`; a symlink doesn't survive a Windows checkout). Put Claude-specific guidance here, not in `CLAUDE.md`.
+
+- Permissions and hooks: `.claude/settings.json`. A `PostToolUse` hook (`.claude/hooks/lint-edited-file.mjs`) lints every edited file against the secure-coding rules. When it reports errors, fix them before moving on; don't add `eslint-disable` to get past it.
+- After code changes, run the `verify` skill (lint, build, test, plus compat smoke when injection or PM code changed) before reporting done. Report skipped symlink tests as skips, not passes.
+- Subagents in `.claude/agents/` for isolated work:
+  - `knarr-reviewer`: correctness and data-safety review of a diff (read-only).
+  - `knarr-docs-checker`: docs, CLI help, and changelog drift for a diff (read-only).
+  - `knarr-test-triager`: run tests and diagnose failures without filling the main context with logs.
+- Skills in `.claude/skills/`: `/knarr-review` runs the reviewer and docs checker in parallel against `master` and merges their findings; `/verify` is the local gate. `/upgrade-deps` and `/release` are user-invoked procedures. Don't start them unprompted.
+- Personal notes go in `CLAUDE.local.md` (gitignored). Its presence doesn't matter here, because `CLAUDE.md` imports this file explicitly.

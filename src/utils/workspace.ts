@@ -4,6 +4,7 @@ import picomatch from "picomatch";
 import { exists } from "./fs.js";
 import { normalizePath } from "./paths.js";
 import type { PackageJson } from "../types.js";
+import { asPackageJson, isJsonObject, readJsonObject } from "./json.js";
 
 export interface WorkspacePackage {
   name: string;
@@ -62,7 +63,14 @@ export async function findWorkspacePackageRoot(startDir: string): Promise<string
  * catalogs only use flat string key-value pairs (no anchors, multiline, etc).
  */
 export async function parseCatalogs(workspaceRoot: string): Promise<Catalogs> {
-  const result: Catalogs = { default: {}, named: {} };
+  // Keys come from a repository file. With plain {} objects, a "__proto__"
+  // catalog replaced the map's prototype (unknown names then resolved to
+  // injected values) and "constructor"/"toString" resolved to built-in
+  // functions. Null-prototype maps store every key as plain data.
+  const result: Catalogs = {
+    default: Object.create(null) as Record<string, string>,
+    named: Object.create(null) as Record<string, Record<string, string>>,
+  };
   const filePath = join(workspaceRoot, "pnpm-workspace.yaml");
 
   let content: string;
@@ -112,7 +120,7 @@ export async function parseCatalogs(workspaceRoot: string): Promise<Catalogs> {
       const trimmed = line.trim();
       if (trimmed.endsWith(":")) {
         currentNamedCatalog = trimmed.slice(0, -1);
-        result.named[currentNamedCatalog] = {};
+        result.named[currentNamedCatalog] = Object.create(null) as Record<string, string>;
         state = "named-catalog-entries";
       }
       continue;
@@ -121,8 +129,9 @@ export async function parseCatalogs(workspaceRoot: string): Promise<Catalogs> {
     // Inside a named catalog — 4-space indented key-value pairs
     if (state === "named-catalog-entries" && indent >= 4) {
       const kv = parseKeyValue(line);
-      if (kv && currentNamedCatalog) {
-        result.named[currentNamedCatalog][kv[0]] = kv[1];
+      const catalog = currentNamedCatalog ? result.named[currentNamedCatalog] : undefined;
+      if (kv && catalog) {
+        catalog[kv[0]] = kv[1];
       }
       continue;
     }
@@ -132,7 +141,7 @@ export async function parseCatalogs(workspaceRoot: string): Promise<Catalogs> {
       const trimmed = line.trim();
       if (trimmed.endsWith(":")) {
         currentNamedCatalog = trimmed.slice(0, -1);
-        result.named[currentNamedCatalog] = {};
+        result.named[currentNamedCatalog] = Object.create(null) as Record<string, string>;
       } else {
         state = "named-catalogs";
       }
@@ -165,10 +174,11 @@ export async function findWorkspacePackages(startDir: string): Promise<string[]>
   if (!rootDir) return [];
 
   try {
-    const rootPkg = JSON.parse(await readFile(join(rootDir, "package.json"), "utf-8"));
-    const workspaces: string[] = Array.isArray(rootPkg.workspaces)
-      ? rootPkg.workspaces
-      : rootPkg.workspaces?.packages ?? [];
+    // npm/Yarn: "workspaces": [...] or { "packages": [...] }
+    const rootPkg = await readJsonObject(join(rootDir, "package.json"));
+    const field = rootPkg["workspaces"];
+    const list: unknown = Array.isArray(field) ? field : isJsonObject(field) ? field["packages"] : [];
+    const workspaces = Array.isArray(list) ? list.filter((p): p is string => typeof p === "string") : [];
     if (workspaces.length === 0) return [];
     const positive = workspaces.filter((p) => !p.startsWith("!"));
     const negations = workspaces.filter((p) => p.startsWith("!")).map((p) => p.slice(1));
@@ -208,7 +218,7 @@ async function parsePnpmWorkspacePackages(workspaceRoot: string): Promise<string
     if (inPackages && indent >= 2) {
       // Lines like `  - "packages/*"` or `  - packages/*`
       const match = trimmed.match(/^-\s+["']?([^"']+)["']?$/);
-      if (match) {
+      if (match?.[1]) {
         patterns.push(match[1]);
       }
     }
@@ -224,8 +234,8 @@ async function findPackageJsonWorkspaceRoot(startDir: string): Promise<string | 
   let dir = startDir;
   for (;;) {
     try {
-      const pkg = JSON.parse(await readFile(join(dir, "package.json"), "utf-8"));
-      if (pkg.workspaces) return dir;
+      const pkg = await readJsonObject(join(dir, "package.json"));
+      if (pkg["workspaces"]) return dir;
     } catch {
       // no package.json at this level
     }
@@ -337,10 +347,8 @@ export async function buildWorkspaceGraph(
 
   for (const dir of dirs) {
     try {
-      const pkg = JSON.parse(
-        await readFile(join(dir, "package.json"), "utf-8")
-      ) as PackageJson;
-      if (pkg.name && pkg.version) {
+      const pkg = asPackageJson(await readJsonObject(join(dir, "package.json")));
+      if (pkg?.name && pkg.version) {
         packages.push({ name: pkg.name, version: pkg.version, dir, pkg });
       }
     } catch {
@@ -439,7 +447,7 @@ function stripYamlInlineComment(value: string): string {
       quote = quote === char ? null : quote ?? char;
       continue;
     }
-    if (!quote && char === "#" && (i === 0 || /\s/.test(value[i - 1]))) {
+    if (!quote && char === "#" && (i === 0 || /\s/.test(value[i - 1] ?? ""))) {
       return value.slice(0, i);
     }
   }

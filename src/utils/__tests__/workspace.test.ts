@@ -61,8 +61,60 @@ describe("parseCatalogs", () => {
       expect(catalogs.default.react).toBe("^19.0.0");
       expect(catalogs.default["@scope/pkg"]).toBe("^1.0.0");
       expect(catalogs.default.hashy).toBe("npm:pkg#tag");
-      expect(catalogs.named.legacy.react).toBe("^18.0.0");
-      expect(catalogs.named.legacy["@scope/pkg"]).toBe("^0.9.0");
+      expect(catalogs.named.legacy?.react).toBe("^18.0.0");
+      expect(catalogs.named.legacy?.["@scope/pkg"]).toBe("^0.9.0");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("parseCatalogs prototype safety", () => {
+  it("stores __proto__/constructor catalog names and keys as plain data", async () => {
+    const root = await mkdtemp(join(tmpdir(), "KNARR-workspace-proto-"));
+    try {
+      await writeFile(
+        join(root, "pnpm-workspace.yaml"),
+        [
+          "catalog:",
+          "  __proto__: ^6.6.6",
+          "  constructor: ^1.0.0",
+          "catalogs:",
+          "  __proto__:",
+          "    polluted: yes",
+          "",
+        ].join("\n")
+      );
+
+      const catalogs = await parseCatalogs(root);
+
+      expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
+      expect(Object.prototype).not.toHaveProperty("polluted");
+      // Keys are stored as plain data and looked up without the prototype chain.
+      expect(Object.getOwnPropertyDescriptor(catalogs.default, "__proto__")?.value).toBe("^6.6.6");
+      expect(catalogs.default["constructor"]).toBe("^1.0.0");
+      expect(catalogs.default["toString"]).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("parseCatalogs named-catalog prototype safety", () => {
+  it("does not let a __proto__ catalog make unknown catalog names resolve", async () => {
+    const root = await mkdtemp(join(tmpdir(), "KNARR-workspace-proto2-"));
+    try {
+      await writeFile(
+        join(root, "pnpm-workspace.yaml"),
+        ["catalogs:", "  __proto__:", "    react: ^0.0.1", ""].join("\n")
+      );
+
+      const catalogs = await parseCatalogs(root);
+
+      // With a plain {} map, the "__proto__" catalog became the map's prototype,
+      // so the non-existent catalog "react" resolved to "^0.0.1".
+      expect(catalogs.named["react"]).toBeUndefined();
+      expect(Object.getOwnPropertyDescriptor(catalogs.named, "__proto__")?.value).toEqual({ react: "^0.0.1" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

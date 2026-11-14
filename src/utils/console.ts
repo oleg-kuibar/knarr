@@ -58,15 +58,13 @@ async function prompt(
 
     // select
     console.log(`${pc.cyan("?")} ${message}`);
-    for (let i = 0; i < options.options.length; i++) {
-      console.log(`  ${pc.cyan(`${i + 1}.`)} ${options.options[i].label}`);
+    for (const [i, option] of options.options.entries()) {
+      console.log(`  ${pc.cyan(`${i + 1}.`)} ${option.label}`);
     }
     const answer = await rl.question(`${pc.dim("Enter number:")} `);
-    const idx = parseInt(answer, 10) - 1;
-    if (idx >= 0 && idx < options.options.length) {
-      return options.options[idx].value;
-    }
-    return options.options[0].value;
+    const chosen = options.options[parseInt(answer, 10) - 1] ?? options.options[0];
+    if (!chosen) throw new Error(`No options to choose from for "${message}"`);
+    return chosen.value;
   } finally {
     rl.close();
   }

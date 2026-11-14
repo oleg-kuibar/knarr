@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir, platform } from "node:os";
 import {
@@ -12,6 +12,11 @@ import { exists } from "../fs.js";
 import type { PackageJson } from "../../types.js";
 
 describe("resolveBinEntries", () => {
+  it("never names a bin 'undefined' for a malformed scoped name", () => {
+    const pkg: PackageJson = { name: "@scope", version: "1.0.0", bin: "./cli.js" };
+    expect(Object.keys(resolveBinEntries(pkg))).toEqual(["@scope"]);
+  });
+
   it("returns empty object when no bin field", () => {
     const pkg: PackageJson = { name: "test", version: "1.0.0" };
     expect(resolveBinEntries(pkg)).toEqual({});

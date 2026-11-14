@@ -40,7 +40,7 @@ describe("consola.prompt without a TTY", () => {
   it("exits 1 with a --yes hint for confirms without a safe default", async () => {
     const exit = vi.spyOn(process, "exit").mockImplementation((() => {
       throw new Error("exit");
-    }) as never);
+    }));
 
     await expect(
       consola.prompt("Reset Knarr?", { type: "confirm" })
@@ -52,7 +52,7 @@ describe("consola.prompt without a TTY", () => {
   it("exits 1 for selects and shows the command-specific hint", async () => {
     vi.spyOn(process, "exit").mockImplementation((() => {
       throw new Error("exit");
-    }) as never);
+    }));
 
     await expect(
       consola.prompt("Role?", {

@@ -11,9 +11,11 @@ export default function pLimit(concurrency: number) {
   let head = 0;
 
   const next = () => {
-    if (head < queue.length && active < concurrency) {
+    const task = active < concurrency ? queue[head] : undefined;
+    if (task) {
+      head++;
       active++;
-      queue[head++]();
+      task();
     }
     // Compact when the queue drains to reclaim memory
     if (head > 0 && head === queue.length) {
@@ -27,6 +29,8 @@ export default function pLimit(concurrency: number) {
       const run = () => {
         fn().then(
           (val) => { active--; resolve(val); next(); },
+          // A generic limiter must pass rejections through unchanged.
+          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
           (err) => { active--; reject(err); next(); },
         );
       };

@@ -1,17 +1,14 @@
 import { join, normalize } from "node:path";
 import { readFileSync } from "node:fs";
 import type { Plugin, UserConfig } from "vite";
-
-interface KnarrState {
-  links?: Record<string, unknown>;
-}
+import { objectField, parseJsonObject } from "./utils/json.js";
 
 /** Synchronously read linked package names from state.json */
 function readLinkedPackagesSync(stateFile: string): string[] {
   try {
     const content = readFileSync(stateFile, "utf-8");
-    const state = JSON.parse(content) as KnarrState;
-    return Object.keys(state.links ?? {});
+    const links = objectField(parseJsonObject(content, stateFile), "links");
+    return links ? Object.keys(links) : [];
   } catch {
     return [];
   }
@@ -120,7 +117,7 @@ export default function knarrPlugin(options: KnarrVitePluginOptions = {}): Plugi
           // clearing it forces re-evaluation with the updated `ignored` list.
           // Workaround for vitejs/vite#8619. Fragile - breaks if chokidar
           // renames this internal field.
-          (server.watcher as any)._userIgnored = undefined;
+          (server.watcher as unknown as { _userIgnored?: unknown })._userIgnored = undefined;
 
           // Now add() calls actually register with chokidar
           for (const pkg of watchedPackages) {
@@ -146,6 +143,10 @@ export default function knarrPlugin(options: KnarrVitePluginOptions = {}): Plugi
 
         try {
           await server.restart();
+        } catch (err) {
+          // Never let a failed restart become an unhandled rejection: Node would
+          // terminate the developer's dev server.
+          console.error(`[knarr] Dev server restart failed: ${err instanceof Error ? err.message : String(err)}`);
         } finally {
           isRestarting = false;
           if (pendingRestart) {
@@ -160,7 +161,7 @@ export default function knarrPlugin(options: KnarrVitePluginOptions = {}): Plugi
         if (debounceTimer) return;  // already scheduled, don't reset
         debounceTimer = setTimeout(() => {
           debounceTimer = null;
-          restartServer(source);
+          void restartServer(source); // handles its own errors
         }, 1500);
       }
 
@@ -208,7 +209,7 @@ export default function knarrPlugin(options: KnarrVitePluginOptions = {}): Plugi
       // Linked package file change → invalidate module graph + full-reload
       // (server.restart() drops the HMR WebSocket and doesn't reliably
       // trigger a browser reload).
-      server.watcher.on("change", async (changedPath: string) => {
+      server.watcher.on("change", (changedPath: string) => {
         const normalizedChanged = normalize(changedPath);
 
         if (normalizedChanged === knarrStateFile) {
@@ -253,7 +254,7 @@ export default function knarrPlugin(options: KnarrVitePluginOptions = {}): Plugi
           // state.json doesn't exist yet
         }
 
-        pollTimer = setInterval(async () => {
+        pollTimer = setInterval(() => {
           try {
               const content = readFileSync(knarrStateFile, "utf-8");
             if (lastStateContent && content !== lastStateContent) {

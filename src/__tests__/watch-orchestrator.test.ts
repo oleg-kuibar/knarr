@@ -22,7 +22,8 @@ type TestPackageEntry = {
   watcher: { close: () => Promise<void> };
 };
 
-type TestWatchOrchestrator = WatchOrchestrator & {
+/** The private internals these tests drive (reached through an unknown cast). */
+type TestWatchOrchestrator = {
   packages: Map<string, TestPackageEntry>;
   dependents: Map<string, Set<string>>;
   requestRebuild(name: string): Promise<void>;
@@ -36,7 +37,7 @@ describe("WatchOrchestrator", () => {
   it("does not cascade rebuilds after partial push failures", async () => {
     pushMocks.doPush.mockResolvedValue(pushSummary({ failedConsumers: 1 }));
 
-    const orchestrator = new WatchOrchestrator(true) as TestWatchOrchestrator;
+    const orchestrator = new WatchOrchestrator(true) as unknown as TestWatchOrchestrator;
     orchestrator.packages.set("dep-a", packageEntry("/tmp/dep-a"));
     orchestrator.packages.set("dep-b", packageEntry("/tmp/dep-b"));
     orchestrator.dependents.set("dep-a", new Set(["dep-b"]));

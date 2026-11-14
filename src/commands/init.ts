@@ -23,6 +23,7 @@ import {
 } from "../core/tracker.js";
 import type { PackageManager } from "../types.js";
 import { knarrCommand } from "../utils/hints.js";
+import { detectJsonIndent, objectField, parseJsonObject } from "../utils/json.js";
 
 type ProjectRole = "consumer" | "library";
 
@@ -246,22 +247,24 @@ export default defineCommand({
       // Consumer next steps
       consola.log("");
       consola.info(`${pc.bold("Next steps:")}`);
-      nextSteps.push(`${knarrCommand()} use ../my-lib`);
-      nextSteps.push(`cd ../my-lib && ${knarrCommand()} dev`);
-      const width = Math.max(nextSteps[0].length, nextSteps[1].length) + 2;
-      consola.log(`  1. ${pc.cyan(nextSteps[0].padEnd(width))}<- publish + link a local package`);
-      consola.log(`  2. ${pc.cyan(nextSteps[1].padEnd(width))}<- watch + rebuild + auto-push`);
+      const useStep = `${knarrCommand()} use ../my-lib`;
+      const devStep = `cd ../my-lib && ${knarrCommand()} dev`;
+      nextSteps.push(useStep, devStep);
+      const width = Math.max(useStep.length, devStep.length) + 2;
+      consola.log(`  1. ${pc.cyan(useStep.padEnd(width))}<- publish + link a local package`);
+      consola.log(`  2. ${pc.cyan(devStep.padEnd(width))}<- watch + rebuild + auto-push`);
     } else {
       // Library next steps
       consola.log("");
       consola.info(`${pc.bold("Next steps:")}`);
-      nextSteps.push(`${pm} run knarr:publish`);
-      nextSteps.push(`${pm} run knarr:dev`);
-      nextSteps.push(`${knarrCommand()} use ${projectDir}`);
-      const libWidth = Math.max(nextSteps[0].length, nextSteps[1].length) + 2;
-      consola.log(`  1. ${pc.cyan(nextSteps[0].padEnd(libWidth))}<- copy built files to knarr store`);
-      consola.log(`  2. ${pc.cyan(nextSteps[1].padEnd(libWidth))}<- watch + rebuild + auto-push to consumers`);
-      consola.log(`  3. In consumer project: ${pc.cyan(nextSteps[2])}`);
+      const publishStep = `${pm} run knarr:publish`;
+      const devStep = `${pm} run knarr:dev`;
+      const useStep = `${knarrCommand()} use ${projectDir}`;
+      nextSteps.push(publishStep, devStep, useStep);
+      const libWidth = Math.max(publishStep.length, devStep.length) + 2;
+      consola.log(`  1. ${pc.cyan(publishStep.padEnd(libWidth))}<- copy built files to knarr store`);
+      consola.log(`  2. ${pc.cyan(devStep.padEnd(libWidth))}<- watch + rebuild + auto-push to consumers`);
+      consola.log(`  3. In consumer project: ${pc.cyan(useStep)}`);
     }
 
     consola.info(`Done in ${timer.elapsed()}`);
@@ -288,15 +291,15 @@ async function addScript(
   command: string
 ): Promise<boolean> {
   const content = await readFile(pkgPath, "utf-8");
-  const pkg = JSON.parse(content);
+  const pkg = parseJsonObject(content, pkgPath);
+  const scripts = objectField(pkg, "scripts") ?? {};
 
-  if (pkg.scripts?.[name]) return false;
+  if (scripts[name]) return false;
 
-  if (!pkg.scripts) pkg.scripts = {};
-  pkg.scripts[name] = command;
+  scripts[name] = command;
+  pkg["scripts"] = scripts;
 
-  const indent = content.match(/^(\s+)"/m)?.[1] || "  ";
-  await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
+  await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, detectJsonIndent(content)) + "\n");
   return true;
 }
 
@@ -345,8 +348,10 @@ async function addLibraryScripts(
   const added: string[] = [];
   // Scripts are committed and shared: `knarr` only resolves in npm scripts when
   // it is a dependency, so otherwise go through npx (works without a global install).
-  const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
-  const knarrDeclared = Boolean(pkg.dependencies?.knarr || pkg.devDependencies?.knarr);
+  const pkg = parseJsonObject(await readFile(pkgPath, "utf-8"), pkgPath);
+  const knarrDeclared = Boolean(
+    objectField(pkg, "dependencies")?.["knarr"] || objectField(pkg, "devDependencies")?.["knarr"]
+  );
   const knarr = knarrDeclared ? "knarr" : "npx --yes knarr";
 
   if (await addScript(pkgPath, "knarr:publish", `${knarr} publish`)) {

@@ -962,7 +962,7 @@ describe("rollback", () => {
     }
 
     expect(logs).toHaveLength(1);
-    const result = JSON.parse(logs[0]) as {
+    const result = JSON.parse(logs[0] ?? "null") as {
       rolledBack: boolean;
       pushed: boolean;
       pushSummary: { failedConsumers: number };

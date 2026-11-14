@@ -16,3 +16,7 @@
 /.codex/                @oleg-kuibar
 /AGENTS.md              @oleg-kuibar
 /CLAUDE.md              @oleg-kuibar
+/eslint.config.js       @oleg-kuibar
+/tsconfig.json          @oleg-kuibar
+/tsconfig.test.json     @oleg-kuibar
+/src/utils/json.ts      @oleg-kuibar
