@@ -48,7 +48,7 @@
   - New checks: dependency review on PRs (any severity, license allowlist), an all-severity audit of every lockfile, a tarball file allowlist, and OpenSSF Scorecard.
   - pnpm settings: `minimumReleaseAgeStrict`, `trustPolicy: no-downgrade`, no dependency install scripts, `blockExoticSubdeps`, `engineStrict`.
   - Dependabot also covers the example lockfiles. Added CODEOWNERS, a tighter `SECURITY.md`, and stricter Claude Code permissions.
-- Toolchain: pnpm 12, Vitest 5 (benchmarks ported to the test-context `bench` API), tsup 9, Vite 8.3, and Node 26 in the CI matrix. TypeScript stays on 6.x until the build moves off tsup. `pnpm audit` is clean.
+- Toolchain: pnpm 12, Vitest 5 (benchmarks ported to the test-context `bench` API), tsup 9, Vite 8.3, and Node 26 in the CI matrix. The example library fixtures also use tsup 9 (with TypeScript 6 for `.d.ts`), and the example apps use TypeScript 7. TypeScript stays on 6.x until the build moves off tsup. `pnpm audit` is clean.
 - Agent setup for Claude Code (`CLAUDE.md` imports `AGENTS.md`, the single source of guidance; `.claude/agents`, `.claude/skills`, `.claude/settings.json`) and refreshed Codex agents.
 
 ## 0.1.3
