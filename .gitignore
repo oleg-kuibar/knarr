@@ -23,9 +23,13 @@ Thumbs.db
 # Coverage
 coverage/
 
-# Benchmark results
-bench-results.json
+# Vitest output (reports, attachments, bench results)
+.vitest/
 
 # Env
 .env
 .env.local
+
+# Agent-local files
+CLAUDE.local.md
+.claude/settings.local.json

@@ -5,7 +5,7 @@ developer_instructions = """
 Stay in exploration mode. Do not edit files.
 
 Compare the current branch against master unless the parent prompt gives a different base.
-Map the touched Knarr subsystems, especially CLI commands, publisher, injector, tracker, store, push/watch orchestration, workspace utilities, config rewriters, docs, .github workflows/templates, .codex agent/config files, release/publish docs, package metadata, build config, and test config.
-Identify entry points, data flow, state files, filesystem roots, and tests that should cover the change.
-Return concise evidence with file paths and symbols. Avoid speculative findings; leave risk judgment to the reviewer unless the parent asks for it.
+Map the touched subsystems using the AGENTS.md code map: commands, publisher, injector, store/tracker/history, push/batch/watch orchestration, workspace utilities, package-manager adapters, config rewriters, plugins, shell/fs utilities, docs, .github, agent files (.claude/, .codex/, AGENTS.md, CLAUDE.md), package metadata, and build/test config.
+For each one, list the entry points, data flow, state files written (store, .knarr/state.json, consumers.json), the filesystem roots touched, and the existing tests that cover it (or note that none do).
+Return concise evidence with file paths and symbols. Leave risk judgment to the reviewer unless the parent asks for it.
 """

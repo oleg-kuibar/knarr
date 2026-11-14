@@ -1,4 +1,4 @@
-import { describe, bench, beforeAll, afterAll } from "vitest";
+import { test, beforeAll, afterAll } from "vitest";
 import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -60,128 +60,103 @@ afterAll(async () => {
   await rm(consumerDir, { recursive: true, force: true });
 });
 
-describe("resolvePackFiles", () => {
-  bench("api-client", async () => {
+// Vitest 5 bench API: benchmarks are registered from a test's context.
+// `beforeEach` hooks run before every iteration (excluded from timing);
+// `beforeAll` hooks run once per warmup/run phase.
+
+async function injectApiClient(): Promise<void> {
+  const entry = (await getStoreEntry(apiPkg.name, apiPkg.version)) as StoreEntry;
+  await inject(entry, consumerDir, "npm");
+}
+
+async function clearStore(): Promise<void> {
+  const entryPath = join(KNARRHome, "store");
+  if (await exists(entryPath)) {
+    await removeDir(entryPath);
+  }
+}
+
+async function clearInjectedPackage(): Promise<void> {
+  const pkgDir = join(consumerDir, "node_modules", apiPkg.name);
+  if (await exists(pkgDir)) {
+    await removeDir(pkgDir);
+  }
+}
+
+test("resolvePackFiles", async ({ bench }) => {
+  await bench("api-client", async () => {
     await resolvePackFiles(API_CLIENT_DIR, apiPkg);
-  });
+  }).run();
 });
 
-describe("publish", () => {
-  bench(
-    "full (force)",
-    async () => {
+test("publish", async ({ bench }) => {
+  await bench.compare(
+    // Clear the store before every iteration so each one is a real publish
+    bench("full (force)", { beforeEach: clearStore }, async () => {
       await publish(API_CLIENT_DIR, { force: true });
-    },
-    {
-      async setup() {
-        // Clear store to force a real publish each iteration
-        const entryPath = join(KNARRHome, "store");
-        if (await exists(entryPath)) {
-          await removeDir(entryPath);
-        }
-      },
-    }
-  );
-
-  bench("skip (no changes)", async () => {
+    }),
     // Hot path in watch mode: hash matches, publish is skipped
-    await publish(API_CLIENT_DIR);
-  });
-});
-
-describe("inject", () => {
-  bench(
-    "cold (empty node_modules)",
-    async () => {
-      const entry = (await getStoreEntry(
-        apiPkg.name,
-        apiPkg.version
-      )) as StoreEntry;
-      await inject(entry, consumerDir, "npm");
-    },
-    {
-      async setup() {
-        // Ensure store is populated
-        await publish(API_CLIENT_DIR, { force: true });
-        // Clear consumer node_modules/<pkg> for a cold inject
-        const pkgDir = join(consumerDir, "node_modules", apiPkg.name);
-        if (await exists(pkgDir)) {
-          await removeDir(pkgDir);
-        }
-      },
-    }
-  );
-
-  bench(
-    "incremental (no changes)",
-    async () => {
-      const entry = (await getStoreEntry(
-        apiPkg.name,
-        apiPkg.version
-      )) as StoreEntry;
-      await inject(entry, consumerDir, "npm");
-    },
-    {
-      async setup() {
-        // Ensure store is populated and first inject is done
-        await publish(API_CLIENT_DIR, { force: true });
-        const entry = (await getStoreEntry(
-          apiPkg.name,
-          apiPkg.version
-        )) as StoreEntry;
-        await inject(entry, consumerDir, "npm");
-      },
-    }
+    bench(
+      "skip (no changes)",
+      { beforeAll: () => publish(API_CLIENT_DIR, { force: true }).then(() => {}) },
+      async () => {
+        await publish(API_CLIENT_DIR);
+      }
+    )
   );
 });
 
-describe("push (publish + inject)", () => {
-  bench(
-    "full cycle",
-    async () => {
-      await publish(API_CLIENT_DIR, { force: true });
-      const entry = (await getStoreEntry(
-        apiPkg.name,
-        apiPkg.version
-      )) as StoreEntry;
-      await inject(entry, consumerDir, "npm");
-    },
-    {
-      async setup() {
-        // Clear store and consumer for a full push each iteration
-        const entryPath = join(KNARRHome, "store");
-        if (await exists(entryPath)) {
-          await removeDir(entryPath);
-        }
-        const pkgDir = join(consumerDir, "node_modules", apiPkg.name);
-        if (await exists(pkgDir)) {
-          await removeDir(pkgDir);
-        }
+test("inject", async ({ bench }) => {
+  await bench.compare(
+    bench(
+      "cold (empty node_modules)",
+      {
+        beforeAll: () => publish(API_CLIENT_DIR, { force: true }).then(() => {}),
+        beforeEach: clearInjectedPackage,
       },
-    }
+      injectApiClient
+    ),
+    bench(
+      "incremental (no changes)",
+      {
+        async beforeAll() {
+          await publish(API_CLIENT_DIR, { force: true });
+          await injectApiClient();
+        },
+      },
+      injectApiClient
+    )
   );
+});
 
-  bench(
-    "no-op (nothing changed)",
-    async () => {
-      // Simulates the hot path in watch mode: publish skips, inject skips
-      const result = await publish(API_CLIENT_DIR);
-      const entry = (await getStoreEntry(
-        apiPkg.name,
-        apiPkg.version
-      )) as StoreEntry;
-      await inject(entry, consumerDir, "npm");
-    },
-    {
-      async setup() {
-        // Ensure everything is already published and injected
-        await publish(API_CLIENT_DIR, { force: true });
-        const entry = (await getStoreEntry(
-          apiPkg.name,
-          apiPkg.version
-        )) as StoreEntry;
-        await inject(entry, consumerDir, "npm");
+test("push (publish + inject)", async ({ bench }) => {
+  await bench.compare(
+    bench(
+      "full cycle",
+      {
+        async beforeEach() {
+          await clearStore();
+          await clearInjectedPackage();
+        },
       },
-    }
+      async () => {
+        await publish(API_CLIENT_DIR, { force: true });
+        await injectApiClient();
+      }
+    ),
+    // Simulates the hot path in watch mode: publish skips, inject skips
+    bench(
+      "no-op (nothing changed)",
+      {
+        async beforeAll() {
+          await publish(API_CLIENT_DIR, { force: true });
+          await injectApiClient();
+        },
+      },
+      async () => {
+        await publish(API_CLIENT_DIR);
+        await injectApiClient();
+      }
+    )
   );
 });

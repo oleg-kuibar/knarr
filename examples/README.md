@@ -31,7 +31,7 @@ examples/
 # From the repo root
 pnpm install
 pnpm build
-pnpm link --global
+pnpm add -g .   # pnpm 11+; older pnpm: pnpm link --global
 ```
 
 ### 2. Build the packages

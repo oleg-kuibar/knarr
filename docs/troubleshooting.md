@@ -153,6 +153,8 @@ git config --global core.longpaths true
 
 And enable the Windows long paths group policy or set the registry key `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled` to `1`.
 
+5. **`EPERM` with `syscall: 'symlink'` (Knarr 0.1.3 and older).** Creating symlinks on Windows needs Developer Mode or an elevated shell. Older Knarr versions failed when backing up an npm `file:` dependency, which npm installs as a junction. Upgrade Knarr: it now recreates directory links as junctions, which need no extra privilege. Enabling Developer Mode (Settings → System → For developers) also works around it.
+
 ---
 
 ## "Store entry missing" errors

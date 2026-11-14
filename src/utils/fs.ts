@@ -1,11 +1,14 @@
 import {
   copyFile,
   cp,
+  lstat,
   mkdir,
   readdir,
+  realpath,
   rename,
   rm,
   stat,
+  symlink,
   utimes,
   writeFile,
   constants,
@@ -374,5 +377,25 @@ export async function copyDir(src: string, dest: string): Promise<void> {
     recordMutation({ type: "copy", path: src, dest });
     return;
   }
-  await cp(src, dest, { recursive: true });
+  try {
+    await cp(src, dest, { recursive: true });
+  } catch (err) {
+    // Windows without symlink privilege (no Developer Mode, not elevated):
+    // fs.cp recreates a top-level directory link with symlink(), which fails
+    // with EPERM even when the source is a junction (npm `file:` deps are).
+    // Junctions need no privilege, so recreate the link as one.
+    if (
+      process.platform !== "win32" ||
+      !isNodeError(err) ||
+      err.code !== "EPERM" ||
+      err.syscall !== "symlink" ||
+      !(await lstat(src)).isSymbolicLink()
+    ) {
+      throw err;
+    }
+    const target = await realpath(src);
+    if (!(await stat(target)).isDirectory()) throw err;
+    await mkdir(dirname(dest), { recursive: true });
+    await symlink(target, dest, "junction");
+  }
 }

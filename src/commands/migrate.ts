@@ -9,6 +9,7 @@ import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, isJsonOutput } from "../utils/logger.js";
 import { printDryRunReport, recordMutation } from "../utils/dry-run.js";
 import { addPackageToConsumer, readPackageNameFromSource } from "./add-flow.js";
+import { devLoopHint } from "../utils/hints.js";
 
 interface YalcLockEntry {
   version: string;
@@ -168,7 +169,7 @@ export async function runMigrate(options: MigrateOptions = {}): Promise<MigrateR
   } else {
     consola.log(`  1. ${pc.cyan("knarr doctor --fix")}`);
     for (const source of sources) {
-      consola.log(`  2. ${pc.cyan(`cd ${source.sourcePath} && knarr dev`)}`);
+      consola.log(`  2. ${pc.cyan(devLoopHint(source.sourcePath))}`);
     }
   }
   consola.log(`\n  Run ${pc.cyan("knarr doctor")} to verify your setup.\n`);

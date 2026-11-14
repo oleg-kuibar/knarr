@@ -1,0 +1,18 @@
+# Every change needs the maintainer's review. Enforced when the branch ruleset
+# requires code owner review.
+*                       @oleg-kuibar
+
+# Security-sensitive paths, listed explicitly so they stay owned if the
+# catch-all above ever changes.
+/.github/               @oleg-kuibar
+/scripts/               @oleg-kuibar
+/package.json           @oleg-kuibar
+/pnpm-lock.yaml         @oleg-kuibar
+/pnpm-workspace.yaml    @oleg-kuibar
+/src/core/              @oleg-kuibar
+/src/utils/shell.ts     @oleg-kuibar
+/src/utils/init-helpers.ts @oleg-kuibar
+/.claude/               @oleg-kuibar
+/.codex/                @oleg-kuibar
+/AGENTS.md              @oleg-kuibar
+/CLAUDE.md              @oleg-kuibar

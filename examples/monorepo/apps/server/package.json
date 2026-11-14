@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node --import tsx src/main.ts",
-    "postinstall": "knarr restore --silent || node -e \"process.exit(0)\""
+    "postinstall": "node -e \"try{require('./.knarr/restore.cjs')}catch(e){if(e.code!=='MODULE_NOT_FOUND')throw e}\""
   },
   "dependencies": {
     "@mono/shared-utils": "workspace:*"

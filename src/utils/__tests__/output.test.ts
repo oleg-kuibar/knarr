@@ -33,3 +33,16 @@ describe("json dry-run output", () => {
     expect(payload.mutations).toHaveLength(1);
   });
 });
+
+describe("displayMutationPath", () => {
+  it("shows paths inside cwd relative, home paths with ~, others absolute", async () => {
+    const { displayMutationPath } = await import("../dry-run.js");
+    const { join, resolve } = await import("node:path");
+    const cwd = resolve("/work/app");
+    const home = resolve("/users/me");
+    expect(displayMutationPath(join(cwd, "node_modules", "x"), cwd, home)).toBe(join("node_modules", "x"));
+    expect(displayMutationPath(cwd, cwd, home)).toBe(".");
+    expect(displayMutationPath(join(home, ".knarr", "store"), cwd, home)).toBe(join("~", ".knarr", "store"));
+    expect(displayMutationPath(resolve("/elsewhere/lib"), cwd, home)).toBe(resolve("/elsewhere/lib"));
+  });
+});

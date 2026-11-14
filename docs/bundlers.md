@@ -45,6 +45,8 @@ export default defineConfig({
 
 > **Auto-injection:** Both `knarr add` and `knarr init` automatically add the Knarr Vite plugin to your config when they detect Vite. `knarr remove` removes it when the last Knarr-linked package is unlinked. You typically don't need to add it manually.
 
+The plugin logs only what you'd act on: which packages it excludes from pre-bundling, and when a push triggers a reload or restart. To see watcher setup details while debugging, use `knarr({ verbose: true })` or start Vite with `KNARR_VERBOSE=1`.
+
 ### Why a plugin?
 
 Vite pre-bundles dependencies into `.vite/deps/` and caches the result. The Knarr Vite plugin watches `.knarr/state.json` for changes and triggers a full reload when knarr pushes new files, ensuring the dev server always picks up the latest version.

@@ -15,6 +15,7 @@ import { exists } from "../utils/fs.js";
 import { detectYarnNodeLinker } from "../utils/pm-detect.js";
 import { initFlags } from "../utils/logger.js";
 import { consola } from "../utils/console.js";
+import { canCreateSymlinks } from "./helpers/symlinks.js";
 
 let testKNARRHome: string;
 let testLib: string;
@@ -897,7 +898,7 @@ describe("rollback", () => {
     ).toBe('module.exports = "hello";');
   });
 
-  it("reports rollback consumer push failures in one JSON result", async () => {
+  it.skipIf(!canCreateSymlinks)("reports rollback consumer push failures in one JSON result", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { addLink, registerConsumer } = await import("../core/tracker.js");
@@ -1074,7 +1075,7 @@ describe("add command backup preservation", () => {
 });
 
 describe("yarn support", () => {
-  it("injects into yarn pnpm-linker .store virtual store", async () => {
+  it.skipIf(!canCreateSymlinks)("injects into yarn pnpm-linker .store virtual store", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject } = await import("../core/injector.js");
@@ -1159,7 +1160,7 @@ describe("yarn support", () => {
     expect(await exists(join(yarnStorePkgDir, "dist", "index.js"))).toBe(true);
   });
 
-  it("honors yarn pnpmStoreFolder configuration", async () => {
+  it.skipIf(!canCreateSymlinks)("honors yarn pnpmStoreFolder configuration", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject } = await import("../core/injector.js");
@@ -1316,7 +1317,7 @@ describe("yarn support", () => {
     expect(await exists(join(staleYarnStorePkgDir, "dist", "index.js"))).toBe(false);
   });
 
-  it("refuses stale yarn pnpm-linker symlinks to another package", async () => {
+  it.skipIf(!canCreateSymlinks)("refuses stale yarn pnpm-linker symlinks to another package", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject } = await import("../core/injector.js");
@@ -1519,7 +1520,7 @@ describe("bun support", () => {
     expect(await exists(join(stalePnpmPkgDir, "dist", "index.js"))).toBe(false);
   });
 
-  it("injects into local bun isolated store symlinks", async () => {
+  it.skipIf(!canCreateSymlinks)("injects into local bun isolated store symlinks", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject } = await import("../core/injector.js");
@@ -1553,7 +1554,7 @@ describe("bun support", () => {
     expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
   });
 
-  it("refuses bun isolated symlinks outside the local .bun store", async () => {
+  it.skipIf(!canCreateSymlinks)("refuses bun isolated symlinks outside the local .bun store", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject } = await import("../core/injector.js");
@@ -1581,6 +1582,97 @@ describe("bun support", () => {
 });
 
 describe("pnpm injection", () => {
+  async function pnpmFallbackWarnings(dependencies: Record<string, string>): Promise<string[]> {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject, backupExisting } = await import("../core/injector.js");
+    const { consola } = await import("../utils/console.js");
+
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({ name: "test-app", version: "1.0.0", dependencies })
+    );
+    await publish(testLib);
+    const entry = await getStoreEntry("test-lib", "1.0.0");
+
+    const warn = vi.spyOn(consola, "warn").mockImplementation(() => {});
+    try {
+      // Same sequence as `knarr use`/`add`: back up, then inject.
+      await backupExisting(testConsumer, "test-lib", "pnpm");
+      await inject(entry!, testConsumer, "pnpm");
+      return warn.mock.calls.map((call) => String(call[0]));
+    } finally {
+      warn.mockRestore();
+    }
+  }
+
+  it("keeps pushing after the library bumps its version (pnpm consumer installed the old one)", async () => {
+    const { publish } = await import("../core/publisher.js");
+    const { getStoreEntry } = await import("../core/store.js");
+    const { inject } = await import("../core/injector.js");
+    const { addLink, getLink, registerConsumer } = await import("../core/tracker.js");
+    const { pushStoreEntry } = await import("../core/push-engine.js");
+
+    // pnpm installed test-lib@1.0.0; node_modules/test-lib links into .pnpm
+    // (pnpm uses junctions on Windows, which need no symlink privilege).
+    await writeFile(join(testConsumer, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({ name: "test-app", version: "1.0.0", dependencies: { "test-lib": "^1.0.0" } })
+    );
+    const pnpmPkgDir = join(testConsumer, "node_modules", ".pnpm", "test-lib@1.0.0", "node_modules", "test-lib");
+    await mkdir(pnpmPkgDir, { recursive: true });
+    await writeFile(join(pnpmPkgDir, "package.json"), JSON.stringify({ name: "test-lib", version: "1.0.0" }));
+    await symlink(
+      pnpmPkgDir,
+      join(testConsumer, "node_modules", "test-lib"),
+      process.platform === "win32" ? "junction" : "dir"
+    );
+
+    // Link 1.0.0 the way `knarr add` does.
+    const first = await publish(testLib);
+    const v1 = await getStoreEntry("test-lib", "1.0.0");
+    await inject(v1!, testConsumer, "pnpm");
+    await addLink(testConsumer, "test-lib", {
+      version: "1.0.0",
+      contentHash: v1!.meta.contentHash,
+      linkedAt: new Date().toISOString(),
+      sourcePath: testLib,
+      backupExists: false,
+      packageManager: "pnpm",
+      buildId: first.buildId,
+    });
+    await registerConsumer("test-lib", testConsumer);
+
+    // The library bumps to 1.1.0 and pushes.
+    await writeFile(
+      join(testLib, "package.json"),
+      JSON.stringify({ name: "test-lib", version: "1.1.0", main: "dist/index.js", files: ["dist"] })
+    );
+    await writeFile(join(testLib, "dist", "index.js"), 'module.exports = "v1.1";');
+    await publish(testLib);
+    const v2 = await getStoreEntry("test-lib", "1.1.0");
+    const summary = await pushStoreEntry(v2!, { emitOutput: false });
+
+    expect(summary.failedConsumers).toBe(0);
+    expect(await readFile(join(pnpmPkgDir, "dist", "index.js"), "utf-8")).toBe('module.exports = "v1.1";');
+    expect((await getLink(testConsumer, "test-lib"))?.version).toBe("1.1.0");
+  });
+
+  it("links a not-yet-installed, undeclared package without a fallback warning", async () => {
+    const warnings = await pnpmFallbackWarnings({});
+    expect(warnings.filter((w) => w.includes("virtual store"))).toEqual([]);
+    expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
+  });
+
+  it("warns once with an install hint when a declared package is not installed", async () => {
+    const warnings = (await pnpmFallbackWarnings({ "test-lib": "1.0.0" }))
+      .filter((w) => w.includes("virtual store"));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("pnpm install");
+  });
+
   it("injects into pnpm .pnpm/ virtual store", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
@@ -1623,7 +1715,7 @@ describe("pnpm injection", () => {
     expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
   });
 
-  it("honors pnpm virtualStoreDir metadata outside node_modules", async () => {
+  it.skipIf(!canCreateSymlinks)("honors pnpm virtualStoreDir metadata outside node_modules", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject } = await import("../core/injector.js");
@@ -1665,7 +1757,7 @@ describe("pnpm injection", () => {
     expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(true);
   });
 
-  it("refuses pnpm global virtual store links from metadata", async () => {
+  it.skipIf(!canCreateSymlinks)("refuses pnpm global virtual store links from metadata", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject, removeInjected } = await import("../core/injector.js");
@@ -1807,7 +1899,7 @@ describe("pnpm injection", () => {
     expect(await exists(wrong)).toBe(false);
   });
 
-  it("accepts .pnpm candidates when the consumer path resolves through a symlink", async () => {
+  it.skipIf(!canCreateSymlinks)("accepts .pnpm candidates when the consumer path resolves through a symlink", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject } = await import("../core/injector.js");
@@ -1851,7 +1943,7 @@ describe("pnpm injection", () => {
     }
   });
 
-  it("repairs dangling pnpm package symlinks when the virtual store entry exists", async () => {
+  it.skipIf(!canCreateSymlinks)("repairs dangling pnpm package symlinks when the virtual store entry exists", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject } = await import("../core/injector.js");
@@ -1962,7 +2054,7 @@ describe("pnpm injection", () => {
     expect(await exists(join(stalePnpmPkgDir, "dist", "index.js"))).toBe(false);
   });
 
-  it("accepts direct package directories when the consumer path resolves through a symlink", async () => {
+  it.skipIf(!canCreateSymlinks)("accepts direct package directories when the consumer path resolves through a symlink", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject } = await import("../core/injector.js");
@@ -2014,7 +2106,7 @@ describe("pnpm injection", () => {
     expect(await exists(join(pnpmPkgDir, "dist", "index.js"))).toBe(false);
   });
 
-  it("refuses pnpm symlinks that resolve outside the consumer virtual store", async () => {
+  it.skipIf(!canCreateSymlinks)("refuses pnpm symlinks that resolve outside the consumer virtual store", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject } = await import("../core/injector.js");
@@ -2033,7 +2125,7 @@ describe("pnpm injection", () => {
     await rm(external, { recursive: true, force: true });
   });
 
-  it("refuses .pnpm fallback candidates that resolve outside the consumer virtual store", async () => {
+  it.skipIf(!canCreateSymlinks)("refuses .pnpm fallback candidates that resolve outside the consumer virtual store", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject } = await import("../core/injector.js");
@@ -2162,7 +2254,7 @@ describe("pnpm injection", () => {
     expect(await exists(directFile)).toBe(true);
   });
 
-  it("remove restores backups into pnpm virtual store without replacing the top-level symlink", async () => {
+  it.skipIf(!canCreateSymlinks)("remove restores backups into pnpm virtual store without replacing the top-level symlink", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { inject, backupExisting } = await import("../core/injector.js");
@@ -2298,7 +2390,7 @@ describe("missing transitive deps", () => {
     }
   });
 
-  it("recognizes deps installed in a pnpm virtual-store package context", async () => {
+  it.skipIf(!canCreateSymlinks)("recognizes deps installed in a pnpm virtual-store package context", async () => {
     const { publish } = await import("../core/publisher.js");
     const { getStoreEntry } = await import("../core/store.js");
     const { checkMissingDeps } = await import("../core/injector.js");

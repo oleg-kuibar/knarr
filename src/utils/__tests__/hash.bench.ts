@@ -1,4 +1,4 @@
-import { describe, bench, beforeAll, afterAll } from "vitest";
+import { test, beforeAll, afterAll } from "vitest";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -37,22 +37,22 @@ afterAll(async () => {
   await rm(tempDir, { recursive: true, force: true });
 });
 
-describe("hashFile", () => {
-  bench("1 KB (buffered)", async () => {
-    await hashFile(smallFile, 1024);
-  });
-
-  bench("100 KB (buffered)", async () => {
-    await hashFile(mediumFile, 100 * 1024);
-  });
-
-  bench("2 MB (streaming)", async () => {
-    await hashFile(largeFile, 2 * 1024 * 1024);
-  });
+test("hashFile", async ({ bench }) => {
+  await bench.compare(
+    bench("1 KB (buffered)", async () => {
+      await hashFile(smallFile, 1024);
+    }),
+    bench("100 KB (buffered)", async () => {
+      await hashFile(mediumFile, 100 * 1024);
+    }),
+    bench("2 MB (streaming)", async () => {
+      await hashFile(largeFile, 2 * 1024 * 1024);
+    })
+  );
 });
 
-describe("computeContentHash", () => {
-  bench("50 files (SHA-256 aggregate)", async () => {
+test("computeContentHash", async ({ bench }) => {
+  await bench("50 files (SHA-256 aggregate)", async () => {
     await computeContentHash(aggregateFiles, tempDir);
-  });
+  }).run();
 });

@@ -251,6 +251,8 @@ export async function pushStoreEntry(
           // skipped as unchanged), the user expects a refresh after `knarr push`.
           await addLink(consumerPath, entry.name, {
             ...link,
+            // A push may carry a new version (the library bumped it); record what's installed now.
+            version: entry.version,
             contentHash: entry.meta.contentHash,
             linkedAt: new Date().toISOString(),
             buildId: entry.meta.buildId ?? "",
@@ -543,6 +545,15 @@ function markTransitiveDependentsBlocked(
   }
 }
 
+/** resolveWatchConfig runs for the initial build and again for the watcher: log each choice once. */
+const announcedBuildCommands = new Set<string>();
+function announceBuildCommand(packageDir: string, message: string): void {
+  const key = JSON.stringify([packageDir, message]);
+  if (announcedBuildCommands.has(key)) return;
+  announcedBuildCommands.add(key);
+  consola.info(message);
+}
+
 /**
  * Resolve build command and watch patterns from CLI args, config, and auto-detection.
  * Merge priority: CLI args > package.json#knarr > auto-detection.
@@ -562,7 +573,7 @@ export async function resolveWatchConfig(
   } else if (config?.buildCmd) {
     // From package.json#knarr
     buildCmd = config.buildCmd;
-    consola.info(`Using build command from config: ${buildCmd}`);
+    announceBuildCommand(packageDir, `Using build command from config: ${buildCmd}`);
   } else {
     // Auto-detect from package.json scripts
     const pm = (
@@ -571,7 +582,7 @@ export async function resolveWatchConfig(
     const detected = await detectBuildCommand(packageDir, pm);
     if (detected) {
       buildCmd = detected;
-      consola.info(`Auto-detected build command: ${detected}`);
+      announceBuildCommand(packageDir, `Auto-detected build command: ${detected}`);
     }
   }
 
@@ -592,7 +603,7 @@ export async function resolveWatchConfig(
     verbose(`[watch] Using configured watch patterns with build command: ${patterns.join(", ")}`);
   } else {
     // Without a build command: watch the package.json `files` field (typically dist/)
-    consola.info("No build command detected — watching output directories directly");
+    announceBuildCommand(packageDir, "No build command detected — watching output directories directly");
     try {
       const pkg = JSON.parse(
         await readFile(join(packageDir, "package.json"), "utf-8")

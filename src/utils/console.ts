@@ -18,6 +18,8 @@ interface SelectOption {
 interface SelectOptions {
   type: "select";
   options: SelectOption[];
+  /** Shown when stdin is not a TTY, e.g. "Pass --role consumer or --role library." */
+  nonInteractiveHint?: string;
 }
 
 interface TextOptions {
@@ -34,6 +36,8 @@ async function prompt(
   message: string,
   options: PromptOptions,
 ): Promise<boolean | string> {
+  if (!stdin.isTTY) return answerNonInteractive(message, options);
+
   const rl = createInterface({ input: stdin, output: stdout });
   try {
     if (options.type === "confirm") {
@@ -66,6 +70,33 @@ async function prompt(
   } finally {
     rl.close();
   }
+}
+
+/**
+ * Without a TTY, readline never resolves: Node drains the event loop and exits
+ * 0 mid-command, so a script or CI job "succeeds" having done nothing. Answer
+ * from the prompt's declared default instead, and fail loudly when there is no
+ * safe default (destructive confirms declare none; selects need a choice).
+ */
+function answerNonInteractive(message: string, options: PromptOptions): boolean | string {
+  if (options.type === "confirm" && options.initial !== undefined) {
+    console.error(
+      `${pc.cyan("i")} ${message} ${pc.dim(`-> ${options.initial ? "yes" : "no"} (no interactive terminal, using default)`)}`,
+    );
+    return options.initial;
+  }
+  if (options.type === "text") {
+    return options.default ?? "";
+  }
+  console.error(`${pc.red("x")} Cannot ask "${message}": no interactive terminal (stdin is not a TTY).`);
+  console.error(
+    `${pc.cyan("i")} ${pc.dim("Suggestion:")} ${
+      options.type === "confirm"
+        ? "Re-run with --yes to confirm."
+        : options.nonInteractiveHint ?? "Pass the choice as a flag (see --help)."
+    }`,
+  );
+  process.exit(1);
 }
 
 export const consola = {

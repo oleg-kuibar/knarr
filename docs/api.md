@@ -321,14 +321,15 @@ async function startWatcher(
 
 Uses chokidar. Implements debounce-effects strategy: changes are detected immediately but coalesced before triggering the callback. If new changes arrive during callback execution, re-triggers after it finishes.
 
-### `runBuildCommand(buildCmd, cwd)`
+### `runBuildCommand(buildCmd, cwd, label?)`
 
-Run a build command as a subprocess and wait for it to complete.
+Run a build command through the platform shell and wait for it to finish. Quoted paths with spaces work on Windows. `label` prefixes the log line, for example with a package name.
 
 ```typescript
 async function runBuildCommand(
   buildCmd: string,
-  cwd: string
+  cwd: string,
+  label?: string
 ): Promise<boolean>  // true if exit code 0
 ```
 
@@ -599,9 +600,12 @@ async function detectPackageManagerInfo(
 ```
 
 ```typescript
+type PackageManagerDetectionSource =
+  | "packageManager" | "lockfile" | "yarnArtifact" | "default";
+
 interface PackageManagerDetection {
   packageManager: PackageManager;
-  source: "packageManager" | "lockfile" | "yarnArtifact" | "default";
+  source: PackageManagerDetectionSource;
   dir: string;
   file?: string;
 }
@@ -616,6 +620,22 @@ class Timer {
   elapsedMs(): number    // milliseconds since creation
   elapsed(): string      // human-readable ("1.2s" or "150ms")
 }
+```
+
+### `normalizePath(p)`
+
+Converts Windows backslashes to forward slashes. Use it before comparing or storing paths that must be stable across platforms.
+
+```typescript
+function normalizePath(p: string): string
+```
+
+### `ringBell(enabled)`
+
+Writes a terminal bell (``) to **stderr** when `enabled` is true, so stdout stays clean in `--json` mode. Watch mode uses it for `--notify`.
+
+```typescript
+function ringBell(enabled: boolean): void
 ```
 
 ### `isNodeError(err)`
@@ -670,6 +690,8 @@ interface WatchOptions {
   buildCmd?: string;
   debounce?: number;         // debounce delay in ms (default: 500)
   cooldown?: number;         // minimum time between builds in ms (default: 500)
+  notify?: boolean;          // ring the terminal bell on push success/failure
+  label?: string;            // log-line prefix, e.g. the package name in dev --all
   awaitWriteFinish?: boolean | { stabilityThreshold: number; pollInterval: number };
 }
 
@@ -681,9 +703,11 @@ interface HistoryEntry {
   packageDir: string;         // path to package/ dir in history
 }
 
+type PreflightSeverity = "warn" | "error";
+
 interface PreflightIssue {
   code: string;
-  severity: "warn" | "error";
+  severity: PreflightSeverity;
   message: string;
 }
 

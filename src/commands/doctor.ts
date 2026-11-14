@@ -21,10 +21,14 @@ import {
 import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import {
-  addPostinstall,
   ensureGitignore,
+  ensureRestoreHook,
+  LEGACY_POSTINSTALL_RESTORE_COMMAND,
+  RESTORE_SCRIPT_NAME,
   usesKnarrRestoreCommand,
+  usesLocalRestoreScript,
   usesSelfResolvingKnarrCommand,
+  writeRestoreScript,
 } from "../utils/init-helpers.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, isJsonOutput } from "../utils/logger.js";
@@ -423,13 +427,52 @@ export async function runDoctorDiagnostics(
   if (await exists(pkgPath)) {
     const pkg = await readJsonFile(pkgPath);
     const postinstall = pkg?.scripts?.postinstall;
-    if (typeof postinstall === "string" && usesKnarrRestoreCommand(postinstall)) {
+    if (typeof postinstall === "string" && usesLocalRestoreScript(postinstall)) {
+      if (await exists(join(consumerPath, ".knarr", RESTORE_SCRIPT_NAME))) {
+        await addCheck({
+          name: "Postinstall restore",
+          status: "pass",
+          message: "postinstall re-applies links via .knarr/restore.cjs",
+        });
+      } else {
+        await addCheck(
+          {
+            name: "Postinstall restore",
+            status: "warn",
+            message: ".knarr/restore.cjs is missing, so installs won't re-apply links.",
+            fixable: canFixConsumerSetup,
+            ...(!canFixConsumerSetup ? { unfixableReason: pnpFixBlockedReason } : {}),
+          },
+          async () => {
+            await writeRestoreScript(consumerPath);
+            return "write .knarr/restore.cjs";
+          }
+        );
+      }
+    } else if (typeof postinstall === "string" && usesKnarrRestoreCommand(postinstall)) {
       if (await canVerifyKnarrForPostinstall(consumerPath, pkg, postinstall)) {
         await addCheck({
           name: "Postinstall restore",
           status: "pass",
           message: "postinstall runs knarr restore",
         });
+      } else if (postinstall.includes(LEGACY_POSTINSTALL_RESTORE_COMMAND)) {
+        // Knarr's own pre-0.2 hook: it silently does nothing after `npx knarr use`.
+        // Upgrade it to the hook that records the CLI path in .knarr/restore.cjs.
+        await addCheck(
+          {
+            name: "Postinstall restore",
+            status: "warn",
+            message:
+              "postinstall runs knarr restore, but no local knarr dependency or binary was found, so installs silently drop links.",
+            fixable: canFixConsumerSetup,
+            ...(!canFixConsumerSetup ? { unfixableReason: pnpFixBlockedReason } : {}),
+          },
+          async () => {
+            await ensureRestoreHook(consumerPath);
+            return "upgrade postinstall restore hook (works without a global knarr)";
+          }
+        );
       } else {
         await addCheck({
           name: "Postinstall restore",
@@ -455,8 +498,8 @@ export async function runDoctorDiagnostics(
           ...(!canFixConsumerSetup ? { unfixableReason: pnpFixBlockedReason } : {}),
         },
         async () => {
-          const changed = await addPostinstall(pkgPath);
-          return changed ? "add postinstall restore hook to package.json" : null;
+          await ensureRestoreHook(consumerPath);
+          return "add postinstall restore hook to package.json";
         }
       );
     }
@@ -468,8 +511,9 @@ export async function runDoctorDiagnostics(
     });
   }
 
-  const nodeMajor = parseInt(process.versions.node.split(".")[0], 10);
-  if (nodeMajor >= 22) {
+  // Keep in sync with package.json#engines.node.
+  const [nodeMajor, nodeMinor] = process.versions.node.split(".").map((n) => parseInt(n, 10));
+  if (nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 22)) {
     await addCheck({
       name: "Node.js version",
       status: "pass",
@@ -479,7 +523,7 @@ export async function runDoctorDiagnostics(
     await addCheck({
       name: "Node.js version",
       status: "fail",
-      message: `v${process.versions.node}; Knarr requires Node.js >= 22`,
+      message: `v${process.versions.node}; Knarr requires Node.js >= 22.22`,
     });
   }
 

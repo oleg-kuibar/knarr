@@ -43,8 +43,10 @@ function run(cwd, command, args, options = {}) {
   const spawnCommand = isWindowsBatch
     ? process.env.ComSpec ?? "cmd.exe"
     : resolvedCommand;
+  // cmd.exe needs `/s /c "<line>"` passed verbatim: Node's default argument
+  // escaping (backslash before quotes) is not understood by cmd.exe.
   const spawnArgs = isWindowsBatch
-    ? ["/d", "/c", [resolvedCommand, ...args].map(quoteCmdArg).join(" ")]
+    ? ["/d", "/s", "/c", `"${[resolvedCommand, ...args].map(quoteCmdArg).join(" ")}"`]
     : args;
 
   const result = spawnSync(spawnCommand, spawnArgs, {
@@ -53,6 +55,7 @@ function run(cwd, command, args, options = {}) {
     encoding: "utf8",
     maxBuffer: 50 * 1024 * 1024,
     shell: false,
+    windowsVerbatimArguments: isWindowsBatch,
   });
 
   if (result.error) {

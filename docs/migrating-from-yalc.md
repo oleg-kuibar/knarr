@@ -150,7 +150,7 @@ Knarr keeps the real version from the registry in your dependency list and overw
 
 ### postinstall hook
 
-knarr uses a `postinstall` script (`knarr restore --silent || node -e "process.exit(0)"`) to automatically re-inject linked packages after installs when `knarr` is available on the install script `PATH` (for example, installed globally or as a devDependency). The Node fallback ensures it does not break installs if Knarr is not available.
+Knarr adds a `postinstall` hook that re-applies linked packages after plain installs. It works without a global `knarr` and is a no-op for teammates who don't use Knarr. See the [FAQ](faq.md#what-happens-when-i-run-npm-install--pnpm-install).
 
 ### Verify with doctor
 

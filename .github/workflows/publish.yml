@@ -4,50 +4,139 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Build and pack without publishing
+        description: Build, verify, and run `npm publish --dry-run` without publishing
         required: false
         type: boolean
         default: true
 
-permissions:
-  contents: read
-  id-token: write
+# Deny everything by default; each job asks for what it needs.
+permissions: {}
 
 concurrency:
   group: publish-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  publish:
+  # Runs all third-party dependency code (install, build, tests) WITHOUT any
+  # publishing credential, and hands a verified tarball to the publish job.
+  verify:
+    name: verify release
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
-    environment:
-      name: npm
-      url: https://www.npmjs.com/package/knarr
+    timeout-minutes: 30
+    permissions:
+      contents: read # check out the repository
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
-          cache: pnpm
+          # No dependency cache in the release pipeline: a cache entry written by
+          # another workflow could otherwise end up in the published package.
 
       - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level=low
       - run: pnpm lint
       - run: pnpm build
 
       - name: Build example packages
         run: |
-          cd examples/packages/api-client && npm ci && npx tsup
-          cd ../ui-kit && npm ci && npx tsup
+          cd examples/packages/api-client && npm ci --ignore-scripts && npx --no-install tsup
+          cd ../ui-kit && npm ci --ignore-scripts && npx --no-install tsup
 
       - run: pnpm test
-      - run: npm pack --dry-run
+      - run: node scripts/verify-pack.mjs
+
+      - name: Pack
+        id: pack
+        run: |
+          tarball="$(npm pack --ignore-scripts --silent)"
+          sha256="$(sha256sum "$tarball" | cut -d' ' -f1)"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          echo "Packed $tarball ($sha256)"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-tarball
+          path: ${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # Holds the npm OIDC credential. Runs no repository or dependency code:
+  # it only downloads the verified tarball and hands it to the npm CLI.
+  publish:
+    name: publish to npm
+    needs: verify
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/knarr
+    permissions:
+      id-token: write # npm trusted publishing (OIDC) and provenance signing
+    steps:
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          disable-telemetry: true
+          disable-sudo-and-containers: true
+          allowed-endpoints: >
+            registry.npmjs.org:443
+            fulcio.sigstore.dev:443
+            rekor.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            api.github.com:443
+            github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-tarball
+          digest-mismatch: error
+
+      - name: Check tarball integrity
+        env:
+          TARBALL: ${{ needs.verify.outputs.tarball }}
+          EXPECTED_SHA256: ${{ needs.verify.outputs.sha256 }}
+        run: echo "${EXPECTED_SHA256}  ${TARBALL}" | sha256sum --check --strict
+
+      - name: Refuse an already-published version
+        env:
+          TARBALL: ${{ needs.verify.outputs.tarball }}
+        run: |
+          version="$(tar -xzOf "$TARBALL" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
+          if npm view "knarr@${version}" version >/dev/null 2>&1; then
+            echo "::error::knarr@${version} is already published"
+            exit 1
+          fi
+          echo "knarr@${version} is not published yet"
 
       - name: Publish
-        if: inputs.dry_run == false
-        # Trusted publishing uses OIDC; npm adds provenance automatically for
-        # public packages published from public GitHub repositories.
-        run: npm publish --access public
+        env:
+          TARBALL: ${{ needs.verify.outputs.tarball }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        # Trusted publishing: no token secret. --provenance links the package to this run.
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            npm publish "./$TARBALL" --provenance --access public --dry-run
+          else
+            npm publish "./$TARBALL" --provenance --access public
+          fi

@@ -8,6 +8,7 @@ import { getStoreEntry } from "../core/store.js";
 import { runInitialWorkspaceWatchBuilds } from "../core/push-engine.js";
 import { consola } from "../utils/console.js";
 import { exists } from "../utils/fs.js";
+import { canCreateSymlinks } from "./helpers/symlinks.js";
 
 let testKNARRHome: string;
 
@@ -22,7 +23,7 @@ afterEach(async () => {
 });
 
 describe("workspace failure handling", () => {
-  it("skips dependents after push failures and continues independent packages", async () => {
+  it.skipIf(!canCreateSymlinks)("skips dependents after push failures and continues independent packages", async () => {
     const root = await mkdtemp(join(tmpdir(), "KNARR-workspace-failure-"));
     const consumer = await mkdtemp(join(tmpdir(), "KNARR-consumer-"));
     const external = await mkdtemp(join(tmpdir(), "KNARR-external-"));

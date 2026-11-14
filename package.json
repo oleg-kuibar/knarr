@@ -44,7 +44,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "compat:smoke": "node scripts/compat-smoke.mjs",
-    "bench": "vitest bench",
+    "bench": "vitest bench --reporter=verbose",
     "lint": "tsc --noEmit",
     "prepublishOnly": "pnpm build"
   },
@@ -81,22 +81,22 @@
     "url": "https://github.com/oleg-kuibar/knarr/issues"
   },
   "author": "Oleg Kuibar (https://github.com/oleg-kuibar)",
-  "packageManager": "pnpm@10.33.2",
+  "packageManager": "pnpm@12.18.0",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.22.0"
   },
   "devDependencies": {
-    "@types/node": "^26.0.0",
+    "@types/node": "^26.6.6",
     "@types/picomatch": "^4.0.3",
-    "tsup": "^8.5.1",
+    "tsup": "^9.0.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.10",
-    "vitest": "^4.1.5"
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
   },
   "peerDependencies": {
+    "@rspack/core": ">=0.5.0",
     "vite": ">=5.0.0",
-    "webpack": ">=5.0.0",
-    "@rspack/core": ">=0.5.0"
+    "webpack": ">=5.0.0"
   },
   "peerDependenciesMeta": {
     "vite": {
@@ -110,23 +110,10 @@
     }
   },
   "dependencies": {
-    "chokidar": "^5.0.0",
+    "chokidar": "^6.0.0",
     "citty": "^0.2.2",
     "picocolors": "^1.1.1",
-    "picomatch": "^4.0.4",
+    "picomatch": "^4.0.7",
     "xxhash-wasm": "^1.1.0"
-  },
-  "pnpm": {
-    "overrides": {
-      "dompurify": "^3.4.1",
-      "esbuild": "^0.28.1",
-      "fast-uri": "^3.1.2",
-      "picomatch": "^4.0.4",
-      "postcss": "^8.5.10",
-      "rollup": "^4.59.0"
-    },
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   }
 }

@@ -1,18 +1,18 @@
-import { spawn } from "node:child_process";
+import { spawnShell } from "../utils/shell.js";
+import { devLoopHint } from "../utils/hints.js";
 import { basename, join, resolve } from "node:path";
-import { platform } from "node:os";
 import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
 import { findStoreEntry, getStoreEntry } from "../core/store.js";
 import { publish } from "../core/publisher.js";
-import { inject, backupExisting, checkMissingDeps } from "../core/injector.js";
+import { inject, backupExisting, checkMissingDeps, isDeclaredConsumerDependency } from "../core/injector.js";
 import { addLink, registerConsumer, getLink } from "../core/tracker.js";
 import { exists } from "../utils/fs.js";
 import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import type { ResolvedPackageManager } from "../utils/package-manager.js";
 import { detectBuildCommand } from "../utils/build-detect.js";
 import { detectBundler } from "../utils/bundler-detect.js";
-import { ensureConsumerInit } from "../utils/init-helpers.js";
+import { ensureConsumerInit, ensureRestoreHook } from "../utils/init-helpers.js";
 import { addToTranspilePackages } from "../utils/nextjs-config.js";
 import { getConsumerStatePath } from "../utils/paths.js";
 import { Timer } from "../utils/timer.js";
@@ -155,12 +155,22 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
   };
   await addLink(consumerPath, packageName, linkEntry);
   await registerConsumer(packageName, consumerPath);
+  // Keep installs from silently dropping the link (refreshes the recorded CLI path).
+  await ensureRestoreHook(consumerPath);
+  if (!(await isDeclaredConsumerDependency(consumerPath, packageName))) {
+    // Plain installs re-apply links via postinstall, but `npm install <pkg>`
+    // skips the root postinstall and prunes undeclared packages.
+    consola.info(
+      `${packageName} isn't in package.json, so adding or removing other packages can prune it. ` +
+        "Run `knarr restore` afterwards, or add it to dependencies."
+    );
+  }
 
   const nextSteps = sourcePath
     ? [`cd ${sourcePath} && knarr dev`]
     : [];
-  if (nextSteps.length > 0) {
-    consola.info(`Next: ${nextSteps[0]}`);
+  if (sourcePath) {
+    consola.info(`Next: ${devLoopHint(sourcePath, process.cwd(), await workspaceRootFor(sourcePath))}`);
   }
 
   consola.info(`Done in ${timer.elapsed()}`);
@@ -294,10 +304,35 @@ async function maybeBuildSource(
   const ok = await runShellCommand(buildCmd, sourcePath);
   if (!ok) {
     errorWithSuggestion(`Build command failed: ${buildCmd}`);
+    await explainBuildFailure(sourcePath);
     process.exit(1);
   }
 
   return { buildCmd, ran: true, skipped: false };
+}
+
+/**
+ * The workspace root when sourcePath is one of its member packages, else null.
+ * A pnpm-workspace.yaml found by walking up does not count unless it lists the package.
+ */
+async function workspaceRootFor(sourcePath: string): Promise<string | null> {
+  const { findWorkspacePackageRoot, findWorkspacePackages } = await import("../utils/workspace.js");
+  const root = await findWorkspacePackageRoot(sourcePath);
+  if (!root) return null;
+  const members = await findWorkspacePackages(root);
+  const target = resolve(sourcePath);
+  return members.some((dir) => resolve(dir) === target) ? root : null;
+}
+
+/** Point at the two common, fixable causes of a failed pre-publish build. */
+async function explainBuildFailure(sourcePath: string): Promise<void> {
+  if (!(await exists(join(sourcePath, "node_modules")))) {
+    const pm = (await inspectProjectPackageManager(sourcePath)).resolve().packageManager;
+    consola.info(
+      `Suggestion: ${sourcePath} has no node_modules. Run \`${pm} install\` there, then retry.`
+    );
+  }
+  consola.info("Suggestion: if the package is already built, re-run with --skip-build.");
 }
 
 async function handleMissingDeps(
@@ -420,11 +455,7 @@ function runShellCommand(cmd: string, cwd: string): Promise<boolean> {
   }
 
   return new Promise((resolve) => {
-    const isWin = platform() === "win32";
-    const shell = isWin ? "cmd" : "sh";
-    const shellFlag = isWin ? "/c" : "-c";
-
-    const child = spawn(shell, [shellFlag, cmd], {
+    const child = spawnShell(cmd, {
       cwd,
       stdio: "inherit",
     });

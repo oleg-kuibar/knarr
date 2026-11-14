@@ -10,7 +10,7 @@ import { detectBuildCommand as detectBuildCmd } from "../utils/build-detect.js";
 import {
   ensureGitignore,
   addPostinstall,
-  POSTINSTALL_RESTORE_COMMAND,
+  writeRestoreScript,
 } from "../utils/init-helpers.js";
 import { Timer } from "../utils/timer.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
@@ -22,6 +22,7 @@ import {
   writeConsumerState,
 } from "../core/tracker.js";
 import type { PackageManager } from "../types.js";
+import { knarrCommand } from "../utils/hints.js";
 
 type ProjectRole = "consumer" | "library";
 
@@ -87,6 +88,7 @@ export default defineCommand({
         "How will you use knarr in this project?",
         {
           type: "select",
+          nonInteractiveHint: "Pass --role consumer or --role library (or --yes for consumer).",
           options: [
             {
               label: "Consumer (app) - I want to link packages INTO this project",
@@ -127,10 +129,11 @@ export default defineCommand({
     let libraryBuildCmd: string | undefined;
     if (await exists(pkgPath)) {
       if (role === "consumer") {
+        await writeRestoreScript(projectDir);
         const postinstallAdded = await addPostinstall(pkgPath);
         if (postinstallAdded) {
           consola.success(
-            `Added "postinstall": "${POSTINSTALL_RESTORE_COMMAND}" to package.json scripts`
+            "Added a postinstall hook so installs re-apply linked packages (a no-op for teammates without Knarr)"
           );
         }
 
@@ -243,19 +246,21 @@ export default defineCommand({
       // Consumer next steps
       consola.log("");
       consola.info(`${pc.bold("Next steps:")}`);
-      nextSteps.push("knarr use ../my-lib");
-      nextSteps.push("cd ../my-lib && knarr dev");
-      consola.log(`  1. ${pc.cyan(nextSteps[0])}                 <- publish + link a local package`);
-      consola.log(`  2. ${pc.cyan(nextSteps[1])}          <- watch + rebuild + auto-push`);
+      nextSteps.push(`${knarrCommand()} use ../my-lib`);
+      nextSteps.push(`cd ../my-lib && ${knarrCommand()} dev`);
+      const width = Math.max(nextSteps[0].length, nextSteps[1].length) + 2;
+      consola.log(`  1. ${pc.cyan(nextSteps[0].padEnd(width))}<- publish + link a local package`);
+      consola.log(`  2. ${pc.cyan(nextSteps[1].padEnd(width))}<- watch + rebuild + auto-push`);
     } else {
       // Library next steps
       consola.log("");
       consola.info(`${pc.bold("Next steps:")}`);
-      nextSteps.push("knarr publish");
+      nextSteps.push(`${pm} run knarr:publish`);
       nextSteps.push(`${pm} run knarr:dev`);
-      nextSteps.push(`knarr use ${projectDir}`);
-      consola.log(`  1. ${pc.cyan(nextSteps[0])}                    <- copy built files to knarr store`);
-      consola.log(`  2. ${pc.cyan(nextSteps[1])}               <- watch + rebuild + auto-push to consumers`);
+      nextSteps.push(`${knarrCommand()} use ${projectDir}`);
+      const libWidth = Math.max(nextSteps[0].length, nextSteps[1].length) + 2;
+      consola.log(`  1. ${pc.cyan(nextSteps[0].padEnd(libWidth))}<- copy built files to knarr store`);
+      consola.log(`  2. ${pc.cyan(nextSteps[1].padEnd(libWidth))}<- watch + rebuild + auto-push to consumers`);
       consola.log(`  3. In consumer project: ${pc.cyan(nextSteps[2])}`);
     }
 
@@ -338,8 +343,13 @@ async function addLibraryScripts(
   pkgPath: string,
 ): Promise<string[]> {
   const added: string[] = [];
+  // Scripts are committed and shared: `knarr` only resolves in npm scripts when
+  // it is a dependency, so otherwise go through npx (works without a global install).
+  const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
+  const knarrDeclared = Boolean(pkg.dependencies?.knarr || pkg.devDependencies?.knarr);
+  const knarr = knarrDeclared ? "knarr" : "npx --yes knarr";
 
-  if (await addScript(pkgPath, "knarr:publish", "knarr publish")) {
+  if (await addScript(pkgPath, "knarr:publish", `${knarr} publish`)) {
     added.push("knarr:publish");
   }
 
@@ -347,7 +357,7 @@ async function addLibraryScripts(
     await addScript(
       pkgPath,
       "knarr:dev",
-      "knarr dev"
+      `${knarr} dev`
     )
   ) {
     added.push("knarr:dev");

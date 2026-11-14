@@ -10,6 +10,7 @@ import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, verbose } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
 import { inspectProjectPackageManager } from "../utils/package-manager.js";
+import { writeRestoreScript } from "../utils/init-helpers.js";
 
 const restoreLimit = pLimit(4);
 
@@ -50,6 +51,10 @@ export default defineCommand({
       output({ restored: 0, failed: 0 });
       return;
     }
+
+    // Keep the postinstall helper pointing at a CLI that exists. Only the local
+    // script: never rewrite package.json here, since restore runs inside installs.
+    await writeRestoreScript(consumerPath);
 
     let restored = 0;
     let failed = 0;

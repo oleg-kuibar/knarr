@@ -162,15 +162,17 @@ export class KnarrWebpackPlugin {
         const chokidarWatcher = watch(watchPaths, {
           ignoreInitial: true,
           ignored: [/[/\\]\.git[/\\]/],
-          usePolling,
-          ...(usePolling && { interval: 1000 }),
+          backend: usePolling ? "polling" : "auto",
+          ...(usePolling && { pollingInterval: 1000 }),
         });
+        // chokidar 6 throws on add() once close() has started.
+        let chokidarClosed = false;
 
         chokidarWatcher.on("change", (changedPath) => {
           const normalized = normalize(changedPath);
           if (normalized === stateFile) {
             const changed = syncPackages();
-            if (changed) {
+            if (changed && !chokidarClosed) {
               // New packages linked — add their dirs to the watcher
               for (const pkg of watchedPackages) {
                 chokidarWatcher.add(join(nodeModulesDir, pkg));
@@ -184,7 +186,10 @@ export class KnarrWebpackPlugin {
         chokidarWatcher.on("unlink", () => invalidate());
 
         watcher = {
-          close: () => chokidarWatcher.close(),
+          close: () => {
+            chokidarClosed = true;
+            return chokidarWatcher.close();
+          },
         };
       }
     );

@@ -7,13 +7,17 @@ git clone https://github.com/oleg-kuibar/knarr.git
 cd knarr
 pnpm install
 pnpm build
+
+# e2e fixtures (they use npm, not pnpm)
+(cd examples/packages/api-client && npm ci && npx tsup)
+(cd examples/packages/ui-kit && npm ci && npx tsup)
 ```
 
 ### Running locally
 
 ```bash
-# Link the CLI globally for testing
-pnpm link --global
+# Install the local CLI globally for testing (pnpm 11+ removed `pnpm link --global`)
+pnpm add -g .
 
 # Now you can use `knarr` anywhere
 knarr --help
@@ -28,12 +32,14 @@ knarr --help
 | `pnpm test` | Run tests |
 | `pnpm test:watch` | Run tests in watch mode |
 | `pnpm bench` | Run benchmarks |
+| `pnpm compat:smoke` | Install the packed CLI into real npm, pnpm, Yarn, and Bun apps plus Vite, Webpack, rspack, and Next builds (run `pnpm build` first) |
 | `pnpm lint` | Type-check with tsc |
 
 ## Requirements
 
-- Node.js 22.12 or newer
-- pnpm 10 or newer
+- Node.js 22.22 or newer
+- pnpm 12 (pinned in `package.json#packageManager`). Node 22 and 24 bundle corepack, so `corepack enable` is enough. On Node 25+, run `npm i -g corepack && corepack enable` first.
+- On Windows, symlink-based tests need Developer Mode (or an elevated shell). Without it they are reported as skipped. CI runs them.
 
 ## Project structure
 
@@ -42,8 +48,9 @@ src/
 |-- cli.ts                # Entry point, citty command routing
 |-- commands/             # CLI command definitions (one file per command)
 |-- core/                 # Core logic (publisher, injector, store, tracker, watcher)
-|-- utils/                # Shared utilities (fs, hash, paths, package-manager, pack-list, bin-linker)
+|-- utils/                # Shared utilities (fs, hash, paths, package-manager, pack-list, bin-linker, shell)
 |-- vite-plugin.ts        # Vite plugin entry (exported as knarr/vite)
+|-- webpack-plugin.ts     # Webpack/rspack plugin entry (exported as knarr/webpack)
 |-- types.ts              # Shared TypeScript types
 `-- index.ts              # Public API exports
 ```
@@ -58,19 +65,20 @@ Tests use [vitest](https://vitest.dev/) with a 70% line coverage threshold (`vit
 
 | Layer | Location | What it tests |
 |---|---|---|
-| Unit | `src/utils/__tests__/*.test.ts` (12 files) | Individual utilities in isolation |
+| Unit | `src/utils/__tests__/*.test.ts` | Individual utilities in isolation |
 | Integration | `src/__tests__/integration.test.ts` | Core APIs (publish, inject, store) using temp dirs |
 | E2E | `src/__tests__/e2e.test.ts` | Full CLI flows using real fixtures from `examples/packages/` |
+| Watcher | `src/__tests__/watcher.test.ts` | Real chokidar watching, debounce, and ignore rules |
 | Standalone emulation | `src/__tests__/standalone-emulate.test.ts` | Real package manager install + CLI invocation |
-| Benchmarks | `src/__tests__/publish-inject.bench.ts`, `src/utils/__tests__/hash.bench.ts` | Performance measurements (run with `pnpm bench`) |
+| Benchmarks | `src/__tests__/*.bench.ts`, `src/utils/__tests__/hash.bench.ts` | Performance measurements (run with `pnpm bench`; Vitest 5 `({ bench })` test-context API) |
 
 ### Running e2e tests
 
 The e2e tests require example packages to be built first:
 
 ```bash
-cd examples/packages/api-client && pnpm install && pnpm tsup
-cd ../ui-kit && pnpm install && pnpm tsup
+cd examples/packages/api-client && npm ci && npx tsup
+cd ../ui-kit && npm ci && npx tsup
 cd ../../..
 pnpm test
 ```
@@ -88,6 +96,8 @@ pnpm test
 - Tests use `KNARR_HOME` env var to redirect the store to a temp directory
 - Each test creates fresh temp dirs and cleans up in `afterEach`
 - Prefer testing through the core module APIs rather than CLI
+- Tests that create symlinks use `it.skipIf(!canCreateSymlinks)` from `src/__tests__/helpers/symlinks.ts`
+- Run one file with `pnpm vitest run <file>`, or one test with `-t "suite > test"`
 
 ## Submitting changes
 
@@ -97,33 +107,20 @@ pnpm test
 4. Run `pnpm test` and `pnpm lint` to verify
 5. Open a pull request
 
-## Codex-assisted review
+## AI-assisted review
 
-Knarr keeps reusable Codex guidance in [AGENTS.md](AGENTS.md). Codex GitHub review reads that file, so keep repeated review feedback there instead of only in one-off comments.
+Shared agent guidance lives in [AGENTS.md](AGENTS.md). Codex reads it directly, and Claude Code loads it through [CLAUDE.md](CLAUDE.md). Keep repeated review feedback there, not only in one-off comments, so every tool applies it.
 
-Recommended PR flow:
+| Tool | How to run it | Definitions |
+|---|---|---|
+| Codex on GitHub | Comment `@codex review` on the PR (or enable automatic reviews) | `AGENTS.md` "Review guidelines" |
+| Codex CLI/app | `codex review --uncommitted`, or ask it to spawn `knarr_pr_mapper`, `knarr_reviewer`, and `knarr_docs_checker` against `master` | `.codex/agents/` |
+| Claude Code | `/knarr-review` (reviewer and docs checker in parallel), `/verify` (local gate), `/upgrade-deps`, `/release` | `.claude/agents/`, `.claude/skills/` |
+| CodeRabbit | Automatic on PRs | `.coderabbit.yaml` |
 
-1. Fill out the PR template with verification and any risky areas.
-2. Optionally run a local preflight review before opening the PR:
+Treat AI feedback as an extra maintainer signal. Human review and CI still decide whether a change is ready.
 
-   ```bash
-   codex review --uncommitted
-   ```
-
-3. Once maintainers have enabled Codex code review for the repository, request the standard GitHub review with `@codex review`, or rely on automatic Codex reviews if they are enabled.
-4. For broad or risky changes, run a separate Codex app or CLI review with the project agents:
-
-   ```text
-   Review this branch against master. Spawn knarr_pr_mapper, knarr_reviewer, and knarr_docs_checker, wait for all results, and summarize only actionable findings.
-   ```
-
-5. Treat Codex feedback as an additional maintainer signal. Human review and CI still decide whether a change is ready.
-
-Maintainer setup:
-
-- Set up Codex cloud for `oleg-kuibar/knarr`.
-- Enable Code review for the repository in Codex settings; enable automatic reviews there if the team wants every PR reviewed without a comment trigger.
-- Keep repeated review feedback in the `AGENTS.md` review guidelines so GitHub reviews and app/CLI agent reviews stay aligned.
+Maintainer setup for Codex: set up Codex cloud for `oleg-kuibar/knarr` and enable Code review for the repository in Codex settings.
 
 ## Releasing
 

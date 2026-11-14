@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { consola } from "../utils/console.js";
 import pLimit from "../utils/concurrency.js";
 import { publish } from "../core/publisher.js";
+import { getConsumers } from "../core/tracker.js";
 import { Timer } from "../utils/timer.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { errorWithSuggestion } from "../utils/errors.js";
@@ -120,6 +121,16 @@ export default defineCommand({
       try {
         const result = await publish(dir, publishOpts);
         output({ ...result, elapsed: timer.elapsedMs() });
+        if (!result.skipped && !isDryRun()) {
+          // publish only updates the store; linked apps keep the old copy until a push.
+          const consumers = await getConsumers(result.name);
+          if (consumers.length > 0) {
+            consola.info(
+              `${consumers.length} linked project(s) still have the previous build. ` +
+                "Run `knarr push` to update them, or `knarr dev` to keep them in sync as you edit."
+            );
+          }
+        }
       } catch (err) {
         errorWithSuggestion(err instanceof Error ? err.message : String(err));
         process.exit(1);

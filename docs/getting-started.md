@@ -4,6 +4,8 @@ Knarr's shortest path is `knarr use`: run it in the app, point it at the local p
 
 ## Install
 
+Knarr requires Node.js 22.22 or newer (`knarr doctor` checks this).
+
 ```bash
 pnpm add -g knarr
 
@@ -96,7 +98,7 @@ Running `npm install`, `pnpm install`, `yarn install`, or `bun install` can wipe
 knarr restore
 ```
 
-If you ran `knarr init` or `knarr use`, this can happen automatically via the `postinstall` hook when `knarr` is available on the install script `PATH` (for example, installed globally or as a devDependency). The generated hook uses a Node fallback so installs remain safe when Knarr is unavailable.
+Plain installs do this automatically: `knarr use` adds a `postinstall` hook that re-applies your links, even if you only ran Knarr through `npx`. Teammates without Knarr aren't affected. `npm install <pkg>` skips that hook, so run `knarr restore` after adding a package if a link disappears. See the [FAQ](faq.md#what-happens-when-i-run-npm-install--pnpm-install) for details.
 
 ## 5. Clean up
 

@@ -1,5 +1,4 @@
-import { spawn } from "node:child_process";
-import { platform } from "node:os";
+import { spawnCommand } from "./shell.js";
 import type { PackageManager } from "../types.js";
 import { recordMutation } from "./dry-run.js";
 import { isDryRun } from "./logger.js";
@@ -257,10 +256,9 @@ export function runPackageManagerCommand(
   }
 
   return new Promise((resolve) => {
-    const child = spawn(command.executable, command.args, {
+    const child = spawnCommand(command.executable, command.args, {
       cwd,
       stdio: "inherit",
-      shell: platform() === "win32",
     });
 
     child.on("close", (code) => resolve(code === 0));

@@ -4,13 +4,49 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Supply-chain cooldown: matches minimumReleaseAge in pnpm-workspace.yaml.
+    # Security updates are not delayed by cooldown.
+    cooldown:
+      default-days: 7
     groups:
       dev-dependencies:
         dependency-type: "development"
       production-dependencies:
         dependency-type: "production"
+    ignore:
+      # TypeScript 7 (native) ships no JS compiler API, which tsup needs for
+      # .d.ts generation. Unblock by migrating the build to tsdown.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
+  # Example lockfiles: security and version updates, so fixtures never lag.
+  - package-ecosystem: "npm"
+    directories:
+      - "/examples/packages/api-client"
+      - "/examples/packages/ui-kit"
+      - "/examples/standalone/npm-app"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      examples:
+        patterns: ["*"]
+
+  - package-ecosystem: "bun"
+    directory: "/examples/standalone/bun-app"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+
+  # Actions are pinned to commit SHAs; Dependabot bumps the SHA and the version comment.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]

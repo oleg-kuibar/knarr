@@ -1,5 +1,27 @@
+import { homedir } from "node:os";
+import { isAbsolute, relative, sep } from "node:path";
 import { isJsonOutput } from "./logger.js";
 import { consola } from "./console.js";
+
+/**
+ * Shorten a path for the human report: relative to cwd when inside it,
+ * `~` for the home directory (where the store usually lives). JSON keeps absolute paths.
+ */
+export function displayMutationPath(
+  p: string,
+  cwd: string = process.cwd(),
+  home: string = homedir()
+): string {
+  const inside = (base: string) => {
+    const rel = relative(base, p);
+    return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel) ? rel : rel === "" ? "." : null;
+  };
+  const fromCwd = inside(cwd);
+  if (fromCwd !== null) return fromCwd;
+  const fromHome = inside(home);
+  if (fromHome !== null) return fromHome === "." ? "~" : `~${sep}${fromHome}`;
+  return p;
+}
 
 export type MutationType =
   | "copy"
@@ -81,9 +103,9 @@ export function printDryRunReport(): void {
   for (const [type, items] of grouped) {
     consola.info(`  ${labels[type]} (${items.length}):`);
     for (const item of items.slice(0, 20)) {
-      const dest = item.dest ? ` → ${item.dest}` : "";
+      const dest = item.dest ? ` → ${displayMutationPath(item.dest)}` : "";
       const detail = item.detail ? ` (${item.detail})` : "";
-      consola.info(`    ${item.path}${dest}${detail}`);
+      consola.info(`    ${displayMutationPath(item.path)}${dest}${detail}`);
     }
     if (items.length > 20) {
       consola.info(`    ... and ${items.length - 20} more`);

@@ -7,8 +7,8 @@ on:
     branches: [master]
   workflow_dispatch:
 
-permissions:
-  contents: read
+# Deny everything by default; each job asks for what it needs.
+permissions: {}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -16,18 +16,25 @@ concurrency:
 
 jobs:
   test:
+    # Keep this name format: branch protection requires "test (<os>, <node>)".
+    name: test (${{ matrix.os }}, ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read # check out the repository
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node: [22, 24]
+        node: [22, 24, 26]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
@@ -37,8 +44,43 @@ jobs:
       - run: pnpm build
 
       - name: Build example packages
+        # --ignore-scripts: fixture dependencies never need install scripts.
         run: |
-          cd examples/packages/api-client && npm ci && npx tsup
-          cd ../ui-kit && npm ci && npx tsup
+          cd examples/packages/api-client && npm ci --ignore-scripts && npx --no-install tsup
+          cd ../ui-kit && npm ci --ignore-scripts && npx --no-install tsup
 
       - run: pnpm test
+
+  audit:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # check out the repository
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      # Any advisory, of any severity, in any lockfile fails the build.
+      - name: Audit root lockfile
+        run: pnpm audit --audit-level=low
+
+      - name: Audit example lockfiles
+        run: |
+          for dir in examples/packages/api-client examples/packages/ui-kit examples/standalone/npm-app; do
+            echo "::group::$dir"
+            (cd "$dir" && npm audit --audit-level=low)
+            echo "::endgroup::"
+          done
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Verify published file list
+        run: node scripts/verify-pack.mjs
