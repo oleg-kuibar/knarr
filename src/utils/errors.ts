@@ -1,5 +1,5 @@
 import { consola } from "./console.js";
-import pc from "picocolors";
+import { pc } from "./colors.js";
 
 interface Suggestion {
   pattern: RegExp;

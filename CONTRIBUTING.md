@@ -144,4 +144,4 @@ Publishing uses npm Trusted Publishing (OIDC) - no secrets needed. The `knarr` p
 - ESM (`type: "module"`)
 - No default exports (except CLI commands for citty)
 - Use `consola` for user-facing output
-- Use `picocolors` for terminal colors
+- Use `pc` from `src/utils/colors.ts` (Node's `util.styleText`) for terminal colors

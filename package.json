@@ -88,10 +88,12 @@
     "node": ">=22.22.0"
   },
   "devDependencies": {
+    "@arethetypeswrong/core": "^0.18.5",
     "@types/node": "^26.6.6",
     "@types/picomatch": "^4.0.3",
     "oxlint": "^1.92.0",
     "oxlint-tsgolint": "^7.0.2006",
+    "publint": "^0.3.25",
     "tsdown": "^0.23.7",
     "typescript": "^7.0.2",
     "vite": "^8.3.6",
@@ -116,7 +118,6 @@
   "dependencies": {
     "chokidar": "^6.0.0",
     "citty": "^0.2.2",
-    "picocolors": "^1.1.1",
     "picomatch": "^4.0.7",
     "xxhash-wasm": "^1.1.0"
   }

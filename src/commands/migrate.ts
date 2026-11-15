@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import { resolve, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
-import pc from "picocolors";
+import { pc } from "../utils/colors.js";
 import { exists, atomicWriteFile, removeDir } from "../utils/fs.js";
 import { Timer } from "../utils/timer.js";
 import { suppressHumanOutput, output } from "../utils/output.js";

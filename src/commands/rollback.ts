@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { resolve } from "node:path";
 import { consola } from "../utils/console.js";
-import pc from "picocolors";
+import { pc } from "../utils/colors.js";
 import { listHistory, restoreHistoryEntry, resolveHistoryLimit } from "../core/history.js";
 import { getStoreEntry } from "../core/store.js";
 import { pushStoreEntry } from "../core/push-engine.js";

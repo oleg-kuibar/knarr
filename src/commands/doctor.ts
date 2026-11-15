@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import { basename, join, resolve } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import { consola } from "../utils/console.js";
-import pc from "picocolors";
+import { pc } from "../utils/colors.js";
 import {
   cleanStaleConsumers,
   readConsumerStateSafe,

@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { join, resolve } from "node:path";
 import { consola } from "../utils/console.js";
-import pc from "picocolors";
+import { pc } from "../utils/colors.js";
 import { getStoreEntry, findStoreEntry } from "../core/store.js";
 import { resolveInjectionTarget } from "../core/injector.js";
 import { readConsumerStateSafe, readConsumersRegistry } from "../core/tracker.js";

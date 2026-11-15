@@ -19,7 +19,7 @@ This file is the shared source of truth for coding agents (Codex reads it direct
 ```
 pnpm lint                                   # strict tsc (TypeScript 7) over src + tests, then oxlint secure-coding rules
 pnpm lint:fix                               # auto-fix what oxlint can
-pnpm build                                  # tsdown: CLI, API, Vite plugin, Webpack plugin
+pnpm build                                  # tsdown: CLI, API, Vite plugin, Webpack plugin; then publint + attw on the packed tarball
 pnpm test                                   # vitest run (needs the fixtures above)
 pnpm vitest run src/__tests__/watcher.test.ts      # one file
 pnpm vitest run -t "pnpm injection > honors"        # by name; vitest 5 joins suite > test with ">"
@@ -65,6 +65,7 @@ src/index.ts               public API (`knarr`); vite-plugin.ts (`knarr/vite`); 
 - **Paths**: never assume `/`. Use `node:path` joins, and use `normalizePath()` only for comparison or storage.
 - **Filesystem scope**: write only inside the store (`KNARR_HOME`), the consumer's `.knarr/`, and the resolved package target. Follow pnpm `.pnpm/` and Yarn `.store/` symlinks to the real dir; never replace the top-level symlink.
 - **Public surface**: a new flag, command, export, env var, or `package.json#knarr` field needs tests plus docs in `docs/commands.md` or `docs/api.md`, and a `CHANGELOG.md` "Unreleased" entry.
+- **Terminal colors**: use `pc` from `src/utils/colors.ts` (Node's `util.styleText`); don't add a color library.
 - **Style**: strict ESM TypeScript, `import type` for types, named exports in utils, dynamic `import()` for heavy optional deps (chokidar, config rewriters).
 
 ## Testing notes
@@ -96,7 +97,7 @@ These are enforced in CI (zizmor, dependency review, audit, verify-pack). Don't 
 - **Workflows**: `permissions: {}` at the top, with per-job permissions that each carry a comment. Pin actions to a full commit SHA with a `# vX.Y.Z` comment. Use `persist-credentials: false` on checkout and no dependency cache in the release pipeline. Before pushing, run `zizmor --persona pedantic .github/workflows`; it must report no findings.
 - **Publishing**: only `publish.yml`. Its `publish` job holds OIDC and must stay free of checkout, installs, and repo scripts. Never publish locally.
 - **Dependencies**: no dependency may run install scripts (`allowBuilds` in `pnpm-workspace.yaml`; `--ignore-scripts` for npm fixtures). New dependencies need a license from the dependency-review allowlist and must pass `pnpm audit --audit-level=low`.
-- **Package contents**: `scripts/verify-pack.mjs` allowlists the tarball. Widen it deliberately, never to make CI pass.
+- **Package contents**: `scripts/verify-pack.mjs` allowlists the tarball. Widen it deliberately, never to make CI pass. `pnpm build` also runs publint and attw (`tsdown.config.ts`) and fails on any finding; don't lower their level to get a build through.
 
 ## Dependencies
 
