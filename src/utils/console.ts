@@ -1,4 +1,4 @@
-import pc from "picocolors";
+import { pc } from "./colors.js";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 

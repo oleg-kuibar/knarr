@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- Terminal colors use Node's built-in `util.styleText` instead of `picocolors`, so the CLI bundles one fewer dependency. Colors now follow the output stream: piped output and CI logs are plain unless `FORCE_COLOR` is set, including on Windows, where `picocolors` always colored. `NO_COLOR` still turns them off.
+
+### Maintenance
+
+- Every build now runs `publint` and `@arethetypeswrong/core` (ESM-only profile) against the packed tarball, and fails on any finding, so broken `exports` paths or unresolvable types can't be released.
+
 ## 0.2.0
 
 ### Breaking

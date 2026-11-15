@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import { resolve, join, basename } from "node:path";
 import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
-import pc from "picocolors";
+import { pc } from "../utils/colors.js";
 import { exists, ensureDir, atomicWriteFile } from "../utils/fs.js";
 import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import { detectBundler } from "../utils/bundler-detect.js";

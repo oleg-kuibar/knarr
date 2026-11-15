@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { consola } from "./console.js";
-import pc from "picocolors";
+import { pc } from "./colors.js";
 import { exists, ensureDir, atomicWriteFile } from "./fs.js";
 import { detectJsonIndent, objectField, parseJsonObject } from "./json.js";
 import { getConsumerStatePath, getConsumerKnarrDir } from "./paths.js";

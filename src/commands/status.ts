@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { resolve, join } from "node:path";
 import { consola } from "../utils/console.js";
-import pc from "picocolors";
+import { pc } from "../utils/colors.js";
 import pLimit from "../utils/concurrency.js";
 import { readConsumerState } from "../core/tracker.js";
 import { getStoreEntry } from "../core/store.js";
