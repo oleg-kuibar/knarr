@@ -91,3 +91,27 @@ describe("consumer state keys", () => {
     expect(await getLink(consumer, "toString")).toBeNull();
   });
 });
+
+describe("corrupt consumer state", () => {
+  it("auto-init refuses to overwrite it instead of wiping the links", async () => {
+    const { ensureConsumerInit } = await import("../utils/init-helpers.js");
+    const statePath = join(consumer, ".knarr", "state.json");
+    await mkdir(join(consumer, ".knarr"), { recursive: true });
+    const corrupt = '{"version":"1","links":{"my-lib":{"version":';
+    await writeFile(statePath, corrupt);
+
+    await expect(ensureConsumerInit(consumer, "npm")).rejects.toThrow(/corrupt/);
+    expect(await readFile(statePath, "utf-8")).toBe(corrupt);
+  });
+
+  it("does not rewrite state that is already initialized", async () => {
+    const { ensureConsumerInit } = await import("../utils/init-helpers.js");
+    const statePath = join(consumer, ".knarr", "state.json");
+    await mkdir(join(consumer, ".knarr"), { recursive: true });
+    const state = JSON.stringify({ version: "1", packageManager: "npm", role: "consumer", links: {} });
+    await writeFile(statePath, state);
+
+    await ensureConsumerInit(consumer, "npm");
+    expect(await readFile(statePath, "utf-8")).toBe(state);
+  });
+});

@@ -55,8 +55,7 @@ export async function readConsumerStateSafe(
   }
 }
 
-/** Write the consumer state file */
-export async function writeConsumerState(
+async function writeConsumerState(
   consumerPath: string,
   state: ConsumerState
 ): Promise<void> {
@@ -65,11 +64,14 @@ export async function writeConsumerState(
   await atomicWriteFile(statePath, JSON.stringify(state, null, 2));
 }
 
-/** Add or update a link entry in the consumer state */
-export async function addLink(
+/**
+ * Read, change, and write `.knarr/state.json` under its file lock.
+ * Creates the file when it is missing, skips the write when `mutate` changes nothing,
+ * and throws instead of overwriting a corrupt file, which may hold links we can't read.
+ */
+export async function updateConsumerState(
   consumerPath: string,
-  packageName: string,
-  entry: LinkEntry
+  mutate: (state: ConsumerState) => void
 ): Promise<void> {
   const statePath = getConsumerStatePath(consumerPath);
   await withFileLock(statePath, async () => {
@@ -80,8 +82,21 @@ export async function addLink(
         `Delete .knarr/state.json and re-run 'knarr add' for each package.`
       );
     }
-    state.links[packageName] = entry;
+    const before = JSON.stringify(state);
+    mutate(state);
+    if (JSON.stringify(state) === before && (await exists(statePath))) return;
     await writeConsumerState(consumerPath, state);
+  });
+}
+
+/** Add or update a link entry in the consumer state */
+export async function addLink(
+  consumerPath: string,
+  packageName: string,
+  entry: LinkEntry
+): Promise<void> {
+  await updateConsumerState(consumerPath, (state) => {
+    state.links[packageName] = entry;
   });
 }
 
@@ -90,17 +105,8 @@ export async function removeLink(
   consumerPath: string,
   packageName: string
 ): Promise<void> {
-  const statePath = getConsumerStatePath(consumerPath);
-  await withFileLock(statePath, async () => {
-    const { state, reliable } = await readConsumerStateSafe(consumerPath);
-    if (!reliable) {
-      throw new Error(
-        `Consumer state in ${statePath} is corrupt — refusing to write to avoid destroying existing links. ` +
-        `Delete .knarr/state.json and re-run 'knarr add' for each package.`
-      );
-    }
+  await updateConsumerState(consumerPath, (state) => {
     delete state.links[packageName];
-    await writeConsumerState(consumerPath, state);
   });
 }
 
