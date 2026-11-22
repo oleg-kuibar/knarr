@@ -125,7 +125,7 @@ graph LR
     style Bin fill:#00838f,stroke:#4dd0e1,color:#e0f2f1
 ```
 
-Clear the target directory, copy files from the store. The writes generate filesystem events that bundler watchers pick up.
+Copy changed files from the store and delete files the store no longer has. Each file is written to a temp file next to it and renamed over the old one, so a bundler never reads a half-written file. The renames generate filesystem events that bundler watchers pick up.
 
 For Bun's isolated install layout, `node_modules/<pkg>` can be a symlink into `node_modules/.bun/<pkg>@<version>/node_modules/<pkg>`. Knarr follows that symlink only when it resolves inside the consumer project's local `.bun` store. Symlinks that resolve to a global or external store are refused so Knarr does not mutate files outside the consumer install tree.
 
@@ -205,8 +205,8 @@ flowchart TD
 ```
 
 1. Each `copyFile` first probes for CoW reflink support (`COPYFILE_FICLONE_FORCE`) on the target volume. The result is cached per volume root — if reflinks aren't supported (ext4, NTFS), all subsequent copies on that volume go straight to a plain `copyFile` with no wasted syscalls. On APFS (macOS), btrfs (Linux), and ReFS (Windows), the reflink is instant and uses no additional disk space.
-2. Before copying, Knarr runs a three-tier check: (a) compare file sizes — different sizes mean different content, copy immediately; (b) compare mtimes — if size and mtime both match, skip without hashing (Knarr preserves source mtime on the destination after each copy, so matching mtime+size guarantees identical content); (c) hash both files using xxHash64 — only reached when size matches but mtime differs. Files over 1 MB use xxHash64 streaming to avoid loading them into memory. Only changed files get copied, and files removed from the source get deleted from the destination. All file comparisons run in parallel, throttled to the CPU core count.
-3. Files are written directly to their final path in `node_modules/`, which generates the filesystem events bundler watchers need.
+2. Before copying, Knarr compares file sizes: different sizes mean different content, so the file is copied. When sizes match, it hashes both files with xxHash64 and copies only if the hashes differ. Mtimes are not trusted, because a build can rewrite a file within the filesystem's mtime resolution. Files over 1 MB use xxHash64 streaming to avoid loading them into memory. Only changed files get copied, and files removed from the source get deleted from the destination. All file comparisons run in parallel, throttled to the CPU core count.
+3. Each file is copied to a `.knarr-tmp-<pid>-<uuid>` sibling and renamed onto its final path in `node_modules/`, so readers see the old file or the new one, never a partial write. The rename generates the filesystem events bundler watchers need.
 
 ## State
 
