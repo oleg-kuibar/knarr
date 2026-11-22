@@ -138,7 +138,7 @@ If a Yarn Berry project has `.yarnrc.yml` but no `nodeLinker`, Yarn defaults to 
 
 2. **File locks from running processes.** If your dev server or IDE has files open in `node_modules/<pkg>/`, Knarr cannot overwrite them. Stop the dev server, run `knarr push`, then restart.
 
-3. **Read-only files.** Some packages ship files with read-only permissions. Knarr overwrites files in place, which fails on read-only targets. Run:
+3. **Read-only or locked files.** Knarr replaces each changed file by writing a temp file next to it and renaming it over the old one. On Windows the rename retries for about a second while another process holds the file open, but it still fails on read-only targets and on files that stay locked. Run:
 
 ```bash
 knarr remove my-lib
