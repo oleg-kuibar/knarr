@@ -30,6 +30,31 @@ describe("resolveWatchConfig", () => {
     expect(config.patterns).toEqual(["schema", "package.json"]);
   });
 
+  it("does not watch a build output directory listed in files", async () => {
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ name: "pkg", version: "1.0.0", files: ["./lib/**"], main: "lib/index.js" })
+    );
+    await mkdir(join(tempDir, "src"));
+    await mkdir(join(tempDir, "lib"));
+
+    const config = await resolveWatchConfig(tempDir, { build: "tsc" });
+
+    expect(config.patterns).toEqual(["src"]);
+  });
+
+  it("watches lib when it is source and not published output", async () => {
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ name: "pkg", version: "1.0.0", files: ["dist"], main: "dist/index.js" })
+    );
+    await mkdir(join(tempDir, "lib"));
+
+    const config = await resolveWatchConfig(tempDir, { build: "tsc" });
+
+    expect(config.patterns).toEqual(["lib"]);
+  });
+
   it("runs the auto-detected initial watch build before first push", async () => {
     await writeFile(
       join(tempDir, "package.json"),
