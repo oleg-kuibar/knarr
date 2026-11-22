@@ -34,7 +34,7 @@ import {
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, isJsonOutput } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
-import { objectField, readJsonObject, stringField, type JsonObject } from "../utils/json.js";
+import { objectField, ownRecord, readJsonObject, stringField, type JsonObject } from "../utils/json.js";
 
 export interface CheckResult {
   name: string;
@@ -190,7 +190,7 @@ export async function runDoctorDiagnostics(
         version: "1",
         packageManager: pm,
         role: "consumer",
-        links: {},
+        links: ownRecord(),
       });
       check.fixed = !dryRun;
       check.fixes.push(`${repairPrefix}create .knarr/state.json`);

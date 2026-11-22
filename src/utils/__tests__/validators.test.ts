@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   isKnarrMeta,
   isLinkEntry,
-  isConsumerState,
-  isConsumersRegistry,
+  parseConsumerState,
+  parseConsumersRegistry,
 } from "../validators.js";
 
 describe("isKnarrMeta", () => {
@@ -84,10 +84,10 @@ describe("isLinkEntry", () => {
   });
 });
 
-describe("isConsumerState", () => {
-  it("returns true for valid state", () => {
+describe("parseConsumerState", () => {
+  it("parses valid state", () => {
     expect(
-      isConsumerState({
+      parseConsumerState({
         version: "1",
         links: {
           "my-pkg": {
@@ -100,61 +100,61 @@ describe("isConsumerState", () => {
           },
         },
       })
-    ).toBe(true);
+    ).not.toBeNull();
   });
 
-  it("returns true for valid state with empty links", () => {
-    expect(isConsumerState({ version: "1", links: {} })).toBe(true);
+  it("parses valid state with empty links", () => {
+    expect(parseConsumerState({ version: "1", links: {} })).not.toBeNull();
   });
 
-  it("returns false for wrong version", () => {
-    expect(isConsumerState({ version: "2", links: {} })).toBe(false);
-    expect(isConsumerState({ version: 1, links: {} })).toBe(false);
+  it("rejects wrong version", () => {
+    expect(parseConsumerState({ version: "2", links: {} })).toBeNull();
+    expect(parseConsumerState({ version: 1, links: {} })).toBeNull();
   });
 
-  it("returns false when links contain invalid entries", () => {
+  it("rejects when links contain invalid entries", () => {
     expect(
-      isConsumerState({
+      parseConsumerState({
         version: "1",
         links: {
           "my-pkg": { version: "1.0.0" }, // incomplete LinkEntry
         },
       })
-    ).toBe(false);
+    ).toBeNull();
   });
 });
 
-describe("isConsumersRegistry", () => {
-  it("returns true for valid registry", () => {
+describe("parseConsumersRegistry", () => {
+  it("parses valid registry", () => {
     expect(
-      isConsumersRegistry({
+      parseConsumersRegistry({
         "my-pkg": ["/path/to/consumer-a", "/path/to/consumer-b"],
         "other-pkg": ["/path/to/consumer-c"],
       })
-    ).toBe(true);
+    ).not.toBeNull();
   });
 
-  it("returns true for empty registry", () => {
-    expect(isConsumersRegistry({})).toBe(true);
+  it("parses empty registry", () => {
+    expect(parseConsumersRegistry({})).not.toBeNull();
   });
 
-  it("returns false when arrays contain non-strings", () => {
+  it("rejects when arrays contain non-strings", () => {
     expect(
-      isConsumersRegistry({
+      parseConsumersRegistry({
         "my-pkg": [123, 456],
       })
-    ).toBe(false);
+    ).toBeNull();
   });
 
-  it("returns false when values are not arrays", () => {
+  it("rejects when values are not arrays", () => {
     expect(
-      isConsumersRegistry({
+      parseConsumersRegistry({
         "my-pkg": "not-an-array",
       })
-    ).toBe(false);
+    ).toBeNull();
   });
 
-  it("returns false for null", () => {
-    expect(isConsumersRegistry(null)).toBe(false);
+  it("rejects null", () => {
+    expect(parseConsumersRegistry(null)).toBeNull();
   });
 });

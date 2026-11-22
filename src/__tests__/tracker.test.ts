@@ -80,3 +80,14 @@ describe("consumers registry keys", () => {
     expect(await getConsumers("constructor")).toEqual([normalizePath(consumer)]);
   });
 });
+
+describe("consumer state keys", () => {
+  it("does not report a link for a package named like an Object.prototype member", async () => {
+    const { getLink } = await import("../core/tracker.js");
+    await mkdir(join(consumer, ".knarr"), { recursive: true });
+    await writeFile(join(consumer, ".knarr", "state.json"), JSON.stringify({ version: "1", links: {} }));
+
+    expect(await getLink(consumer, "constructor")).toBeNull();
+    expect(await getLink(consumer, "toString")).toBeNull();
+  });
+});

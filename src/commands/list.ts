@@ -8,6 +8,7 @@ import { listStoreEntries, getStoreEntry } from "../core/store.js";
 import pLimit from "../utils/concurrency.js";
 import { dirSize } from "../utils/fs.js";
 import { formatBytes } from "../utils/format.js";
+import { ownRecord } from "../utils/json.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 
 export default defineCommand({
@@ -129,7 +130,7 @@ async function listHistory() {
     return;
   }
 
-  const allHistory: Record<string, unknown[]> = {};
+  const allHistory = ownRecord<unknown[]>();
 
   for (const [name, link] of links) {
     const entries = await listBuildHistory(name, link.version);
