@@ -680,11 +680,14 @@ interface LinkEntry {
   buildId?: string;          // 8-char hex ID; missing in pre-buildId state files
 }
 
+// Null-prototype map: keys like "constructor" or "__proto__" are plain data.
+type OwnRecord<V> = { [key: string]: V } & { readonly [nullPrototype]: true };
+
 interface ConsumerState {
   version: "1";
   packageManager?: PackageManager;
   role?: "consumer" | "library";
-  links: Record<string, LinkEntry>;
+  links: OwnRecord<LinkEntry>;
 }
 
 type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
@@ -747,10 +750,7 @@ interface WorkspaceGraph {
   adjacency: Map<string, Set<string>>;  // package name → dependency names
 }
 
-interface ConsumersRegistry {
-  /** Maps package name to array of consumer project paths */
-  [packageName: string]: string[];
-}
+type ConsumersRegistry = OwnRecord<string[]>;  // package name → consumer project paths
 
 interface PackageJson {
   name: string;
