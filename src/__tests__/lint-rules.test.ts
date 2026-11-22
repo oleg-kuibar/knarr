@@ -23,7 +23,7 @@ function lint(path: string, source: string): { status: number | null; output: st
   const file = join(sandbox, path);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, source);
-  const result = spawnSync(process.execPath, [join(root, "node_modules", "oxlint", "bin", "oxlint"), path], {
+  const result = spawnSync(process.execPath, [join(root, "node_modules", "oxlint", "bin", "oxlint"), "--format=default", path], {
     cwd: sandbox,
     encoding: "utf8",
   });
@@ -39,7 +39,7 @@ function expectReported(path: string, source: string, rule: string, ...fixes: st
 
 function expectClean(path: string, source: string): void {
   const { status, output } = lint(path, source);
-  expect(output).not.toMatch(/error|warning/i);
+  expect(output).toContain("Found 0 warnings and 0 errors.");
   expect(status).toBe(0);
 }
 
