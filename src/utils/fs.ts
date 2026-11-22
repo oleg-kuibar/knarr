@@ -358,9 +358,14 @@ export async function atomicWriteFile(
     recordMutation({ type: "write", path: filePath });
     return;
   }
-  const tmpPath = filePath + `.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tmpPath, data);
-  await rename(tmpPath, filePath);
+  const tmpPath = `${filePath}.tmp-${process.pid}-${randomUUID()}`;
+  try {
+    await writeFile(tmpPath, data);
+    await rename(tmpPath, filePath);
+  } catch (err) {
+    await rm(tmpPath, { force: true });
+    throw err;
+  }
 }
 
 /** Calculate the total size of all files in a directory (recursive). */

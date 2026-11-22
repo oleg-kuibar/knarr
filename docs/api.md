@@ -294,14 +294,18 @@ async function unregisterConsumer(
 ): Promise<void>
 ```
 
-### `cleanStaleConsumers()`
+### `cleanStaleConsumers(options?)`
 
-Remove registrations for consumer directories that no longer exist on disk. Throws without writing when the registry file is corrupt.
+Remove registrations for consumer directories that no longer exist on disk. With `removeMissingLinks: true`, also remove registrations whose consumer state no longer links the package; consumers with unreadable state are kept and counted in `skippedUnreliableConsumers`. Throws without writing when the registry file is corrupt.
 
 ```typescript
-async function cleanStaleConsumers(): Promise<{
+async function cleanStaleConsumers(options?: {
+  removeMissingLinks?: boolean;
+}): Promise<{
   removedConsumers: number;
   removedPackages: number;
+  removedMissingLinks: number;
+  skippedUnreliableConsumers: number;
 }>
 ```
 
