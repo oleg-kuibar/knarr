@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, writeFile, readFile, readdir, mkdir, rm, symlink, link, lstat, realpath } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, readdir, mkdir, rm, symlink, link, lstat, realpath, utimes } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initFlags } from "../logger.js";
@@ -192,20 +193,52 @@ describe("incrementalCopy", () => {
     expect(await readFile(join(dest, "a.txt"), "utf-8")).toBe("bbb");
   });
 
-  it("skips file via mtime fast path on second copy", async () => {
+  it("skips an unchanged file on second copy", async () => {
     const src = join(tempDir, "src");
     const dest = join(tempDir, "dest");
     await mkdir(src, { recursive: true });
     await writeFile(join(src, "a.txt"), "hello world");
 
-    // First copy sets mtime on dest to match src
     const first = await incrementalCopy(src, dest);
     expect(first.copied).toBe(1);
 
-    // Second copy should skip via mtime fast-path (no hashing needed)
     const second = await incrementalCopy(src, dest);
     expect(second.copied).toBe(0);
     expect(second.skipped).toBe(1);
+  });
+
+  it("copies a same-size file even when its mtime matches the destination", async () => {
+    const src = join(tempDir, "src");
+    const dest = join(tempDir, "dest");
+    await mkdir(src, { recursive: true });
+    await mkdir(dest, { recursive: true });
+    await writeFile(join(src, "a.txt"), "new-marker");
+    await writeFile(join(dest, "a.txt"), "old-marker");
+    const sameTick = new Date("2026-01-01T00:00:00Z");
+    await utimes(join(src, "a.txt"), sameTick, sameTick);
+    await utimes(join(dest, "a.txt"), sameTick, sameTick);
+
+    const result = await incrementalCopy(src, dest);
+
+    expect(result.copied).toBe(1);
+    expect(await readFile(join(dest, "a.txt"), "utf-8")).toBe("new-marker");
+  });
+
+  it("keeps another live process's temp copy and removes a dead one's", async () => {
+    const src = join(tempDir, "src");
+    const dest = join(tempDir, "dest");
+    await mkdir(src, { recursive: true });
+    await mkdir(dest, { recursive: true });
+    await writeFile(join(src, "a.txt"), "a");
+    const liveTemp = join(dest, `a.txt.knarr-tmp-${process.pid}-${randomUUID()}`);
+    const deadTemp = join(dest, `a.txt.knarr-tmp-4194305-${randomUUID()}`);
+    await writeFile(liveTemp, "in flight");
+    await writeFile(deadTemp, "abandoned");
+
+    await incrementalCopy(src, dest);
+
+    expect(await exists(liveTemp)).toBe(true);
+    expect(await exists(deadTemp)).toBe(false);
   });
 
   it("removes files not in source", async () => {

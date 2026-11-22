@@ -9,7 +9,6 @@ import {
   rm,
   stat,
   symlink,
-  utimes,
   writeFile,
   constants,
 } from "node:fs/promises";
@@ -68,13 +67,27 @@ export async function copyWithCoW(
     await mkdir(dirname(dest), { recursive: true });
   }
 
-  const tmp = `${dest}.knarr-tmp-${process.pid}-${randomUUID()}`;
+  const tmp = `${dest}${COPY_TEMP_MARKER}${process.pid}-${randomUUID()}`;
   try {
     await copyToFreshFile(src, tmp, volumeRoot(dest));
     await renameOverLockedTarget(tmp, dest);
   } catch (err) {
     await rm(tmp, { force: true });
     throw err;
+  }
+}
+
+const COPY_TEMP_MARKER = ".knarr-tmp-";
+const COPY_TEMP_PATTERN = /\.knarr-tmp-(\d+)-[0-9a-f-]{36}$/;
+
+function isInFlightCopyTemp(path: string): boolean {
+  const pid = COPY_TEMP_PATTERN.exec(path)?.[1];
+  if (pid === undefined) return false;
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch (err) {
+    return isNodeError(err) && err.code === "EPERM";
   }
 }
 
@@ -202,9 +215,7 @@ export async function incrementalCopy(
         const destFile = join(destDir, rel);
 
         let needsCopy = true;
-        let srcTimes: { atime: Date; mtime: Date } | null = null;
 
-        // Force mode: always copy
         if (options.force) {
           verbose(`[copy] ${rel} (forced)`);
         } else {
@@ -213,16 +224,9 @@ export async function incrementalCopy(
               stat(srcFile),
               stat(destFile),
             ]);
-            srcTimes = { atime: srcStat.atime, mtime: srcStat.mtime };
-            // Fast path: different sizes means definitely different content
             if (srcStat.size !== destStat.size) {
               verbose(`[copy] ${rel} (size differs: ${srcStat.size} vs ${destStat.size})`);
-            } else if (srcStat.mtimeMs === destStat.mtimeMs) {
-              // Same size + same mtime: Knarr is the sole writer, so skip without hashing
-              needsCopy = false;
-              verbose(`[skip] ${rel} (size+mtime match)`);
             } else {
-              // Same size, different mtime: compare hashes (pass known sizes to skip redundant stat)
               const [srcHash, destHash] = await Promise.all([
                 hashFile(srcFile, srcStat.size),
                 hashFile(destFile, destStat.size),
@@ -246,14 +250,6 @@ export async function incrementalCopy(
         if (needsCopy) {
           await removeDestinationConflicts(destDir, rel);
           await copyWithCoW(srcFile, destFile);
-          if (isDryRun()) return "copied" as const;
-
-          // Preserve source mtime so the mtime fast-path fires on subsequent checks
-          if (!srcTimes) {
-            const s = await stat(srcFile);
-            srcTimes = { atime: s.atime, mtime: s.mtime };
-          }
-          await utimes(destFile, srcTimes.atime, srcTimes.mtime);
           return "copied" as const;
         }
         return "skipped" as const;
@@ -269,7 +265,7 @@ export async function incrementalCopy(
   // Remove files in dest that don't exist in src (in parallel)
   const srcRelPaths = new Set(srcFiles.map((f) => relative(srcDir, f)));
   const filesToRemove = destFiles.filter(
-    (f) => !srcRelPaths.has(relative(destDir, f))
+    (f) => !srcRelPaths.has(relative(destDir, f)) && !isInFlightCopyTemp(f)
   );
   await Promise.all(
     filesToRemove.map((destFile) =>
