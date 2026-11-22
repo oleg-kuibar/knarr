@@ -6,6 +6,7 @@
 
 - **Injection no longer corrupts other projects through pnpm's hardlinks.** pnpm (and Bun) hardlink installed files to a global content-addressable store. Knarr overwrote those files in place, so a linked build also showed up in every other project using the same package version, and in the store itself, and `knarr remove` only restored the linked project. Knarr now writes each file to a temp file and renames it into place, which leaves the shared store files untouched. `pnpm store status` lists store packages that an earlier Knarr version modified.
 - `list`, `clean`, `doctor`, `add`/`use`, and `update` no longer fail with `Invalid package version` while a publish holds its lock, and never pick up a publish's temp directory as a store entry. `clean` also leaves temp directories younger than 5 minutes alone, so it can't delete the files of a publish that is still running.
+- A corrupt `~/.knarr/consumers.json` is no longer replaced with an empty registry, which dropped every registration and let `clean` delete store entries that linked projects still used. `add`/`use`, `remove`, and `clean` now stop with an error that says how to recover, and `doctor` fails its "Global registry" check. The exported `registerConsumer`, `unregisterConsumer`, and `cleanStaleConsumers` throw in that case instead of writing. Packages named like `Object.prototype` members (for example `constructor`) can be registered.
 
 ### Improvements
 

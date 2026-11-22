@@ -115,23 +115,53 @@ export async function getLink(
 
 // ── Global Consumers Registry (~/.knarr/consumers.json) ──
 
-/** Read the global consumers registry */
-export async function readConsumersRegistry(): Promise<ConsumersRegistry> {
+function emptyRegistry(): ConsumersRegistry {
+  return Object.create(null) as ConsumersRegistry;
+}
+
+/**
+ * Read the global consumers registry with reliability information.
+ * `reliable: false` means the file exists but is corrupt or unreadable, so
+ * writing the returned (empty) registry back would drop registrations.
+ */
+export async function readConsumersRegistrySafe(): Promise<{
+  registry: ConsumersRegistry;
+  reliable: boolean;
+}> {
   const regPath = getConsumersPath();
   try {
-    const content = await readFile(regPath, "utf-8");
-    const parsed = parseJson(content);
+    const parsed = parseJson(await readFile(regPath, "utf-8"));
     if (!isConsumersRegistry(parsed)) {
-      consola.warn(`Invalid consumers registry, using empty registry`);
-      return {};
+      consola.warn(`Invalid consumers registry in ${regPath}, using empty registry`);
+      return { registry: emptyRegistry(), reliable: false };
     }
-    return parsed;
+    return { registry: Object.assign(emptyRegistry(), parsed), reliable: true };
   } catch (err) {
-    if (isNodeError(err) && err.code !== "ENOENT") {
-      consola.warn(`Failed to read consumers registry: ${err instanceof Error ? err.message : String(err)}`);
+    if (isNodeError(err) && err.code === "ENOENT") {
+      return { registry: emptyRegistry(), reliable: true };
     }
-    return {};
+    consola.warn(`Failed to read consumers registry: ${err instanceof Error ? err.message : String(err)}`);
+    return { registry: emptyRegistry(), reliable: false };
   }
+}
+
+/** Read the global consumers registry */
+export async function readConsumersRegistry(): Promise<ConsumersRegistry> {
+  return (await readConsumersRegistrySafe()).registry;
+}
+
+export function corruptRegistryHint(): string {
+  return `Fix or delete ${getConsumersPath()}, then re-run 'knarr add' in each consumer project.`;
+}
+
+async function readConsumersRegistryForWrite(): Promise<ConsumersRegistry> {
+  const { registry, reliable } = await readConsumersRegistrySafe();
+  if (!reliable) {
+    throw new Error(
+      `Consumers registry ${getConsumersPath()} is corrupt; refusing to overwrite it. ${corruptRegistryHint()}`
+    );
+  }
+  return registry;
 }
 
 /** Write the global consumers registry */
@@ -150,7 +180,7 @@ export async function registerConsumer(
 ): Promise<void> {
   const regPath = getConsumersPath();
   await withFileLock(regPath, async () => {
-    const registry = await readConsumersRegistry();
+    const registry = await readConsumersRegistryForWrite();
     if (!registry[packageName]) {
       registry[packageName] = [];
     }
@@ -169,7 +199,7 @@ export async function unregisterConsumer(
 ): Promise<void> {
   const regPath = getConsumersPath();
   await withFileLock(regPath, async () => {
-    const registry = await readConsumersRegistry();
+    const registry = await readConsumersRegistryForWrite();
     if (!registry[packageName]) return;
     const normalized = normalizePath(consumerPath);
     registry[packageName] = registry[packageName].filter(
@@ -221,8 +251,8 @@ export async function cleanStaleConsumers(
   let skippedUnreliableConsumers = 0;
 
   await withFileLock(regPath, async () => {
-    const registry = await readConsumersRegistry();
-    const updated: ConsumersRegistry = {};
+    const registry = await readConsumersRegistryForWrite();
+    const updated = emptyRegistry();
 
     for (const [pkgName, consumers] of Object.entries(registry)) {
       const results = await Promise.all(
