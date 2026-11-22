@@ -1,30 +1,10 @@
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { availableParallelism } from "node:os";
 import pLimit from "./concurrency.js";
 import { verbose } from "./logger.js";
 import { normalizePath } from "./paths.js";
-
-import type xxhashInit from "xxhash-wasm";
-type XXHashAPI = Awaited<ReturnType<typeof xxhashInit>>;
-
-/** Lazy-initialized xxhash-wasm singleton (follows dynamic import pattern used elsewhere) */
-let _xxhash: Promise<XXHashAPI> | null = null;
-function getXXHash(): Promise<XXHashAPI> {
-  if (!_xxhash) {
-    _xxhash = import("xxhash-wasm")
-      .then((mod) => mod.default())
-      .catch((err) => {
-        _xxhash = null;
-        throw err;
-      });
-  }
-  return _xxhash;
-}
-
-/** Files larger than this threshold use streaming hash */
-const STREAM_THRESHOLD = 1024 * 1024; // 1MB
 
 /** Concurrency limit for parallel file reads in computeContentHash */
 const limit = pLimit(Math.max(availableParallelism(), 8));
@@ -88,38 +68,4 @@ export async function computeContentHash(
   const result = "sha256v2:" + hash.digest("hex");
   verbose(`[hash] Result: ${result.slice(0, 20)}...`);
   return result;
-}
-
-/**
- * Compute xxHash64 of a single file's content.
- * Used for per-file change detection during incremental copy — not persisted,
- * so no need for cryptographic strength. xxHash64 is ~5-10x faster than SHA-256.
- * - Files ≤1MB: buffered read + h64Raw
- * - Files >1MB: streaming via create64() hasher
- */
-export async function hashFile(filePath: string, knownSize?: number): Promise<string> {
-  const size = knownSize ?? (await stat(filePath)).size;
-  const xx = await getXXHash();
-
-  if (size > STREAM_THRESHOLD) {
-    return hashFileStream(filePath, xx);
-  }
-
-  const content = await readFile(filePath);
-  return xx.h64Raw(content).toString(16);
-}
-
-/**
- * Compute xxHash64 using streaming for large files.
- * Reads the file in 64KB chunks to avoid loading multi-MB files into memory.
- */
-async function hashFileStream(filePath: string, xx: XXHashAPI): Promise<string> {
-  const { createReadStream } = await import("node:fs");
-  const hasher = xx.create64();
-  return new Promise((resolve, reject) => {
-    const stream = createReadStream(filePath);
-    stream.on("data", (chunk: Buffer) => hasher.update(chunk));
-    stream.on("end", () => resolve(hasher.digest().toString(16)));
-    stream.on("error", reject);
-  });
 }

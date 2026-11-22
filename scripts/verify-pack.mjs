@@ -7,6 +7,7 @@
  *   node scripts/verify-pack.mjs
  */
 import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 const ALLOWED = [
   /^package\.json$/,
@@ -15,8 +16,8 @@ const ALLOWED = [
   /^dist\/[\w.-]+\.mjs$/,
   /^dist\/[\w.-]+\.d\.ts$/,
 ];
-// Generous headroom over today's ~0.5 MB unpacked; a jump past this needs a look.
-const MAX_UNPACKED_BYTES = 2 * 1024 * 1024;
+// Headroom over today's ~0.3 MB unpacked; a jump past this needs a look.
+const MAX_UNPACKED_BYTES = 450 * 1024;
 const REQUIRED = ["package.json", "dist/cli.mjs", "dist/index.mjs", "dist/index.d.ts"];
 
 // Fixed command string (no user input) through the shell: npm is a .cmd shim on
@@ -34,6 +35,22 @@ for (const file of files) {
 }
 for (const file of REQUIRED) {
   if (!files.includes(file)) problems.push(`missing: ${file} (did you run pnpm build?)`);
+}
+const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+for (const field of ["dependencies", "optionalDependencies"]) {
+  const names = Object.keys(manifest[field] ?? {});
+  if (names.length > 0) {
+    problems.push(
+      `${field} lists ${names.join(", ")}: every entry bundles its runtime deps, so these only add install weight. Move them to devDependencies.`
+    );
+  }
+}
+for (const file of files.filter((f) => f.endsWith(".d.ts"))) {
+  if (/from\s+["'][^"']+\.mjs["']/.test(readFileSync(file, "utf8"))) {
+    problems.push(
+      `${file} imports a .mjs chunk, which has no types: consumers with skipLibCheck: false get TS7016. Usually caused by keepNames in tsdown.config.ts.`
+    );
+  }
 }
 if (pack.unpackedSize > MAX_UNPACKED_BYTES) {
   problems.push(`unpacked size ${pack.unpackedSize} B exceeds ${MAX_UNPACKED_BYTES} B`);

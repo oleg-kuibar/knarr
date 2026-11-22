@@ -34,7 +34,7 @@ Before calling work done: `pnpm lint && pnpm build && pnpm test`. Run `pnpm comp
 
 - **Store** `~/.knarr/store/<name>@<version>/`: mutable package cache. `KNARR_HOME` overrides the root (tests always set it).
 - **Publish**: resolve files like `npm pack` (`files`, `.npmignore`/`.gitignore`), hash, and atomically swap into the store. Old builds go to `history/` (default limit 3).
-- **Inject**: incremental copy (xxhash per file, CoW where available) from store into the consumer's real package dir.
+- **Inject**: incremental copy (size check, then byte comparison; CoW where available) from store into the consumer's real package dir.
 - **Push**: publish, then inject into every registered consumer. `--all` runs in workspace topological order.
 - **Tracker**: per-consumer `.knarr/state.json`, global `~/.knarr/consumers.json`. Change consumer state only through `updateConsumerState()` (lock, corrupt-file refusal, create-if-missing).
 - Vocabulary: `GLOSSARY.md` is canonical; decisions with their context are in `docs/adr/`.
@@ -101,6 +101,7 @@ When a rule here is broken twice, move it up this table: architecture, then type
 | No `child_process` outside `src/utils/shell.ts` | lint: `no-restricted-imports` |
 | Disk writes go through `src/utils/fs.ts` (dry run) | lint: `knarr/no-direct-fs-write` (named, namespace and `promises` imports); allowlist override in `.oxlintrc.json` |
 | Untrusted-key maps have no prototype | type: branded `OwnRecord<V>`, built by `ownRecord()`; state and registry parsed by `parseConsumerState` / `parseConsumersRegistry` |
+| No runtime `dependencies`; unpacked size budget | check: `scripts/verify-pack.mjs` |
 | Publish temp-dir names match what `clean` and the store scan expect | architecture: `publishTempDir()` / `publishTempDirStartedAt()` are the one source |
 | No `any`, floating promises, `!`, `eval`, `Math.random()` | lint: typescript and eslint rules in `.oxlintrc.json` |
 | Unchecked indexing handled | type: `noUncheckedIndexedAccess` |
@@ -131,7 +132,7 @@ These are enforced in CI (zizmor, dependency review, audit, verify-pack). Don't 
 
 ## Dependencies
 
-- The CLI bundles every runtime dependency (`noExternal`). A dependency's `engines.node` therefore becomes Knarr's. Check it before bumping (chokidar 6 is why the floor is 22.22).
+- Every entry (CLI, API, plugins) bundles every runtime dependency in one tsdown build with shared chunks, so `package.json` has no `dependencies`; runtime deps live in `devDependencies` and `scripts/verify-pack.mjs` fails otherwise. Only the bundler peers (`vite`, `webpack`, `@rspack/core`) stay external. A bundled dependency's `engines.node` still becomes Knarr's. Check it before bumping (chokidar 6 is why the floor is 22.22).
 - Toolchain is native: TypeScript 7 (`tsc` type-checks only), tsdown (Rolldown) bundles, Oxc writes the public `.d.ts`, oxlint + tsgolint lint. Nothing here needs TypeScript's old JS compiler API, so stay off tools that do (tsup's `.d.ts` build, typescript-eslint).
 - Public declarations use Oxc isolated declarations: `tsconfig.dts.json` checks the public entry graph with `isolatedDeclarations`, so exported functions and objects there need explicit types.
 - pnpm settings live in `pnpm-workspace.yaml` (pnpm 11+ ignores `package.json#pnpm`). The file has no `packages:` list, and `minimumReleaseAge` enforces a 7-day cooldown on new versions.

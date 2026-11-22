@@ -89,7 +89,6 @@ flowchart TD
 
     style A fill:#1565c0,stroke:#64b5f6,color:#e3f2fd
     style B fill:#6a1b9a,stroke:#ba68c8,color:#f3e5f5
-    style G fill:#6a1b9a,stroke:#ba68c8,color:#f3e5f5
     style H fill:#6a1b9a,stroke:#ba68c8,color:#f3e5f5
     style I fill:#2e7d32,stroke:#66bb6a,color:#e8f5e9
     style J fill:#1565c0,stroke:#64b5f6,color:#e3f2fd
@@ -182,12 +181,9 @@ flowchart TD
 
     E[incrementalCopy] --> F{Size differs?}
     F -- Yes --> A
-    F -- No --> G{mtime matches?}
-    G -- Yes --> I[Skip]
-    G -- No --> H["Hash both files (xxhash)"]
-    H --> K{Hash differs?}
+    F -- No --> K{Bytes differ?}
     K -- Yes --> A
-    K -- No --> I
+    K -- No --> I[Skip]
     E --> J{File removed from source?}
     J -- Yes --> L[Delete from dest]
 
@@ -205,7 +201,7 @@ flowchart TD
 ```
 
 1. Each `copyFile` first probes for CoW reflink support (`COPYFILE_FICLONE_FORCE`) on the target volume. The result is cached per volume root — if reflinks aren't supported (ext4, NTFS), all subsequent copies on that volume go straight to a plain `copyFile` with no wasted syscalls. On APFS (macOS), btrfs (Linux), and ReFS (Windows), the reflink is instant and uses no additional disk space.
-2. Before copying, Knarr compares file sizes: different sizes mean different content, so the file is copied. When sizes match, it hashes both files with xxHash64 and copies only if the hashes differ. Mtimes are not trusted, because a build can rewrite a file within the filesystem's mtime resolution. Files over 1 MB use xxHash64 streaming to avoid loading them into memory. Only changed files get copied, and files removed from the source get deleted from the destination. All file comparisons run in parallel, throttled to the CPU core count.
+2. Before copying, Knarr compares file sizes: different sizes mean different content, so the file is copied. When sizes match, it compares the bytes of both files and copies only if they differ. Mtimes are not trusted, because a build can rewrite a file within the filesystem's mtime resolution. Files over 1 MB are compared in 1 MB chunks to avoid loading them into memory. Only changed files get copied, and files removed from the source get deleted from the destination. All file comparisons run in parallel, throttled to the CPU core count.
 3. Each file is copied to a `.knarr-tmp-<pid>-<uuid>` sibling and renamed onto its final path in `node_modules/`, so readers see the old file or the new one, never a partial write. The rename generates the filesystem events bundler watchers need.
 
 ## State
@@ -244,14 +240,7 @@ This lets `knarr push` know which projects to update.
 
 ## Hash strategy
 
-knarr uses two different hash algorithms for different purposes:
-
-| Hash | Algorithm | Where | Why |
-|---|---|---|---|
-| Per-file | xxHash64 (xxhash-wasm) | Incremental copy — comparing source vs destination files | Fast change detection. ~5-10x faster than SHA-256. Not persisted. |
-| Aggregate | SHA-256 | `contentHash` in `.knarr-meta.json` and `state.json` | Content identity across publishes. Deterministic, stable prefix `sha256v2:`. |
-
-The per-file hash is computed on every copy operation to decide which files actually changed. Small files (<=1 MB) are buffered and hashed in one shot. Large files use xxHash64 streaming to avoid loading them into memory.
+Incremental copy does not hash individual files. Comparing two files' bytes reads the same data hashing both would, and gives an exact answer.
 
 The aggregate hash is computed once per publish over all files (sorted by path, length-prefixed). It uses SHA-256 because the `sha256v2:` prefix is stored in metadata, and switching algorithms would invalidate every existing store entry for no meaningful speedup.
 

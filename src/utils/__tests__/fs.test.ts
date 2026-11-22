@@ -193,6 +193,57 @@ describe("incrementalCopy", () => {
     expect(await readFile(join(dest, "a.txt"), "utf-8")).toBe("bbb");
   });
 
+  it("compares large files past the first chunk", async () => {
+    const src = join(tempDir, "src");
+    const dest = join(tempDir, "dest");
+    await mkdir(src, { recursive: true });
+    const size = 3 * 1024 * 1024 + 17;
+    await writeFile(join(src, "big.bin"), Buffer.alloc(size, 0xab));
+    await writeFile(join(src, "same.bin"), Buffer.alloc(size, 0xcd));
+    await incrementalCopy(src, dest);
+
+    const changed = Buffer.alloc(size, 0xab);
+    changed[size - 1] = 0x00;
+    await writeFile(join(src, "big.bin"), changed);
+    const result = await incrementalCopy(src, dest);
+
+    expect(result).toMatchObject({ copied: 1, skipped: 1 });
+    expect((await readFile(join(dest, "big.bin"))).equals(changed)).toBe(true);
+  });
+
+  it.each([0, 1024 * 1024, 1024 * 1024 + 1, 2 * 1024 * 1024])(
+    "detects a last-byte change and skips identical content at %i bytes",
+    async (size) => {
+      const src = join(tempDir, "src");
+      const dest = join(tempDir, "dest");
+      await mkdir(src, { recursive: true });
+      await writeFile(join(src, "f.bin"), Buffer.alloc(size, 0x11));
+      await incrementalCopy(src, dest);
+
+      expect(await incrementalCopy(src, dest)).toMatchObject({ copied: 0, skipped: 1 });
+      if (size === 0) return;
+
+      const changed = Buffer.alloc(size, 0x11);
+      changed[size - 1] = 0x22;
+      await writeFile(join(src, "f.bin"), changed);
+      expect(await incrementalCopy(src, dest)).toMatchObject({ copied: 1, skipped: 0 });
+      expect((await readFile(join(dest, "f.bin"))).equals(changed)).toBe(true);
+    }
+  );
+
+  it("replaces a directory that sits where an empty source file goes", async () => {
+    const src = join(tempDir, "src");
+    const dest = join(tempDir, "dest");
+    await mkdir(src, { recursive: true });
+    await writeFile(join(src, "empty.js"), "");
+    await mkdir(join(dest, "empty.js"), { recursive: true });
+
+    const result = await incrementalCopy(src, dest);
+
+    expect(result.copied).toBe(1);
+    expect(await readFile(join(dest, "empty.js"), "utf-8")).toBe("");
+  });
+
   it("skips an unchanged file on second copy", async () => {
     const src = join(tempDir, "src");
     const dest = join(tempDir, "dest");
