@@ -15,7 +15,7 @@ import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
 import { consola } from "../utils/console.js";
 import type { StoreEntry } from "../types.js";
-import { readJsonObject, stringField } from "../utils/json.js";
+import { isJsonObject, readJsonObject, stringField } from "../utils/json.js";
 import type { JsonObject } from "../utils/json.js";
 
 const consumerLimit = pLimit(4);
@@ -573,7 +573,15 @@ async function readOutputDirs(packageDir: string): Promise<Set<string>> {
     .flatMap(topDir)
     .filter((dir) => dir !== "src");
   const entryDirs = ["main", "module", "types"].flatMap((field) => topDir(stringField(pkg, field)));
-  return new Set([...publishedDirs, ...entryDirs]);
+  const exportDirs = exportTargets(pkg["exports"]).flatMap(topDir);
+  return new Set([...publishedDirs, ...entryDirs, ...exportDirs]);
+}
+
+function exportTargets(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(exportTargets);
+  if (isJsonObject(value)) return Object.values(value).flatMap(exportTargets);
+  return [];
 }
 
 /**

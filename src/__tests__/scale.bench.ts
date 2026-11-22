@@ -1,6 +1,6 @@
 /**
  * Scale benchmarks: synthetic 60-file package to stress-test incremental paths.
- * Validates that mtime fast-skip and hash-based diffing work at realistic scale.
+ * Validates that hash-based diffing works at realistic scale.
  */
 import { test, beforeAll, afterAll } from "vitest";
 import { mkdtemp, writeFile, mkdir, rm, utimes } from "node:fs/promises";

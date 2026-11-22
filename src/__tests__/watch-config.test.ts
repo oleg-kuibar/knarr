@@ -56,6 +56,19 @@ describe("resolveWatchConfig", () => {
     expect(config.patterns).toEqual(["src", "components"]);
   });
 
+  it("does not watch a build output directory that only exports points into", async () => {
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ name: "pkg", version: "1.0.0", exports: { ".": { import: "./lib/index.js" } } })
+    );
+    await mkdir(join(tempDir, "src"));
+    await mkdir(join(tempDir, "lib"));
+
+    const config = await resolveWatchConfig(tempDir, { build: "tsc" });
+
+    expect(config.patterns).toEqual(["src"]);
+  });
+
   it("watches lib when it is source and not published output", async () => {
     await writeFile(
       join(tempDir, "package.json"),
