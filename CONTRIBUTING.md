@@ -125,17 +125,7 @@ Maintainer setup for Codex: set up Codex cloud for `oleg-kuibar/knarr` and enabl
 
 ## Releasing
 
-### Stable Releases
-
-1. Confirm `package.json` contains the intended version.
-2. Go to Actions -> Publish -> Run workflow
-3. Keep **Dry run** enabled for the first run and inspect `npm pack --dry-run`
-4. Configure npm Trusted Publishing for the `npm` environment
-5. Re-run with **Dry run** disabled
-
-### Prerequisites
-
-Publishing uses npm Trusted Publishing (OIDC) - no secrets needed. The `knarr` package must have the GitHub repo configured as a trusted publisher on npmjs.com.
+Maintainers follow [.github/RELEASING.md](.github/RELEASING.md). In Claude Code, `/release <version>` walks through it. Publishing uses npm trusted publishing (OIDC) from the `npm` environment, so no token secret exists.
 
 ## Code style
 
