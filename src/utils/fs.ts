@@ -15,6 +15,7 @@ import {
 } from "node:fs/promises";
 import { join, dirname, relative, parse as parsePath } from "node:path";
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import pLimit from "./concurrency.js";
 import { availableParallelism } from "node:os";
 import { hashFile } from "./hash.js";
@@ -70,11 +71,28 @@ export async function copyWithCoW(
   const tmp = `${dest}.knarr-tmp-${process.pid}-${randomUUID()}`;
   try {
     await copyToFreshFile(src, tmp, volumeRoot(dest));
-    await rename(tmp, dest);
+    await renameOverLockedTarget(tmp, dest);
   } catch (err) {
     await rm(tmp, { force: true });
     throw err;
   }
+}
+
+const RENAME_RETRY_DELAYS_MS = [10, 20, 40, 80, 160, 300, 400];
+const WINDOWS_LOCK_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+
+async function renameOverLockedTarget(from: string, to: string): Promise<void> {
+  for (const delay of RENAME_RETRY_DELAYS_MS) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (err) {
+      // Windows refuses to replace a file another process opened without FILE_SHARE_DELETE until it closes it.
+      if (process.platform !== "win32" || !isNodeError(err) || !WINDOWS_LOCK_CODES.has(err.code ?? "")) throw err;
+      await sleep(delay);
+    }
+  }
+  await rename(from, to);
 }
 
 async function copyToFreshFile(src: string, dest: string, root: string): Promise<void> {

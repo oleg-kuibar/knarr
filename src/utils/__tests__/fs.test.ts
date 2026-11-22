@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtemp, writeFile, readFile, readdir, mkdir, rm, symlink, link, lstat, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -15,7 +15,20 @@ import {
   atomicWriteFile,
 } from "../fs.js";
 
+const fsMocks = vi.hoisted(() => ({ rename: vi.fn() }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  fsMocks.rename.mockImplementation(actual.rename);
+  return { ...actual, rename: fsMocks.rename };
+});
+const { rename: actualRename } = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+
 const originalArgv = [...process.argv];
+const originalPlatform = process.platform;
+
+function lockedError(): NodeJS.ErrnoException {
+  return Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" });
+}
 
 function setDryRun(enabled: boolean): void {
   process.argv = enabled ? ["node", "knarr", "--dry-run"] : ["node", "knarr"];
@@ -43,6 +56,44 @@ describe("copyWithCoW", () => {
     await writeFile(src, "hello");
     await copyWithCoW(src, dest);
     expect(await readFile(dest, "utf-8")).toBe("hello");
+  });
+
+  describe("when Windows holds the destination open", () => {
+    beforeEach(() => {
+      Object.defineProperty(process, "platform", { value: "win32" });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(process, "platform", { value: originalPlatform });
+      fsMocks.rename.mockReset();
+      fsMocks.rename.mockImplementation(actualRename);
+    });
+
+    it("retries the rename until the lock is released", async () => {
+      const src = join(tempDir, "src.txt");
+      const dest = join(tempDir, "dest.txt");
+      await writeFile(src, "new");
+      await writeFile(dest, "old");
+      fsMocks.rename.mockRejectedValueOnce(lockedError());
+
+      await copyWithCoW(src, dest);
+
+      expect(await readFile(dest, "utf-8")).toBe("new");
+      expect((await readdir(tempDir)).sort()).toEqual(["dest.txt", "src.txt"]);
+    });
+
+    it("rejects without leaving a temp file when the lock persists", async () => {
+      const src = join(tempDir, "src.txt");
+      const dest = join(tempDir, "dest.txt");
+      await writeFile(src, "new");
+      await writeFile(dest, "old");
+      fsMocks.rename.mockRejectedValue(lockedError());
+
+      await expect(copyWithCoW(src, dest)).rejects.toMatchObject({ code: "EPERM" });
+
+      expect(await readFile(dest, "utf-8")).toBe("old");
+      expect((await readdir(tempDir)).sort()).toEqual(["dest.txt", "src.txt"]);
+    });
   });
 
   it("creates parent directories", async () => {
