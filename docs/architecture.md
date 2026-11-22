@@ -96,7 +96,7 @@ State machine per package prevents infinite loops: `idle → building → idle` 
 
 | Hash | Algorithm | Use | Stored? |
 |---|---|---|---|
-| Per-file | xxHash64 (xxhash-wasm) | Incremental copy change detection (fallback when mtime differs) | No |
+| Per-file | xxHash64 (xxhash-wasm) | Incremental copy change detection when sizes match | No |
 | Aggregate | SHA-256 | Content identity (`sha256v2:` prefix in `.knarr-meta.json`) | Yes |
 
 xxHash64 is lazy-initialized as a WASM singleton. Files >1 MB use streaming to cap memory usage.
