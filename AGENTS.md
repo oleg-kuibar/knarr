@@ -60,7 +60,7 @@ src/index.ts               public API (`knarr`); vite-plugin.ts (`knarr/vite`); 
 ## Rules for changes
 
 - **Commands**: `--json` output goes through `output()` in `src/utils/output.ts`. Nothing else may write to stdout in JSON mode. Diagnostics go to `consola`/`verbose()`.
-- **Dry run**: every mutation must check `isDryRun()` and call `recordMutation()` instead of touching disk.
+- **Dry run**: write to disk only through the helpers in `src/utils/fs.ts` (`atomicWriteFile`, `copyWithCoW`, `removeDir`, `ensureDir`, `moveDir`), which check `isDryRun()` and call `recordMutation()`. Lint bans importing fs write functions anywhere else.
 - **Child processes**: run user command lines (build commands, hooks) with `spawnShell()`, and an executable plus arguments (package-manager installs) with `spawnCommand()`. Never hand-build `cmd /c` or pass an args array with `shell: true`: Windows quoting breaks on paths with spaces, and Node warns with DEP0190.
 - **Paths**: never assume `/`. Use `node:path` joins, and use `normalizePath()` only for comparison or storage.
 - **Filesystem scope**: write only inside the store (`KNARR_HOME`), the consumer's `.knarr/`, and the resolved package target. Follow pnpm `.pnpm/` and Yarn `.store/` symlinks to the real dir; never replace the top-level symlink.
@@ -80,7 +80,7 @@ src/index.ts               public API (`knarr`); vite-plugin.ts (`knarr/vite`); 
 Knarr reads files written by other people (a linked library's `package.json` and build output, consumer manifests, `pnpm-workspace.yaml`, lockfiles, state from older versions) and writes into their projects. Treat all of it as untrusted. `pnpm lint` enforces most of these rules (strict `tsconfig.json` flags plus `.oxlintrc.json`, whose type-aware rules run on tsgolint), and the Claude Code edit hook runs oxlint on every edited file.
 
 - **Untrusted JSON**: never call `JSON.parse`. Use `parseJson`, `parseJsonObject` or `readJsonObject` from `src/utils/json.ts` and narrow the result with `stringField`, `objectField`, `stringRecordField` or `asPackageJson`. No `any` (`no-explicit-any`, `no-unsafe-*`), and no `as SomeType` on unvalidated data.
-- **Objects keyed by untrusted strings**: use a `Map` or `Object.create(null)`, never `{}`. A `__proto__` key would replace the object's prototype, and keys like `constructor` resolve to built-ins.
+- **Objects keyed by untrusted strings**: use a `Map` or an `OwnRecord<V>` made with `ownRecord()` from `src/utils/json.ts`, never `{}`. A `__proto__` key would replace the object's prototype, and keys like `constructor` resolve to built-ins. `OwnRecord` is branded, so a `{}` literal doesn't type-check as one.
 - **Paths**: run `validatePackageIdentity()` on names and versions before building store or `node_modules` paths from them. Before following a symlink or deleting, check that the resolved path stays inside the allowed root (see `isPathInside` in `src/core/injector.ts`).
 - **Processes**: only `src/utils/shell.ts` may import `child_process` (lint-enforced). `spawnShell()` is only for command lines the user configured (build commands, lifecycle hooks). Everything else uses `spawnCommand(executable, args)`; never splice untrusted values into a command string.
 - **Code execution**: no `eval`, `new Function`, string timers, or `Math.random()` for anything security-relevant (use `node:crypto`).
@@ -89,6 +89,24 @@ Knarr reads files written by other people (a linked library's `package.json` and
 - **Errors**: rethrow with `{ cause }`. Never log environment variables, tokens, or file contents that might hold secrets.
 - **Suppressions**: `oxlint-disable-next-line <rule> -- <why>` needs the reason, and unused disables fail lint.
 - **Tests**: every security fix gets a regression test that fails on the old code.
+
+### What enforces each rule
+
+When a rule here is broken twice, move it up this table: architecture, then types or lint, then tests. Drop a rule once its mistake can't happen.
+
+| Rule | Enforced by |
+| --- | --- |
+| No `JSON.parse` outside `src/utils/json.ts` | lint: `no-restricted-properties` |
+| No `child_process` outside `src/utils/shell.ts` | lint: `no-restricted-imports` |
+| Disk writes go through `src/utils/fs.ts` (dry run) | lint: `no-restricted-imports` with `importNames`; allowlist override in `.oxlintrc.json` |
+| Untrusted-key maps have no prototype | type: branded `OwnRecord<V>`, built by `ownRecord()`; state and registry parsed by `parseConsumerState` / `parseConsumersRegistry` |
+| Publish temp-dir names match what `clean` and the store scan expect | architecture: `publishTempDir()` / `publishTempDirStartedAt()` are the one source |
+| No `any`, floating promises, `!`, `eval`, `Math.random()` | lint: typescript and eslint rules in `.oxlintrc.json` |
+| Unchecked indexing handled | type: `noUncheckedIndexedAccess` |
+| Names and versions validated before building paths | runtime check: `validatePackageIdentity()`; tests |
+| `--json` stdout only through `output()` | lint: `no-console` (allowlisted files only); not enforced for `process.stdout.write` |
+| Tests isolate `KNARR_HOME` | docs only |
+| Public surface changes get docs and a changelog entry | docs only; `knarr-docs-checker` agent |
 
 ## Security rules
 
