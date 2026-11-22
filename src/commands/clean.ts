@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { defineCommand } from "citty";
 import { consola } from "../utils/console.js";
@@ -15,6 +15,8 @@ import { printDryRunReport } from "../utils/dry-run.js";
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { getStorePath, normalizePath } from "../utils/paths.js";
 import { Timer } from "../utils/timer.js";
+
+const RECENT_MS = 5 * 60 * 1000;
 
 export default defineCommand({
   meta: {
@@ -95,7 +97,7 @@ export default defineCommand({
           continue;
         }
         const age = Date.now() - new Date(entry.meta.publishedAt).getTime();
-        if (age < 5 * 60 * 1000) {
+        if (age < RECENT_MS) {
           verbose(`[clean] Skipping recently published entry: ${key} (${Math.round(age / 1000)}s old)`);
           continue;
         }
@@ -110,9 +112,13 @@ export default defineCommand({
       const allDirs = await readdir(storePath, { withFileTypes: true });
       for (const dir of allDirs) {
         if (!dir.isDirectory()) continue;
-        if (dir.name.includes(".tmp-") || dir.name.includes(".old-")) {
-          orphanDirs.push(dir.name);
+        if (!dir.name.includes(".tmp-") && !dir.name.includes(".old-")) continue;
+        const age = Date.now() - (await stat(join(storePath, dir.name))).mtimeMs;
+        if (age < RECENT_MS) {
+          verbose(`[clean] Skipping recent temp directory: ${dir.name} (${Math.round(age / 1000)}s old)`);
+          continue;
         }
+        orphanDirs.push(dir.name);
       }
     }
 
