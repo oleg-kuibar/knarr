@@ -8,7 +8,7 @@ import {
   getStoreMetaPath,
   decodePackageName,
 } from "../utils/paths.js";
-import { ensurePrivateDir, exists, removeDir, atomicWriteFile, isNodeError } from "../utils/fs.js";
+import { exists, removeDir, isNodeError } from "../utils/fs.js";
 import { isKnarrMeta, validatePackageIdentity } from "../utils/validators.js";
 import { parseJson } from "../utils/json.js";
 
@@ -32,17 +32,6 @@ export async function readMeta(
     }
     return null;
   }
-}
-
-/** Write .knarr-meta.json for a store entry */
-export async function writeMeta(
-  name: string,
-  version: string,
-  meta: KnarrMeta
-): Promise<void> {
-  const metaPath = getStoreMetaPath(name, version);
-  await ensurePrivateDir(getStoreEntryPath(name, version));
-  await atomicWriteFile(metaPath, JSON.stringify(meta, null, 2));
 }
 
 /** Get a store entry if it exists */
