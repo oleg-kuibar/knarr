@@ -3,7 +3,7 @@ import { resolve, basename } from "node:path";
 import { consola } from "../utils/console.js";
 import { removeInjected, restoreBackup } from "../core/injector.js";
 import { getLink, removeLink, readConsumerState } from "../core/tracker.js";
-import { unregisterConsumer } from "../core/tracker.js";
+import { unregisterConsumer, warnOnCorruptRegistry } from "../core/tracker.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { removeFromTranspilePackages } from "../utils/nextjs-config.js";
 import { Timer } from "../utils/timer.js";
@@ -173,7 +173,7 @@ export async function removeSinglePackage(
 
   // Update state (removeLink deletes entry before we check remaining links)
   await removeLink(consumerPath, packageName);
-  await unregisterConsumer(packageName, consumerPath);
+  await unregisterConsumer(packageName, consumerPath).catch(warnOnCorruptRegistry);
 
   // Remove Vite plugin if this was the last linked package
   if (bundler.type === "vite" && bundler.configFile) {

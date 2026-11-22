@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   chmod,
   mkdir,
@@ -52,6 +52,33 @@ afterEach(async () => {
   await rm(knarrHome, { recursive: true, force: true });
   await rm(testLib, { recursive: true, force: true });
   await rm(testConsumer, { recursive: true, force: true });
+});
+
+describe("corrupt consumers registry", () => {
+  it("still adds and removes a link, leaving the registry untouched", async () => {
+    const { consola } = await import("../utils/console.js");
+    const { removeSinglePackage } = await import("../commands/remove.js");
+    await writePackage(testLib, { prebuilt: "built" });
+    const registryPath = join(knarrHome, "consumers.json");
+    const corrupt = '{"a":["/x"],"b":5}';
+    await writeFile(registryPath, corrupt);
+    const warn = vi.spyOn(consola, "warn");
+
+    try {
+      await runAddFromConsumer({ from: testLib, skipBuild: true });
+      expect(await exists(join(testConsumer, "node_modules", "test-lib", "dist", "index.js"))).toBe(true);
+      expect(await exists(join(testConsumer, ".knarr", "restore.cjs"))).toBe(true);
+
+      await removeSinglePackage(testConsumer, "test-lib", { backupExists: false, packageManager: "npm" });
+      expect(await exists(join(testConsumer, "node_modules", "test-lib"))).toBe(false);
+
+      const registryWarnings = warn.mock.calls.filter(([message]) => String(message).includes("left unchanged"));
+      expect(registryWarnings).toHaveLength(2);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await readFile(registryPath, "utf-8")).toBe(corrupt);
+  });
 });
 
 describe("build-aware use/add flow", () => {

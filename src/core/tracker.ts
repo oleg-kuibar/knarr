@@ -154,13 +154,21 @@ export function corruptRegistryHint(): string {
   return `Fix or delete ${getConsumersPath()}, then re-run 'knarr add' in each consumer project.`;
 }
 
+export class CorruptRegistryError extends Error {
+  constructor() {
+    super(`Consumers registry ${getConsumersPath()} is corrupt; refusing to overwrite it. ${corruptRegistryHint()}`);
+    this.name = "CorruptRegistryError";
+  }
+}
+
+export function warnOnCorruptRegistry(err: unknown): void {
+  if (!(err instanceof CorruptRegistryError)) throw err;
+  consola.warn(`Consumers registry ${getConsumersPath()} is corrupt, so it was left unchanged. ${corruptRegistryHint()}`);
+}
+
 async function readConsumersRegistryForWrite(): Promise<ConsumersRegistry> {
   const { registry, reliable } = await readConsumersRegistrySafe();
-  if (!reliable) {
-    throw new Error(
-      `Consumers registry ${getConsumersPath()} is corrupt; refusing to overwrite it. ${corruptRegistryHint()}`
-    );
-  }
+  if (!reliable) throw new CorruptRegistryError();
   return registry;
 }
 
