@@ -1,0 +1,63 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtemp, mkdir, writeFile, rm, utimes } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { exists } from "../utils/fs.js";
+
+let knarrHome: string;
+let storeDir: string;
+
+async function writeEntry(dirName: string, publishedAt: Date): Promise<void> {
+  const entryDir = join(storeDir, dirName);
+  await mkdir(join(entryDir, "package"), { recursive: true });
+  await writeFile(
+    join(entryDir, ".knarr-meta.json"),
+    JSON.stringify({
+      contentHash: "sha256:abc",
+      publishedAt: publishedAt.toISOString(),
+      sourcePath: "/src/foo",
+    })
+  );
+}
+
+beforeEach(async () => {
+  knarrHome = await mkdtemp(join(tmpdir(), "knarr-store-"));
+  storeDir = join(knarrHome, "store");
+  process.env.KNARR_HOME = knarrHome;
+});
+
+afterEach(async () => {
+  delete process.env.KNARR_HOME;
+  await rm(knarrHome, { recursive: true, force: true });
+});
+
+describe("store listing", () => {
+  it("ignores lock, temp and invalid directories", async () => {
+    const { listStoreEntries, findStoreEntry } = await import("../core/store.js");
+    await writeEntry("foo@1.0.0", new Date(Date.now() - 60_000));
+    await mkdir(join(storeDir, "foo@1.0.0.lock.lk"), { recursive: true });
+    await writeEntry("foo@1.0.0-beta.tmp-1-2", new Date());
+    await writeEntry("foo@bar", new Date());
+
+    const entries = await listStoreEntries();
+    expect(entries.map((e) => `${e.name}@${e.version}`)).toEqual(["foo@1.0.0"]);
+    expect((await findStoreEntry("foo"))?.version).toBe("1.0.0");
+  });
+});
+
+describe("clean", () => {
+  it("keeps temp directories of a publish that may still be running", async () => {
+    const cleanCommand = await import("../commands/clean.js");
+    const young = join(storeDir, "foo@1.0.0.tmp-1-2");
+    const old = join(storeDir, "foo@1.0.0.old-1");
+    await mkdir(young, { recursive: true });
+    await mkdir(old, { recursive: true });
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60_000);
+    await utimes(old, tenMinutesAgo, tenMinutesAgo);
+
+    await cleanCommand.default.run?.({ args: { yes: true } } as any);
+
+    expect(await exists(young)).toBe(true);
+    expect(await exists(old)).toBe(false);
+  });
+});

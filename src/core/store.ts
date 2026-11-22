@@ -6,11 +6,10 @@ import {
   getStoreEntryPath,
   getStorePackagePath,
   getStoreMetaPath,
-  encodePackageName,
   decodePackageName,
 } from "../utils/paths.js";
 import { ensurePrivateDir, exists, removeDir, atomicWriteFile, isNodeError } from "../utils/fs.js";
-import { isKnarrMeta } from "../utils/validators.js";
+import { isKnarrMeta, validatePackageIdentity } from "../utils/validators.js";
 import { parseJson } from "../utils/json.js";
 
 /** Read the .knarr-meta.json for a store entry */
@@ -62,38 +61,26 @@ export async function getStoreEntry(
 export async function findStoreEntry(
   name: string
 ): Promise<StoreEntry | null> {
-  const storePath = getStorePath();
-  if (!(await exists(storePath))) return null;
-
-  // Pre-filter directories by encoded name prefix
-  const encodedPrefix = encodePackageName(name) + "@";
-  const dirs = await readdir(storePath, { withFileTypes: true });
-  const candidates = dirs.filter(
-    (d) => d.isDirectory() && d.name.startsWith(encodedPrefix)
-  );
-
-  // Read all matching metadata in parallel
-  const results = await Promise.all(
-    candidates.map(async (dir) => {
-      const version = dir.name.slice(encodedPrefix.length);
-      const meta = await readMeta(name, version);
-      if (!meta) return null;
-      return {
-        name,
-        version,
-        packageDir: getStorePackagePath(name, version),
-        meta,
-      } satisfies StoreEntry;
-    })
-  );
-
-  const matching = results.filter((r): r is StoreEntry => r !== null);
+  const matching = (await listStoreEntries()).filter((e) => e.name === name);
   if (matching.length === 0) return null;
-  // Find the most recently published entry in O(n)
   return matching.reduce((latest, entry) =>
     new Date(entry.meta.publishedAt).getTime() > new Date(latest.meta.publishedAt).getTime()
       ? entry : latest
   );
+}
+
+function parseStoreDirName(dirName: string): { name: string; version: string } | null {
+  if (dirName.includes(".tmp-") || dirName.includes(".old-")) return null;
+  const atIdx = dirName.lastIndexOf("@");
+  if (atIdx <= 0) return null;
+  const name = decodePackageName(dirName.slice(0, atIdx));
+  const version = dirName.slice(atIdx + 1);
+  try {
+    validatePackageIdentity(name, version);
+  } catch {
+    return null;
+  }
+  return { name, version };
 }
 
 /** List all entries in the store */
@@ -102,23 +89,13 @@ export async function listStoreEntries(): Promise<StoreEntry[]> {
   if (!(await exists(storePath))) return [];
 
   const dirs = await readdir(storePath, { withFileTypes: true });
-  const candidates = dirs.filter((d) => {
-    if (!d.isDirectory()) return false;
-    const atIdx = d.name.lastIndexOf("@");
-    return atIdx > 0;
-  });
-
-  // Read all metadata in parallel
   const results = await Promise.all(
-    candidates.map(async (dir) => {
-      const atIdx = dir.name.lastIndexOf("@");
-      const encodedName = dir.name.slice(0, atIdx);
-      const version = dir.name.slice(atIdx + 1);
-      const name = decodePackageName(encodedName);
-
+    dirs.map(async (dir) => {
+      const identity = dir.isDirectory() ? parseStoreDirName(dir.name) : null;
+      if (!identity) return null;
+      const { name, version } = identity;
       const meta = await readMeta(name, version);
       if (!meta) return null;
-
       return {
         name,
         version,
