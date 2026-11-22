@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["eslint", "typescript", "oxc"],
+  "jsPlugins": ["./lint/knarr-plugin.mjs"],
   "categories": { "correctness": "error" },
   "options": { "typeAware": true, "reportUnusedDisableDirectives": "error", "denyWarnings": true },
   "ignorePatterns": ["dist/**", "coverage/**", ".vitest/**", "examples/**"],
@@ -12,17 +13,13 @@
 
     "no-restricted-imports": ["error", {
       "paths": [
-        { "name": "node:child_process", "allowTypeImports": true, "message": "Use spawnShell() or spawnCommand() from src/utils/shell.ts." },
-        { "name": "child_process", "allowTypeImports": true, "message": "Use spawnShell() or spawnCommand() from src/utils/shell.ts." },
-        { "name": "node:fs/promises", "importNames": ["writeFile", "appendFile", "rm", "rmdir", "rename", "copyFile", "cp", "unlink", "mkdir", "mkdtemp", "symlink", "link", "chmod", "utimes", "truncate"], "message": "Direct filesystem writes skip --dry-run. Use the helpers in src/utils/fs.ts (atomicWriteFile, copyWithCoW, removeDir, ensureDir, moveDir), which check isDryRun() and call recordMutation()." },
-        { "name": "fs/promises", "importNames": ["writeFile", "appendFile", "rm", "rmdir", "rename", "copyFile", "cp", "unlink", "mkdir", "mkdtemp", "symlink", "link", "chmod", "utimes", "truncate"], "message": "Direct filesystem writes skip --dry-run. Use the helpers in src/utils/fs.ts (atomicWriteFile, copyWithCoW, removeDir, ensureDir, moveDir), which check isDryRun() and call recordMutation()." },
-        { "name": "node:fs", "importNames": ["writeFile", "writeFileSync", "appendFile", "appendFileSync", "rm", "rmSync", "rmdir", "rmdirSync", "rename", "renameSync", "copyFile", "copyFileSync", "cp", "cpSync", "unlink", "unlinkSync", "mkdir", "mkdirSync", "mkdtemp", "mkdtempSync", "symlink", "symlinkSync", "link", "linkSync", "chmod", "chmodSync", "utimes", "utimesSync", "truncate", "truncateSync"], "message": "Direct filesystem writes skip --dry-run. Use the helpers in src/utils/fs.ts (atomicWriteFile, copyWithCoW, removeDir, ensureDir, moveDir), which check isDryRun() and call recordMutation()." },
-        { "name": "fs", "importNames": ["writeFile", "writeFileSync", "appendFile", "appendFileSync", "rm", "rmSync", "rmdir", "rmdirSync", "rename", "renameSync", "copyFile", "copyFileSync", "cp", "cpSync", "unlink", "unlinkSync", "mkdir", "mkdirSync", "mkdtemp", "mkdtempSync", "symlink", "symlinkSync", "link", "linkSync", "chmod", "chmodSync", "utimes", "utimesSync", "truncate", "truncateSync"], "message": "Direct filesystem writes skip --dry-run. Use the helpers in src/utils/fs.ts (atomicWriteFile, copyWithCoW, removeDir, ensureDir, moveDir), which check isDryRun() and call recordMutation()." }
+        { "name": "node:child_process", "allowTypeImports": true, "message": "Importing child_process directly bypasses the safe spawn wrappers (Windows quoting, DEP0190, no untrusted strings in a shell). Use spawnCommand(executable, args) from src/utils/shell.ts, or spawnShell() only for a command line the user configured." },
+        { "name": "child_process", "allowTypeImports": true, "message": "Importing child_process directly bypasses the safe spawn wrappers (Windows quoting, DEP0190, no untrusted strings in a shell). Use spawnCommand(executable, args) from src/utils/shell.ts, or spawnShell() only for a command line the user configured." }
       ]
     }],
     "no-restricted-properties": ["error",
-      { "object": "JSON", "property": "parse", "message": "JSON from disk is untrusted: use parseJson/parseJsonObject/readJsonObject from src/utils/json.ts and narrow the result." },
-      { "object": "Math", "property": "random", "message": "Math.random() is not for IDs or anything security-relevant. Use node:crypto (randomUUID / randomBytes)." }
+      { "object": "JSON", "property": "parse", "message": "JSON.parse returns unchecked any from files other people wrote. Use parseJson(), parseJsonObject() or readJsonObject() from src/utils/json.ts, then narrow with stringField(), objectField() or asPackageJson()." },
+      { "object": "Math", "property": "random", "message": "Math.random() is predictable, so it must not name files, IDs or anything security-relevant. Use randomUUID() or randomBytes() from node:crypto." }
     ],
 
     "no-proto": "error",
@@ -58,7 +55,11 @@
     "typescript/no-non-null-assertion": "error",
     "typescript/consistent-type-imports": ["error", { "fixStyle": "inline-type-imports", "disallowTypeAnnotations": false }],
     "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "destructuredArrayIgnorePattern": "^_", "caughtErrors": "none" }],
-    "typescript/switch-exhaustiveness-check": "error"
+    "typescript/switch-exhaustiveness-check": "error",
+
+    "knarr/no-direct-fs-write": "error",
+    "knarr/no-stdout-write": "error",
+    "knarr/require-suppression-reason": "error"
   },
   "overrides": [
     {
@@ -67,25 +68,20 @@
     },
     {
       "files": ["src/utils/fs.ts", "src/utils/bin-linker.ts", "src/utils/lockfile.ts", "src/core/injector.ts"],
-      "rules": {
-        "no-restricted-imports": ["error", {
-          "paths": [
-            { "name": "node:child_process", "allowTypeImports": true, "message": "Use spawnShell() or spawnCommand() from src/utils/shell.ts." },
-            { "name": "child_process", "allowTypeImports": true, "message": "Use spawnShell() or spawnCommand() from src/utils/shell.ts." }
-          ]
-        }]
-      }
+      "rules": { "knarr/no-direct-fs-write": "off" }
     },
     {
       "files": ["src/utils/console.ts", "src/utils/output.ts", "src/utils/dry-run.ts", "src/utils/banner.ts", "src/vite-plugin.ts"],
-      "rules": { "no-console": "off" }
+      "rules": { "no-console": "off", "knarr/no-stdout-write": "off" }
     },
     {
-      "files": ["src/**/__tests__/**", "src/**/*.test.ts", "src/**/*.bench.ts", "scripts/**", ".claude/hooks/**", "*.config.{js,ts}"],
+      "files": ["src/**/__tests__/**", "src/**/*.test.ts", "src/**/*.bench.ts", "scripts/**", "lint/**", ".claude/hooks/**", "*.config.{js,ts}"],
       "rules": {
         "no-console": "off",
         "no-restricted-imports": "off",
         "no-restricted-properties": "off",
+        "knarr/no-direct-fs-write": "off",
+        "knarr/no-stdout-write": "off",
         "no-useless-assignment": "off",
         "typescript/no-non-null-assertion": "off",
         "typescript/no-explicit-any": "off",
