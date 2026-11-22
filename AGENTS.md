@@ -87,7 +87,7 @@ Knarr reads files written by other people (a linked library's `package.json` and
 - **Async**: no floating or misused promises. A callback in a timer, signal handler, or event listener must handle its own errors. A shutdown handler must always resolve, even when `close()` fails.
 - **Indexing**: `noUncheckedIndexedAccess` is on. Handle the `undefined` case (destructure, `entries()`, `?? fallback`) instead of using `!`, which is lint-banned in `src/`.
 - **Errors**: rethrow with `{ cause }`. Never log environment variables, tokens, or file contents that might hold secrets.
-- **Suppressions**: `oxlint-disable-next-line <rule> -- <why>` needs the reason, and unused disables fail lint.
+- **Suppressions**: `oxlint-disable-next-line <rule> -- <why>` needs the reason (`knarr/require-suppression-reason`), and unused disables fail lint.
 - **Tests**: every security fix gets a regression test that fails on the old code.
 
 ### What enforces each rule
@@ -98,15 +98,26 @@ When a rule here is broken twice, move it up this table: architecture, then type
 | --- | --- |
 | No `JSON.parse` outside `src/utils/json.ts` | lint: `no-restricted-properties` |
 | No `child_process` outside `src/utils/shell.ts` | lint: `no-restricted-imports` |
-| Disk writes go through `src/utils/fs.ts` (dry run) | lint: `no-restricted-imports` with `importNames`; allowlist override in `.oxlintrc.json` |
+| Disk writes go through `src/utils/fs.ts` (dry run) | lint: `knarr/no-direct-fs-write` (named, namespace and `promises` imports); allowlist override in `.oxlintrc.json` |
 | Untrusted-key maps have no prototype | type: branded `OwnRecord<V>`, built by `ownRecord()`; state and registry parsed by `parseConsumerState` / `parseConsumersRegistry` |
 | Publish temp-dir names match what `clean` and the store scan expect | architecture: `publishTempDir()` / `publishTempDirStartedAt()` are the one source |
 | No `any`, floating promises, `!`, `eval`, `Math.random()` | lint: typescript and eslint rules in `.oxlintrc.json` |
 | Unchecked indexing handled | type: `noUncheckedIndexedAccess` |
 | Names and versions validated before building paths | runtime check: `validatePackageIdentity()`; tests |
-| `--json` stdout only through `output()` | lint: `no-console` (allowlisted files only); not enforced for `process.stdout.write` |
+| `--json` stdout only through `output()` | lint: `no-console` and `knarr/no-stdout-write` (allowlisted files only) |
+| Suppressions say why | lint: `knarr/require-suppression-reason` |
 | Tests isolate `KNARR_HOME` | docs only |
 | Public surface changes get docs and a changelog entry | docs only; `knarr-docs-checker` agent |
+
+### Writing a lint rule
+
+A lint error is the prompt the next agent reads, often in a file where the rule's reason isn't visible. Write each rule for that reader:
+
+- **Message**: say what the code does wrong, why it matters here, and the exact replacement (function and file). `writeFile from "node:fs/promises" writes to disk even under --dry-run. Use atomicWriteFile() from src/utils/fs.ts instead.` A bare "not allowed" doesn't count.
+- **Severity**: `error`. CI runs with `denyWarnings`, so a warning only adds noise.
+- **Where**: use a built-in rule (`no-restricted-imports`, `no-restricted-properties`) when its message can name the fix. Otherwise add a rule to `lint/knarr-plugin.mjs` and enable it as `knarr/<name>`. Allowlist files through an `overrides` entry in `.oxlintrc.json`, never with per-line disables.
+- **Proof**: add a case to `src/__tests__/lint-rules.test.ts` that reproduces the real past mistake and asserts the message names the fix, plus a clean case for the allowlisted or correct form. The test runs the real `.oxlintrc.json`.
+- **Table**: add or update the row above.
 
 ## Security rules
 
