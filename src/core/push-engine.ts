@@ -567,14 +567,13 @@ async function readOutputDirs(packageDir: string): Promise<Set<string>> {
   } catch {
     return new Set();
   }
+  const topDir = (p: string | undefined): string | [] => p?.replace(/^\.\//, "").split(/[\\/]/)[0] ?? [];
   const files = pkg["files"];
-  const paths = [
-    ...(Array.isArray(files) ? files.filter((f): f is string => typeof f === "string") : []),
-    ...["main", "module", "types"].map((field) => stringField(pkg, field)),
-  ];
-  return new Set(
-    paths.flatMap((p) => p?.replace(/^\.\//, "").split(/[\\/]/)[0] ?? [])
-  );
+  const publishedDirs = (Array.isArray(files) ? files.filter((f): f is string => typeof f === "string") : [])
+    .flatMap(topDir)
+    .filter((dir) => dir !== "src");
+  const entryDirs = ["main", "module", "types"].flatMap((field) => topDir(stringField(pkg, field)));
+  return new Set([...publishedDirs, ...entryDirs]);
 }
 
 /**
