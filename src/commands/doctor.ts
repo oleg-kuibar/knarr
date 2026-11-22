@@ -6,7 +6,8 @@ import { pc } from "../utils/colors.js";
 import {
   cleanStaleConsumers,
   readConsumerStateSafe,
-  readConsumersRegistry,
+  corruptRegistryHint,
+  readConsumersRegistrySafe,
   writeConsumerState,
 } from "../core/tracker.js";
 import { getStoreEntry, listStoreEntries } from "../core/store.js";
@@ -115,8 +116,15 @@ export async function runDoctorDiagnostics(
   }
 
   const consumersPath = getConsumersPath();
-  const registry = await readConsumersRegistry();
-  if (await exists(consumersPath)) {
+  const { registry, reliable: registryReliable } = await readConsumersRegistrySafe();
+  if (!registryReliable) {
+    await addCheck({
+      name: "Global registry",
+      status: "fail",
+      message: `${consumersPath} is corrupt or unreadable.`,
+      unfixableReason: corruptRegistryHint(),
+    });
+  } else if (await exists(consumersPath)) {
     const total = Object.values(registry).flat().length;
     await addCheck({
       name: "Global registry",

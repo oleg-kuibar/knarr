@@ -372,7 +372,7 @@ Performs two cleanup passes:
 1. **Stale consumers** — removes entries in `~/.knarr/consumers.json` that point to directories that no longer exist on disk.
 2. **Unreferenced store entries** — removes packages from `~/.knarr/store/` that are not linked by any active consumer.
 
-Safe to run at any time. Does not affect packages that are actively linked. Reports reclaimed disk space after cleanup.
+Safe to run at any time. Does not affect packages that are actively linked. Reports reclaimed disk space after cleanup. If `~/.knarr/consumers.json` is corrupt, `clean` exits with an error and deletes nothing.
 
 ---
 
@@ -396,7 +396,7 @@ Checks performed:
 | Check | What it verifies |
 |---|---|
 | Store directory | Exists and reports entry count |
-| Global registry | `consumers.json` exists and reports registration count |
+| Global registry | `consumers.json` exists and reports registration count; fails when the file is corrupt |
 | Consumer state | `.knarr/state.json` has linked packages |
 | Store entries | Each linked package has a matching store entry |
 | Content hash | Store and consumer hashes are in sync |

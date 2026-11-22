@@ -139,7 +139,7 @@ export async function warnVersionMismatch(
 export function isConsumersRegistry(
   value: unknown
 ): value is ConsumersRegistry {
-  if (typeof value !== "object" || value === null) return false;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
   for (const val of Object.values(v)) {
     if (!Array.isArray(val)) return false;

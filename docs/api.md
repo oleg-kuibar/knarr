@@ -274,7 +274,7 @@ async function getConsumers(
 
 ### `registerConsumer(packageName, consumerPath)`
 
-Register a consumer in the global registry (`~/.knarr/consumers.json`).
+Register a consumer in the global registry (`~/.knarr/consumers.json`). Throws without writing when the registry file is corrupt.
 
 ```typescript
 async function registerConsumer(
@@ -285,7 +285,7 @@ async function registerConsumer(
 
 ### `unregisterConsumer(packageName, consumerPath)`
 
-Remove a consumer from the global registry.
+Remove a consumer from the global registry. Throws without writing when the registry file is corrupt.
 
 ```typescript
 async function unregisterConsumer(
@@ -296,7 +296,7 @@ async function unregisterConsumer(
 
 ### `cleanStaleConsumers()`
 
-Remove registrations for consumer directories that no longer exist on disk.
+Remove registrations for consumer directories that no longer exist on disk. Throws without writing when the registry file is corrupt.
 
 ```typescript
 async function cleanStaleConsumers(): Promise<{
