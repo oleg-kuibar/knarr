@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
+
+Minor release (breaking for the programmatic API only). Fixes linked builds leaking into other projects through pnpm's hardlinks, changed files that never reached `node_modules`, and corrupt state files that wiped links or registrations.
+
+### Breaking
+
+- API: `ConsumerState.links` and `ConsumersRegistry` are `OwnRecord<…>` (branded null-prototype maps), so code that builds them from a `{}` literal no longer type-checks.
+- API: `registerConsumer`, `unregisterConsumer`, and `cleanStaleConsumers` throw when `~/.knarr/consumers.json` is corrupt, instead of replacing it with an empty registry.
 
 ### Fixes
 
