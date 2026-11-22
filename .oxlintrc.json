@@ -13,7 +13,11 @@
     "no-restricted-imports": ["error", {
       "paths": [
         { "name": "node:child_process", "allowTypeImports": true, "message": "Use spawnShell() or spawnCommand() from src/utils/shell.ts." },
-        { "name": "child_process", "allowTypeImports": true, "message": "Use spawnShell() or spawnCommand() from src/utils/shell.ts." }
+        { "name": "child_process", "allowTypeImports": true, "message": "Use spawnShell() or spawnCommand() from src/utils/shell.ts." },
+        { "name": "node:fs/promises", "importNames": ["writeFile", "appendFile", "rm", "rmdir", "rename", "copyFile", "cp", "unlink", "mkdir", "mkdtemp", "symlink", "link", "chmod", "utimes", "truncate"], "message": "Direct filesystem writes skip --dry-run. Use the helpers in src/utils/fs.ts (atomicWriteFile, copyWithCoW, removeDir, ensureDir, moveDir), which check isDryRun() and call recordMutation()." },
+        { "name": "fs/promises", "importNames": ["writeFile", "appendFile", "rm", "rmdir", "rename", "copyFile", "cp", "unlink", "mkdir", "mkdtemp", "symlink", "link", "chmod", "utimes", "truncate"], "message": "Direct filesystem writes skip --dry-run. Use the helpers in src/utils/fs.ts (atomicWriteFile, copyWithCoW, removeDir, ensureDir, moveDir), which check isDryRun() and call recordMutation()." },
+        { "name": "node:fs", "importNames": ["writeFile", "writeFileSync", "appendFile", "appendFileSync", "rm", "rmSync", "rmdir", "rmdirSync", "rename", "renameSync", "copyFile", "copyFileSync", "cp", "cpSync", "unlink", "unlinkSync", "mkdir", "mkdirSync", "mkdtemp", "mkdtempSync", "symlink", "symlinkSync", "link", "linkSync", "chmod", "chmodSync", "utimes", "utimesSync", "truncate", "truncateSync"], "message": "Direct filesystem writes skip --dry-run. Use the helpers in src/utils/fs.ts (atomicWriteFile, copyWithCoW, removeDir, ensureDir, moveDir), which check isDryRun() and call recordMutation()." },
+        { "name": "fs", "importNames": ["writeFile", "writeFileSync", "appendFile", "appendFileSync", "rm", "rmSync", "rmdir", "rmdirSync", "rename", "renameSync", "copyFile", "copyFileSync", "cp", "cpSync", "unlink", "unlinkSync", "mkdir", "mkdirSync", "mkdtemp", "mkdtempSync", "symlink", "symlinkSync", "link", "linkSync", "chmod", "chmodSync", "utimes", "utimesSync", "truncate", "truncateSync"], "message": "Direct filesystem writes skip --dry-run. Use the helpers in src/utils/fs.ts (atomicWriteFile, copyWithCoW, removeDir, ensureDir, moveDir), which check isDryRun() and call recordMutation()." }
       ]
     }],
     "no-restricted-properties": ["error",
@@ -60,6 +64,17 @@
     {
       "files": ["src/utils/shell.ts", "src/utils/json.ts"],
       "rules": { "no-restricted-imports": "off", "no-restricted-properties": "off" }
+    },
+    {
+      "files": ["src/utils/fs.ts", "src/utils/bin-linker.ts", "src/utils/lockfile.ts", "src/core/injector.ts"],
+      "rules": {
+        "no-restricted-imports": ["error", {
+          "paths": [
+            { "name": "node:child_process", "allowTypeImports": true, "message": "Use spawnShell() or spawnCommand() from src/utils/shell.ts." },
+            { "name": "child_process", "allowTypeImports": true, "message": "Use spawnShell() or spawnCommand() from src/utils/shell.ts." }
+          ]
+        }]
+      }
     },
     {
       "files": ["src/utils/console.ts", "src/utils/output.ts", "src/utils/dry-run.ts", "src/utils/banner.ts", "src/vite-plugin.ts"],
