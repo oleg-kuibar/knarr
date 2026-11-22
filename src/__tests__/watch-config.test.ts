@@ -43,6 +43,19 @@ describe("resolveWatchConfig", () => {
     expect(config.patterns).toEqual(["src"]);
   });
 
+  it("watches src when it is published as source next to the build output", async () => {
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ name: "pkg", version: "1.0.0", files: ["dist", "src"], main: "dist/index.js" })
+    );
+    await mkdir(join(tempDir, "src"));
+    await mkdir(join(tempDir, "components"));
+
+    const config = await resolveWatchConfig(tempDir, { build: "tsc" });
+
+    expect(config.patterns).toEqual(["src", "components"]);
+  });
+
   it("watches lib when it is source and not published output", async () => {
     await writeFile(
       join(tempDir, "package.json"),
