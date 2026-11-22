@@ -69,8 +69,20 @@ export async function findStoreEntry(
   );
 }
 
+const PUBLISH_TEMP_SUFFIX = /\.(?:tmp-\d+|old)-(\d{13})$/;
+
+export function publishTempDir(storeEntryDir: string, kind: "tmp" | "old"): string {
+  const owner = kind === "tmp" ? `tmp-${process.pid}` : "old";
+  return `${storeEntryDir}.${owner}-${Date.now()}`;
+}
+
+export function publishTempDirStartedAt(dirName: string): number | null {
+  const startedAt = PUBLISH_TEMP_SUFFIX.exec(dirName)?.[1];
+  return startedAt === undefined ? null : Number(startedAt);
+}
+
 function parseStoreDirName(dirName: string): { name: string; version: string } | null {
-  if (dirName.includes(".tmp-") || dirName.includes(".old-")) return null;
+  if (publishTempDirStartedAt(dirName) !== null) return null;
   const atIdx = dirName.lastIndexOf("@");
   if (atIdx <= 0) return null;
   const name = decodePackageName(dirName.slice(0, atIdx));

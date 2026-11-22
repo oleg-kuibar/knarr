@@ -10,7 +10,7 @@ import { getStoreEntryPath } from "../utils/paths.js";
 import { resolvePackFiles } from "../utils/pack-list.js";
 import { computeContentHash } from "../utils/hash.js";
 import { copyWithCoW, ensureDir, ensurePrivateDir, removeDir, moveDir, exists, atomicWriteFile } from "../utils/fs.js";
-import { readMeta } from "./store.js";
+import { readMeta, publishTempDir } from "./store.js";
 import { withFileLock } from "../utils/lockfile.js";
 import type { Catalogs } from "../utils/workspace.js";
 import { isDryRun, verbose } from "../utils/logger.js";
@@ -181,7 +181,7 @@ export async function publish(
         }
       }
 
-      const tmpDir = storeEntryDir + `.tmp-${process.pid}-${Date.now()}`;
+      const tmpDir = publishTempDir(storeEntryDir, "tmp");
       const tmpPackageDir = join(tmpDir, "package");
       // Derive buildId from first 8 hex chars of contentHash (after "sha256v2:" prefix)
       const buildId = contentHash.slice(9, 17);
@@ -243,7 +243,7 @@ export async function publish(
 
         // Atomic swap: rename old aside, move temp to final, then capture history
         const hadOld = await exists(storeEntryDir);
-        const oldDir = storeEntryDir + ".old-" + Date.now();
+        const oldDir = publishTempDir(storeEntryDir, "old");
         let oldMoved = false;
         try {
           if (hadOld) {

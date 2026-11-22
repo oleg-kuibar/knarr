@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { defineCommand } from "citty";
 import { consola } from "../utils/console.js";
@@ -7,7 +7,7 @@ import {
   readConsumerStateSafe,
   cleanStaleConsumers,
 } from "../core/tracker.js";
-import { listStoreEntries, removeStoreEntry } from "../core/store.js";
+import { listStoreEntries, removeStoreEntry, publishTempDirStartedAt } from "../core/store.js";
 import { exists, removeDir, dirSize } from "../utils/fs.js";
 import { formatBytes } from "../utils/format.js";
 import { isDryRun, verbose } from "../utils/logger.js";
@@ -111,9 +111,9 @@ export default defineCommand({
     if (await exists(storePath)) {
       const allDirs = await readdir(storePath, { withFileTypes: true });
       for (const dir of allDirs) {
-        if (!dir.isDirectory()) continue;
-        if (!dir.name.includes(".tmp-") && !dir.name.includes(".old-")) continue;
-        const age = Date.now() - (await stat(join(storePath, dir.name))).mtimeMs;
+        const startedAt = dir.isDirectory() ? publishTempDirStartedAt(dir.name) : null;
+        if (startedAt === null) continue;
+        const age = Date.now() - startedAt;
         if (age < RECENT_MS) {
           verbose(`[clean] Skipping recent temp directory: ${dir.name} (${Math.round(age / 1000)}s old)`);
           continue;
