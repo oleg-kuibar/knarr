@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 import { consola } from "./console.js";
 import { pc } from "./colors.js";
 import { exists, ensureDir, atomicWriteFile } from "./fs.js";
-import { detectJsonIndent, objectField, ownRecord, parseJsonObject } from "./json.js";
-import { getConsumerStatePath, getConsumerKnarrDir } from "./paths.js";
-import { readConsumerState, writeConsumerState } from "../core/tracker.js";
+import { detectJsonIndent, objectField, parseJsonObject } from "./json.js";
+import { getConsumerKnarrDir } from "./paths.js";
+import { updateConsumerState } from "../core/tracker.js";
 import type { PackageManager } from "../types.js";
 
 /**
@@ -203,26 +203,11 @@ export async function ensureConsumerInit(
   projectDir: string,
   pm: PackageManager,
 ): Promise<void> {
-  const knarrDir = getConsumerKnarrDir(projectDir);
-  const statePath = getConsumerStatePath(projectDir);
-
-  if (!(await exists(statePath))) {
-    await ensureDir(knarrDir);
-    await writeConsumerState(projectDir, {
-      version: "1",
-      packageManager: pm,
-      role: "consumer",
-      links: ownRecord(),
-    });
-  } else {
-    // Ensure PM is recorded
-    const state = await readConsumerState(projectDir);
-    if (!state.packageManager) {
-      state.packageManager = pm;
-      state.role = state.role ?? "consumer";
-      await writeConsumerState(projectDir, state);
-    }
-  }
+  await updateConsumerState(projectDir, (state) => {
+    if (state.packageManager) return;
+    state.packageManager = pm;
+    state.role ??= "consumer";
+  });
 
   const gitignorePath = join(projectDir, ".gitignore");
   await ensureGitignore(gitignorePath);

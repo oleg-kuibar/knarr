@@ -8,11 +8,11 @@ import {
   readConsumerStateSafe,
   corruptRegistryHint,
   readConsumersRegistrySafe,
-  writeConsumerState,
+  updateConsumerState,
 } from "../core/tracker.js";
 import { getStoreEntry, listStoreEntries } from "../core/store.js";
 import { resolveInjectionTarget } from "../core/injector.js";
-import { ensureDir, exists, isNodeError } from "../utils/fs.js";
+import { exists, isNodeError } from "../utils/fs.js";
 import {
   getConsumerKnarrDir,
   getConsumerStatePath,
@@ -34,7 +34,7 @@ import {
 import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun, isJsonOutput } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
-import { objectField, ownRecord, readJsonObject, stringField, type JsonObject } from "../utils/json.js";
+import { objectField, readJsonObject, stringField, type JsonObject } from "../utils/json.js";
 
 export interface CheckResult {
   name: string;
@@ -185,12 +185,9 @@ export async function runDoctorDiagnostics(
       ...(!canFixConsumerSetup ? { unfixableReason: pnpFixBlockedReason } : {}),
     };
     if (shouldFix && check.fixable) {
-      await ensureDir(knarrDir);
-      await writeConsumerState(consumerPath, {
-        version: "1",
-        packageManager: pm,
-        role: "consumer",
-        links: ownRecord(),
+      await updateConsumerState(consumerPath, (state) => {
+        state.packageManager = pm;
+        state.role = "consumer";
       });
       check.fixed = !dryRun;
       check.fixes.push(`${repairPrefix}create .knarr/state.json`);

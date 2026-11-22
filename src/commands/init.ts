@@ -3,7 +3,7 @@ import { resolve, join, basename } from "node:path";
 import { readFile } from "node:fs/promises";
 import { consola } from "../utils/console.js";
 import { pc } from "../utils/colors.js";
-import { exists, ensureDir, atomicWriteFile } from "../utils/fs.js";
+import { exists, atomicWriteFile } from "../utils/fs.js";
 import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import { detectBundler } from "../utils/bundler-detect.js";
 import { detectBuildCommand as detectBuildCmd } from "../utils/build-detect.js";
@@ -17,10 +17,7 @@ import { suppressHumanOutput, output } from "../utils/output.js";
 import { isDryRun } from "../utils/logger.js";
 import { printDryRunReport } from "../utils/dry-run.js";
 import { setKnarrBuildCmdIfMissing } from "../utils/config.js";
-import {
-  readConsumerState,
-  writeConsumerState,
-} from "../core/tracker.js";
+import { updateConsumerState } from "../core/tracker.js";
 import type { PackageManager } from "../types.js";
 import { knarrCommand } from "../utils/hints.js";
 import { detectJsonIndent, objectField, parseJsonObject } from "../utils/json.js";
@@ -173,25 +170,12 @@ export default defineCommand({
     }
 
     // 5. Create .knarr/ directory and state
-    const knarrDir = join(projectDir, ".knarr");
-    if (!(await exists(knarrDir))) {
-      await ensureDir(knarrDir);
-      await atomicWriteFile(
-        join(knarrDir, "state.json"),
-        JSON.stringify(
-          { version: "1", packageManager: pm, role, links: {} },
-          null,
-          2
-        )
-      );
-      consola.success("Created .knarr/ state directory");
-    } else {
-      // Update existing state with package manager and role
-      const state = await readConsumerState(projectDir);
+    const createdState = !(await exists(join(projectDir, ".knarr")));
+    await updateConsumerState(projectDir, (state) => {
       state.packageManager = pm;
       state.role = role;
-      await writeConsumerState(projectDir, state);
-    }
+    });
+    if (createdState) consola.success("Created .knarr/ state directory");
 
     // 6. Detect bundler and auto-configure (consumers only)
     if (role === "consumer") {
