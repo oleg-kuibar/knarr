@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { computeContentHash, hashFile } from "../hash.js";
@@ -60,6 +60,19 @@ describe("computeContentHash", () => {
 
   afterEach(async () => {
     await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("sees a same-size rewrite that kept the old mtime", async () => {
+    const file = join(tempDir, "out.js");
+    const mtime = new Date("2026-01-01T00:00:00Z");
+    await writeFile(file, "a");
+    await utimes(file, mtime, mtime);
+    const before = await computeContentHash([file], tempDir);
+
+    await writeFile(file, "b");
+    await utimes(file, mtime, mtime);
+
+    expect(await computeContentHash([file], tempDir)).not.toBe(before);
   });
 
   it("returns sha256v2-prefixed hash", async () => {

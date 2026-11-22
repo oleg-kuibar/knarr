@@ -8,6 +8,7 @@
 - `list`, `clean`, `doctor`, `add`/`use`, and `update` no longer fail with `Invalid package version` while a publish holds its lock, and never pick up a publish's temp directory as a store entry. `clean` also leaves temp directories younger than 5 minutes alone, so it can't delete the files of a publish that is still running.
 - A corrupt `~/.knarr/consumers.json` is no longer replaced with an empty registry, which dropped every registration and let `clean` delete store entries that linked projects still used. `add`/`use`, `remove`, and `clean` now stop with an error that says how to recover, and `doctor` fails its "Global registry" check. The exported `registerConsumer`, `unregisterConsumer`, and `cleanStaleConsumers` throw in that case instead of writing. Packages named like `Object.prototype` members (for example `constructor`) can be registered.
 - `dev`/`push --watch` with a build command no longer watches its own build output. A package that builds into `lib/` (listed in `files`, or as the directory of `main`, `module`, or `types`) kept rebuilding, because each build changed the files it watched. Set `package.json#knarr.watchPatterns` to override the watched paths.
+- Publishing always reads file contents. An in-memory cache keyed by mtime and size skipped rebuilt files that kept their size and timestamp (common with coarse timestamps or tools that preserve mtime), so the change never reached consumers. Dropping it also lowers memory use in long `dev --all` sessions, which kept every published file in memory.
 
 ### Improvements
 

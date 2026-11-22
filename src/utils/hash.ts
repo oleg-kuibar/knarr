@@ -29,23 +29,10 @@ const STREAM_THRESHOLD = 1024 * 1024; // 1MB
 /** Concurrency limit for parallel file reads in computeContentHash */
 const limit = pLimit(Math.max(availableParallelism(), 8));
 
-// ── Per-file content cache for watch mode ──
-// Avoids re-reading unchanged files on repeated computeContentHash calls.
-// Keyed by absolute path; validated by mtime+size before reuse.
-interface ContentCacheEntry {
-  mtimeMs: number;
-  size: number;
-  content: Buffer;
-}
-const _contentCache = new Map<string, ContentCacheEntry>();
-
 /**
  * Compute a SHA-256 content hash for a list of files.
  * The hash is deterministic: sorted by relative path, each entry is `path\0content`.
  * Reads files in parallel (up to CPU count concurrent) then feeds into hash in sorted order.
- *
- * In watch mode, unchanged files are served from an in-memory cache (validated
- * by mtime + size) so only modified files trigger actual disk reads.
  */
 export async function computeContentHash(
   files: string[],
@@ -65,10 +52,6 @@ export async function computeContentHash(
     relA.localeCompare(relB)
   );
 
-  const currentFiles = new Set(fileByRel.values());
-  let cacheHits = 0;
-
-  // Stat + conditionally read files in parallel, maintaining sorted order
   const contents = await Promise.all(
     sorted.map(([rel, file]) =>
       limit(async () => {
@@ -79,28 +62,12 @@ export async function computeContentHash(
             content: Buffer.isBuffer(override) ? override : Buffer.from(override),
           };
         }
-
-        const s = await stat(file);
-        const cached = _contentCache.get(file);
-
-        if (cached && cached.mtimeMs === s.mtimeMs && cached.size === s.size) {
-          cacheHits++;
-          return { rel, content: cached.content };
-        }
-
-        const content = await readFile(file);
-        _contentCache.set(file, { mtimeMs: s.mtimeMs, size: s.size, content });
-        return { rel, content };
+        return { rel, content: await readFile(file) };
       })
     )
   );
 
-  // Evict stale entries for files no longer in the set
-  for (const key of _contentCache.keys()) {
-    if (!currentFiles.has(key)) _contentCache.delete(key);
-  }
-
-  verbose(`[hash] Computing content hash for ${sorted.length} files (${cacheHits} cached)`);
+  verbose(`[hash] Computing content hash for ${sorted.length} files`);
 
   // Use SHA-256 streaming for the aggregate content hash.
   // This is called once per publish (not per-file), and the deterministic
