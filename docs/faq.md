@@ -23,7 +23,7 @@ When Knarr copies files, it probes each volume for reflink support using `COPYFI
 
 On filesystems that do not support reflinks (ext4, NTFS), Knarr caches the failure and all subsequent copies on that volume go straight to a plain `copyFile` — no wasted syscalls retrying an unsupported operation.
 
-Knarr also uses incremental copying with a three-tier check: it compares file sizes first (fast reject), then compares mtimes (Knarr preserves source mtime on the destination after each copy, so matching size+mtime guarantees identical content — skip without hashing), and only falls back to hashing both files with xxhash (xxh64, ~10x faster than SHA-256) when sizes match but mtimes differ. Only files whose content changed get copied. Files removed from the source are deleted from the destination. All comparisons run in parallel, throttled to the available CPU core count.
+Knarr also copies incrementally: it compares file sizes first (fast reject), and when sizes match it compares the bytes of source and destination. Mtimes are not trusted, because a build can rewrite a file within the filesystem's mtime resolution. Only files whose content changed get copied. Files removed from the source are deleted from the destination. All comparisons run in parallel, throttled to the available CPU core count.
 
 ## How is Knarr different from yalc?
 
@@ -37,7 +37,7 @@ The main differences:
 
 4. **Built-in build/push loop.** yalc has `yalc push` and `yalc publish --push`; Knarr has `knarr dev` and `knarr push --watch --build "cmd"` for rebuilding and pushing to registered consumers continuously.
 
-5. **Incremental copy into consumers.** Knarr compares size, mtime, and xxHash64 where needed, then only copies changed files into each consumer.
+5. **Incremental copy into consumers.** Knarr compares size, then bytes where needed, then only copies changed files into each consumer.
 
 6. **Backup and restore.** Knarr backs up the original installed package and restores it on `knarr remove`. `knarr restore` re-injects linked packages after installs replace `node_modules`.
 

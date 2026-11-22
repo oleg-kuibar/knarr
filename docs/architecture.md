@@ -94,12 +94,7 @@ State machine per package prevents infinite loops: `idle → building → idle` 
 
 ## Hash strategy
 
-| Hash | Algorithm | Use | Stored? |
-|---|---|---|---|
-| Per-file | xxHash64 (xxhash-wasm) | Incremental copy change detection when sizes match | No |
-| Aggregate | SHA-256 | Content identity (`sha256v2:` prefix in `.knarr-meta.json`) | Yes |
-
-xxHash64 is lazy-initialized as a WASM singleton. Files >1 MB use streaming to cap memory usage.
+The aggregate SHA-256 hash (`sha256v2:` prefix in `.knarr-meta.json`) is the store's content identity. Incremental copy does not hash: when sizes match it compares the bytes of source and destination directly, in 1 MB chunks for large files.
 
 The `buildId` is `contentHash.slice(9, 17)` — the first 8 hex characters after the `sha256v2:` prefix.
 
@@ -118,7 +113,7 @@ The `buildId` is `contentHash.slice(9, 17)` — the first 8 hex characters after
 | `src/core/batch-push.ts` | `doPushAll()` — workspace batch push in topological order |
 | `src/core/watch-orchestrator.ts` | `WatchOrchestrator` — cascading rebuild orchestrator for `dev --all` |
 | `src/core/history.ts` | Build history capture, list, restore, prune for `knarr rollback` |
-| `src/utils/hash.ts` | `computeContentHash()` (SHA-256 aggregate), `hashFile()` (xxHash64 per-file) |
+| `src/utils/hash.ts` | `computeContentHash()` (SHA-256 aggregate) |
 | `src/utils/fs.ts` | `copyWithCoW()`, `incrementalCopy()`, `ensureDir()`, `isNodeError()` |
 | `src/utils/pack-list.ts` | `resolvePackFiles()` — npm-pack-compatible file resolution from `files` field |
 | `src/utils/pm-detect.ts` | `detectPackageManager()` — `packageManager` field + lockfile-based PM detection |

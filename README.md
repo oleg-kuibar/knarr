@@ -119,7 +119,7 @@ See [Migrating from yalc](docs/migrating-from-yalc.md).
 
 ## Acknowledgments
 
-Built on [chokidar](https://github.com/paulmillr/chokidar) (file watching), [xxhash-wasm](https://github.com/jungomi/xxhash-wasm) (hashing), [citty](https://github.com/unjs/citty) (CLI), and [picomatch](https://github.com/micromatch/picomatch) (globs), bundled with [tsdown](https://tsdown.dev) and tested with [Vitest](https://vitest.dev).
+Built on [chokidar](https://github.com/paulmillr/chokidar) (file watching), [citty](https://github.com/unjs/citty) (CLI), and [picomatch](https://github.com/micromatch/picomatch) (globs), bundled with [tsdown](https://tsdown.dev) and tested with [Vitest](https://vitest.dev).
 
 ## License
 

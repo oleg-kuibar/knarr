@@ -3,7 +3,9 @@ import {
   cp,
   lstat,
   mkdir,
+  open,
   readdir,
+  readFile,
   realpath,
   rename,
   rm,
@@ -17,7 +19,6 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import pLimit from "./concurrency.js";
 import { availableParallelism } from "node:os";
-import { hashFile } from "./hash.js";
 import { isDryRun } from "./logger.js";
 import { verbose } from "./logger.js";
 import { recordMutation } from "./dry-run.js";
@@ -185,6 +186,38 @@ async function removeDestinationConflicts(
   }
 }
 
+const COMPARE_CHUNK = 1024 * 1024;
+
+async function sameContent(a: string, b: string, size: number): Promise<boolean> {
+  if (size <= COMPARE_CHUNK) {
+    const [bufA, bufB] = await Promise.all([readFile(a), readFile(b)]);
+    return bufA.equals(bufB);
+  }
+  const fileA = await open(a, "r");
+  try {
+    const fileB = await open(b, "r");
+    try {
+      const bufA = Buffer.allocUnsafe(COMPARE_CHUNK);
+      const bufB = Buffer.allocUnsafe(COMPARE_CHUNK);
+      for (let position = 0; ; position += COMPARE_CHUNK) {
+        const [readA, readB] = await Promise.all([
+          fileA.read(bufA, 0, COMPARE_CHUNK, position),
+          fileB.read(bufB, 0, COMPARE_CHUNK, position),
+        ]);
+        if (readA.bytesRead !== readB.bytesRead) return false;
+        if (readA.bytesRead === 0) return true;
+        if (!bufA.subarray(0, readA.bytesRead).equals(bufB.subarray(0, readB.bytesRead))) {
+          return false;
+        }
+      }
+    } finally {
+      await fileB.close();
+    }
+  } finally {
+    await fileA.close();
+  }
+}
+
 /**
  * Incrementally copy files from src to dest directory.
  * Only copies files whose content has changed (stat size check + hash comparison).
@@ -224,18 +257,16 @@ export async function incrementalCopy(
               stat(srcFile),
               stat(destFile),
             ]);
-            if (srcStat.size !== destStat.size) {
+            if (!destStat.isFile()) {
+              verbose(`[copy] ${rel} (destination is not a file)`);
+            } else if (srcStat.size !== destStat.size) {
               verbose(`[copy] ${rel} (size differs: ${srcStat.size} vs ${destStat.size})`);
             } else {
-              const [srcHash, destHash] = await Promise.all([
-                hashFile(srcFile, srcStat.size),
-                hashFile(destFile, destStat.size),
-              ]);
-              if (srcHash === destHash) {
+              if (await sameContent(srcFile, destFile, srcStat.size)) {
                 needsCopy = false;
                 verbose(`[skip] ${rel} (unchanged)`);
               } else {
-                verbose(`[copy] ${rel} (hash differs)`);
+                verbose(`[copy] ${rel} (content differs)`);
               }
             }
           } catch (err) {

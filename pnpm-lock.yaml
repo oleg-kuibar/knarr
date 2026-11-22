@@ -169,21 +169,9 @@ importers:
       '@rspack/core':
         specifier: '>=0.5.0'
         version: 2.3.1
-      chokidar:
-        specifier: ^6.0.0
-        version: 6.0.0
-      citty:
-        specifier: ^0.2.2
-        version: 0.2.2
-      picomatch:
-        specifier: ^4.0.7
-        version: 4.0.7
       webpack:
         specifier: '>=5.0.0'
         version: 5.112.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.32)
-      xxhash-wasm:
-        specifier: ^1.1.0
-        version: 1.1.0
     devDependencies:
       '@arethetypeswrong/core':
         specifier: ^0.18.5
@@ -194,12 +182,21 @@ importers:
       '@types/picomatch':
         specifier: ^4.0.3
         version: 4.0.3
+      chokidar:
+        specifier: ^6.0.0
+        version: 6.0.0
+      citty:
+        specifier: ^0.2.2
+        version: 0.2.2
       oxlint:
         specifier: ^1.92.0
         version: 1.93.0(oxlint-tsgolint@7.0.2007)
       oxlint-tsgolint:
         specifier: ^7.0.2006
         version: 7.0.2007
+      picomatch:
+        specifier: ^4.0.7
+        version: 4.0.7
       publint:
         specifier: ^0.3.25
         version: 0.3.25
@@ -1773,9 +1770,6 @@ packages:
     engines: {node: '>=20.11'}
     hasBin: true
 
-  xxhash-wasm@1.1.0:
-    resolution: {integrity: sha512-147y/6YNh+tlp6nd/2pWq38i9h6mz/EuQ6njIrmW8D1BS5nCqs0P6DG+m6zTGnNz5I+uhZ0SHxBs9BsPrwcKDA==}
-
   yuku@0.27.0:
     resolution: {integrity: sha512-YmSD4xYlESRi8egxzC4guegQdMhAcz1G9NUsMNrTABAIV9dQxoBzDC7ZyAG/dSG18o1Oxt4xDok2irvPy9FSJQ==}
     engines: {node: '>=16.4.0'}
@@ -2935,8 +2929,6 @@ snapshots:
       - uglify-js
 
   why-is-node-running@3.2.1: {}
-
-  xxhash-wasm@1.1.0: {}
 
   yuku@0.27.0:
     optionalDependencies:
