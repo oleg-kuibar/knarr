@@ -14,6 +14,7 @@ import {
   constants,
 } from "node:fs/promises";
 import { join, dirname, relative, parse as parsePath } from "node:path";
+import { randomUUID } from "node:crypto";
 import pLimit from "./concurrency.js";
 import { availableParallelism } from "node:os";
 import { hashFile } from "./hash.js";
@@ -48,10 +49,9 @@ function volumeRoot(filePath: string): string {
  * for reflink support. If it fails, caches the result and all subsequent
  * copies on that volume go straight to a plain copy — no wasted syscalls.
  *
- * Note: hardlinks are intentionally NOT used as a fallback because Knarr's
- * incremental copy model compares source vs destination content. Hardlinks
- * share an inode, so source mutations silently propagate to the destination,
- * breaking change detection.
+ * Writes to a temp sibling and renames it over `dest`, so `dest` always gets a
+ * new inode. Package managers (pnpm, Bun) hardlink installed files to a global
+ * store; overwriting in place would change every project sharing that inode.
  */
 export async function copyWithCoW(
   src: string,
@@ -67,22 +67,29 @@ export async function copyWithCoW(
     await mkdir(dirname(dest), { recursive: true });
   }
 
-  const root = volumeRoot(dest);
+  const tmp = `${dest}.knarr-tmp-${process.pid}-${randomUUID()}`;
+  try {
+    await copyToFreshFile(src, tmp, volumeRoot(dest));
+    await rename(tmp, dest);
+  } catch (err) {
+    await rm(tmp, { force: true });
+    throw err;
+  }
+}
+
+async function copyToFreshFile(src: string, dest: string, root: string): Promise<void> {
   const supportsReflink = reflinkSupported.get(root);
 
-  // Fast path: already know this volume doesn't support reflinks
   if (supportsReflink === false) {
     await copyFile(src, dest);
     return;
   }
 
-  // Fast path: already confirmed reflink support
   if (supportsReflink === true) {
     await copyFile(src, dest, constants.COPYFILE_FICLONE);
     return;
   }
 
-  // First copy on this volume: probe with FICLONE_FORCE (reflink-only, no fallback)
   try {
     await copyFile(src, dest, constants.COPYFILE_FICLONE_FORCE);
     reflinkSupported.set(root, true);

@@ -158,7 +158,7 @@ Knarr is built on top of excellent open-source projects:
 - [chokidar](https://github.com/paulmillr/chokidar) - file watching
 - [xxhash-wasm](https://github.com/nicolo-ribaudo/xxhash-wasm-legacy) - fast file hashing
 - [citty](https://github.com/unjs/citty) - CLI framework
-- [tsup](https://github.com/egoist/tsup) - TypeScript bundler
+- [tsdown](https://tsdown.dev) - TypeScript bundler
 - [vitest](https://vitest.dev) - test runner
 - [Vite](https://vite.dev) - frontend tooling
 
