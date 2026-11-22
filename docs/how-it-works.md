@@ -328,5 +328,5 @@ Hardlinks sound perfect (instant, zero disk space) but they don't work here:
 
 1. **Breaks incremental copy.** Knarr compares source and destination file hashes to detect changes. Hardlinks share an inode, so modifying the source silently modifies the destination too — the hashes always match, and Knarr never detects that anything changed.
 2. **Breaks bundler watchers.** On macOS (FSEvents) and Windows (ReadDirectoryChangesW), modifying a file through one hardlink path does NOT notify watchers on a different path. Bundlers watching `node_modules/` would never see changes made via the store.
-3. **Corrupts the store.** When `npm install` removes `node_modules/<pkg>/` containing hardlinks, it deletes the shared inodes. This corrupts the store and breaks every other consumer.
+3. **Writes leak into the store.** A tool that rewrites a hardlinked file in place, instead of replacing it, changes the store copy and every other consumer linked to it. pnpm's own store has this risk too, so Knarr never writes through an existing file: it copies to a temp file and renames it over the target.
 4. **Bundler caching.** Even if hardlinks worked perfectly, bundlers like Vite pre-bundle and cache deps, so they wouldn't re-read the files anyway.

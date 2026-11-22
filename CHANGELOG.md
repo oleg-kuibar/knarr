@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- **Injection no longer corrupts other projects through pnpm's hardlinks.** pnpm (and Bun) hardlink installed files to a global content-addressable store. Knarr overwrote those files in place, so a linked build also showed up in every other project using the same package version, and in the store itself, and `knarr remove` only restored the linked project. Knarr now writes each file to a temp file and renames it into place, which leaves the shared store files untouched. `pnpm store status` lists store packages that an earlier Knarr version modified.
+
 ### Improvements
 
 - Terminal colors use Node's built-in `util.styleText` instead of `picocolors`, so the CLI bundles one fewer dependency. Colors now follow the output stream: piped output and CI logs are plain unless `FORCE_COLOR` is set, including on Windows, where `picocolors` always colored. `NO_COLOR` still turns them off.

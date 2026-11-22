@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, writeFile, readFile, mkdir, rm, symlink, lstat, realpath } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, readdir, mkdir, rm, symlink, link, lstat, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initFlags } from "../logger.js";
@@ -50,6 +50,21 @@ describe("copyWithCoW", () => {
     await writeFile(src, "hello");
     await copyWithCoW(src, dest);
     expect(await readFile(dest, "utf-8")).toBe("hello");
+  });
+
+  it("replaces a hardlinked destination without writing through to its other links", async () => {
+    const src = join(tempDir, "src.txt");
+    const sharedStoreFile = join(tempDir, "store.txt");
+    const dest = join(tempDir, "dest.txt");
+    await writeFile(src, "local build");
+    await writeFile(sharedStoreFile, "registry version");
+    await link(sharedStoreFile, dest);
+
+    await copyWithCoW(src, dest);
+
+    expect(await readFile(dest, "utf-8")).toBe("local build");
+    expect(await readFile(sharedStoreFile, "utf-8")).toBe("registry version");
+    expect(await readdir(tempDir)).toEqual(["dest.txt", "src.txt", "store.txt"]);
   });
 });
 
