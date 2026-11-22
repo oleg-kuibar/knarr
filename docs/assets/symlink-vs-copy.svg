@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="340" viewBox="0 0 960 340" role="img" aria-labelledby="t d">
+<title id="t">npm link versus Knarr</title>
+<desc id="d">With npm link, my-app/node_modules/my-lib is a symlink to ../my-lib, so my-lib resolves react from its own node_modules and the app loads two copies of React. With Knarr, my-app/node_modules/my-lib holds real files, so my-lib resolves the app's react and there is one copy.</desc>
+<defs>
+  <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#f85149"/></marker>
+  <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3fb950"/></marker>
+</defs>
+<rect width="960" height="340" rx="12" fill="#0d1117" stroke="#30363d"/>
+<line x1="480" y1="24" x2="480" y2="316" stroke="#30363d"/>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" fill="#e6edf3">
+  <text x="32" y="48" font-size="18" font-weight="600" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">npm link</text>
+  <text x="32" y="92">my-app/node_modules/</text>
+  <text x="52" y="118">react/</text><text x="200" y="118" fill="#f85149">React #1</text>
+  <text x="52" y="144">my-lib</text><text x="112" y="144" fill="#8b949e">→ symlink</text>
+  <text x="32" y="206">my-lib/node_modules/</text>
+  <text x="52" y="232">react/</text><text x="200" y="232" fill="#f85149">React #2</text>
+  <path d="M136 152C136 176 60 172 60 192" fill="none" stroke="#f85149" stroke-width="2" marker-end="url(#r)"/>
+  <text x="32" y="284" fill="#f85149" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15">Two Reacts: "Invalid hook call", broken context,</text>
+  <text x="32" y="306" fill="#f85149" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15">bundlers that won't follow the link out of the app.</text>
+
+  <text x="512" y="48" font-size="18" font-weight="600" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">Knarr</text>
+  <text x="512" y="92">my-app/node_modules/</text>
+  <text x="532" y="118">react/</text><text x="680" y="118" fill="#3fb950">React</text>
+  <text x="532" y="144">my-lib/</text><text x="600" y="144" fill="#8b949e">real files</text>
+  <text x="552" y="170" fill="#8b949e">dist/index.js</text>
+  <text x="552" y="196" fill="#8b949e">package.json</text>
+  <path d="M676 166C730 166 730 118 724 118" fill="none" stroke="#3fb950" stroke-width="2" marker-end="url(#g)"/>
+  <text x="742" y="146" fill="#3fb950" font-size="13">import "react"</text>
+  <text x="512" y="284" fill="#3fb950" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15">One React. The package resolves exactly as it</text>
+  <text x="512" y="306" fill="#3fb950" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15">would after a real npm install.</text>
+</g>
+</svg>

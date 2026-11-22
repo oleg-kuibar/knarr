@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="400" viewBox="0 0 960 400" role="img" aria-labelledby="t d">
+<title id="t">How Knarr works</title>
+<desc id="d">knarr publish copies the files npm pack would include from my-lib into the store at ~/.knarr/store/my-lib@1.0.0. knarr add or use copies them from the store into each consumer's node_modules/my-lib. knarr push does both for every registered consumer, and knarr dev repeats it whenever the source changes.</desc>
+<defs>
+  <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8b949e"/></marker>
+  <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#3fb950"/></marker>
+</defs>
+<rect width="960" height="400" rx="12" fill="#0d1117" stroke="#30363d"/>
+<g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#e6edf3">
+  <g>
+    <rect x="32" y="96" width="220" height="132" rx="10" fill="#0f2a17" stroke="#3fb950"/>
+    <text x="52" y="128" font-size="17" font-weight="600">my-lib/</text>
+    <text x="52" y="152" font-size="13" fill="#8b949e">your library source</text>
+    <text x="52" y="184" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#7ee787">src/  →  build  →  dist/</text>
+    <text x="52" y="208" font-size="13" fill="#8b949e">files resolved like npm pack</text>
+  </g>
+  <g>
+    <rect x="370" y="96" width="220" height="132" rx="10" fill="#0c2340" stroke="#58a6ff"/>
+    <text x="390" y="128" font-size="17" font-weight="600">Knarr store</text>
+    <text x="390" y="152" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#79c0ff">~/.knarr/store/</text>
+    <text x="390" y="172" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#79c0ff">my-lib@1.0.0/</text>
+    <text x="390" y="208" font-size="13" fill="#8b949e">hashed, swapped in atomically</text>
+  </g>
+  <g>
+    <rect x="708" y="64" width="220" height="92" rx="10" fill="#2d1a05" stroke="#d29922"/>
+    <text x="728" y="94" font-size="17" font-weight="600">my-app/</text>
+    <text x="728" y="120" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#e3b341">node_modules/my-lib/</text>
+    <text x="728" y="142" font-size="13" fill="#8b949e">real files, no symlink</text>
+    <rect x="708" y="172" width="220" height="92" rx="10" fill="#2d1a05" stroke="#d29922"/>
+    <text x="728" y="202" font-size="17" font-weight="600">another-app/</text>
+    <text x="728" y="228" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#e3b341">node_modules/my-lib/</text>
+    <text x="728" y="250" font-size="13" fill="#8b949e">pnpm, Yarn, Bun layouts too</text>
+  </g>
+  <g fill="none" stroke="#8b949e" stroke-width="2">
+    <path d="M252 162H366" marker-end="url(#a)"/>
+    <path d="M590 150C650 150 650 110 704 110" marker-end="url(#a)"/>
+    <path d="M590 174C650 174 650 218 704 218" marker-end="url(#a)"/>
+  </g>
+  <g font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#e6edf3">
+    <text x="309" y="152" text-anchor="middle">publish</text>
+    <text x="647" y="92" text-anchor="middle">add / use</text>
+    <text x="694" y="262" text-anchor="end">only changed files</text>
+  </g>
+  <path d="M142 228V300H818V268" fill="none" stroke="#3fb950" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#g)"/>
+  <rect x="306" y="284" width="348" height="32" rx="16" fill="#0d1117" stroke="#3fb950"/>
+  <text x="480" y="305" text-anchor="middle" font-size="14" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#7ee787">knarr dev: on save, build → publish → push</text>
+  <text x="32" y="44" font-size="20" font-weight="600">How it works</text>
+  <text x="32" y="352" font-size="14" fill="#8b949e">Dependency specs and lockfiles stay as they are. Knarr adds a gitignored <tspan font-family="ui-monospace, Menlo, Consolas, monospace" fill="#e6edf3">.knarr/</tspan> folder and a <tspan font-family="ui-monospace, Menlo, Consolas, monospace" fill="#e6edf3">postinstall</tspan> hook</text>
+  <text x="32" y="374" font-size="14" fill="#8b949e">that puts links back after <tspan font-family="ui-monospace, Menlo, Consolas, monospace" fill="#e6edf3">npm install</tspan>. <tspan font-family="ui-monospace, Menlo, Consolas, monospace" fill="#e6edf3">knarr remove</tspan> restores the original package.</text>
+</g>
+</svg>

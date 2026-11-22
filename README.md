@@ -1,13 +1,13 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/oleg-kuibar/knarr/master/docs/assets/knarr-wordmark.png" width="360" alt="Knarr logo" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/oleg-kuibar/knarr/master/docs/assets/knarr-wordmark.png" />
+    <img src="https://raw.githubusercontent.com/oleg-kuibar/knarr/master/docs/assets/knarr-wordmark-light.png" width="360" alt="Knarr" />
+  </picture>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/knarr"><img src="https://img.shields.io/npm/v/knarr?color=blue" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/knarr"><img src="https://img.shields.io/npm/dm/knarr" alt="npm downloads" /></a>
-  <a href="https://www.npmjs.com/package/knarr"><img src="https://img.shields.io/npm/unpacked-size/knarr" alt="unpacked size" /></a>
-  <a href="https://bundlephobia.com/package/knarr"><img src="https://badgen.net/bundlephobia/minzip/knarr" alt="minzipped size" /></a>
-  <br>
   <a href="https://github.com/oleg-kuibar/knarr/actions/workflows/ci.yml"><img src="https://github.com/oleg-kuibar/knarr/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/oleg-kuibar/knarr/actions/workflows/compat.yml"><img src="https://github.com/oleg-kuibar/knarr/actions/workflows/compat.yml/badge.svg" alt="Compatibility" /></a>
   <a href="https://github.com/oleg-kuibar/knarr/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license" /></a>
@@ -16,151 +16,110 @@
 
 # Knarr
 
-Test local npm packages in real apps without `npm link` symlink surprises or local package references in `package.json`.
+**Test a local npm package in a real app, without `npm link`.**
 
-Knarr copies the package files you would publish into the consumer app's `node_modules/`, then keeps registered consumers updated. It detects npm, pnpm, Bun, and Yarn projects that use `node_modules` or Yarn's pnpm linker. Yarn PnP is not compatible because it removes `node_modules`.
+Knarr copies the files your package would publish into the app's `node_modules/`, then keeps them in sync while you work. The app sees a normal installed package: one copy of React, no symlinks for the bundler to trip on, and no `file:` paths in `package.json` or the lockfile.
 
 ```bash
 cd my-app
-npx knarr use ../my-lib
+npx knarr use ../my-lib     # build, publish, and copy my-lib into my-app
 
 cd ../my-lib
-knarr dev
+npx knarr dev               # on every save: rebuild and push to my-app
 ```
 
-If you have not installed Knarr globally, use `npx knarr dev` for the second command too.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/oleg-kuibar/knarr/master/docs/assets/demo.svg" width="960" alt="Terminal: knarr use links my-lib into my-app, then knarr dev rebuilds and pushes my-lib on save" />
+</p>
 
-![Knarr local package workflow](https://raw.githubusercontent.com/oleg-kuibar/knarr/master/docs/assets/knarr-demo.gif)
+## Why not `npm link`?
 
-## Who this is for
+<p align="center">
+  <img src="https://raw.githubusercontent.com/oleg-kuibar/knarr/master/docs/assets/symlink-vs-copy.svg" width="960" alt="npm link makes node_modules/my-lib a symlink, so my-lib loads its own React. Knarr copies real files, so my-lib uses the app's React." />
+</p>
 
-- Library and design-system authors testing packages inside real consumer apps
-- React developers avoiding duplicate dependency instances and invalid hook calls from symlinks
-- pnpm users who want updates copied into the existing virtual-store install when possible
-- Teams that want local package overrides to stay out of dependency specs and lockfiles
+A symlinked package resolves its imports from its own folder, so the app can end up with two copies of React (or any other peer dependency), and some bundlers won't follow the link outside the project. yalc copies files too, but it rewrites the app's dependency to a `file:` path. Knarr leaves the dependency spec alone.
 
-## Why Knarr?
+If pnpm workspaces, `file:`, or pnpm's `injected` dependencies already fit your repo, use those. Knarr is for testing a package in an app it doesn't share a workspace with, exactly as it will be installed. See the [comparison](docs/comparison.md).
 
-`npm link` creates symlinks that can break module resolution: duplicate dependency instances, peer dependency mismatches, and bundlers that cannot follow links outside the project root. yalc improves this by copying files, but its workflow can rewrite consumer dependency specs or require extra watch tooling.
+## How it works
 
-Knarr keeps the local override out of your dependency spec. It publishes a local package into `~/.knarr/store/`, injects that package into every registered consumer, and can watch, rebuild, and push changes continuously. Setup helpers may still add `.knarr/`, `.gitignore`, a restore hook, or bundler config when needed.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/oleg-kuibar/knarr/master/docs/assets/how-it-works.svg" width="960" alt="knarr publish copies my-lib's packed files into ~/.knarr/store. add or use copies them into each app's node_modules. knarr dev rebuilds, publishes, and pushes on save." />
+</p>
 
-If pnpm workspaces, `file:`, or `dependenciesMeta.*.injected` already fit your repo, use those native features first. Knarr is for the narrower case where you want publishable package files copied into real consumers while their dependency specs stay normal.
+1. **`publish`** picks files the way `npm pack` does (`files`, `.npmignore`, `publishConfig.directory`) and copies them into a store at `~/.knarr/store/<name>@<version>/`.
+2. **`add`** copies a package from the store into an app's `node_modules/` and registers the app. **`use`** does `publish` + `add` in one step.
+3. **`push`** publishes and updates every registered app. Only files whose contents changed are copied.
+4. **`dev`** watches the source, runs your build, and pushes after each change. `dev --all` does this for every package in a workspace, in dependency order.
 
-## Quick Start
+## What it changes in your app
 
-One command links a local package into the app you are testing:
-
-```bash
-# In your app
-cd my-app
-npx knarr use ../my-lib
-```
-
-Then run the continuous package dev loop from the library:
-
-```bash
-# In your library
-cd ../my-lib
-knarr dev
-```
-
-If Knarr is not installed globally, run `npx knarr dev` instead.
-
-That is the everyday loop: edit `my-lib`, Knarr rebuilds it, pushes changed files into `my-app/node_modules/`, and your dev server sees normal file changes there.
-
-If you prefer the explicit steps:
-
-```bash
-cd my-lib
-pnpm build
-knarr publish
-
-cd ../my-app
-knarr add my-lib
-```
-
-## How It Works
-
-```mermaid
-graph LR
-    A["my-lib/"] -- "knarr publish" --> B["~/.knarr/store/<br/>my-lib@1.0.0"]
-    B -- "knarr use ../my-lib<br/>or knarr add my-lib" --> C["app/node_modules/<br/>my-lib/"]
-    B -- "knarr push" --> D["app-2/node_modules/<br/>my-lib/"]
-
-    style A fill:#2e7d32,stroke:#66bb6a,color:#e8f5e9
-    style B fill:#1565c0,stroke:#64b5f6,color:#e3f2fd
-    style C fill:#e65100,stroke:#ffb74d,color:#fff3e0
-    style D fill:#e65100,stroke:#ffb74d,color:#fff3e0
-```
-
-1. `publish` copies built files to a local store at `~/.knarr/store/`
-2. `use` publishes from a local path and links it into the current app
-3. `add` links an already-published package from the store
-4. `push` publishes and copies to all registered consumers
-5. `dev` watches, builds, publishes, and pushes continuously
-
-## What Knarr Does
-
-| Area | Behavior |
+| | |
 | --- | --- |
-| Store | `~/.knarr/store/<name>@<version>/package/`, or `KNARR_HOME/store/...` when `KNARR_HOME` is set |
-| Consumer copy | Copies package files into `node_modules/<package>/` and records link state in `.knarr/state.json` |
-| Package files | Uses npm-pack-compatible file resolution, including the `files` field and `publishConfig.directory` |
-| pnpm | Follows existing pnpm virtual-store symlinks when present; falls back to a direct `node_modules` path |
-| Watch loop | `knarr dev` runs an initial push, then watches, rebuilds, publishes, and pushes again |
-| Reinstall recovery | `knarr restore` re-injects registered packages after `node_modules` is replaced |
-| Bundlers | Vite plugin triggers reload/restart, Next.js uses `transpilePackages`, Webpack/rspack plugin invalidates watch/cache, and other bundlers rely on file changes under `node_modules` |
-| Incremental sync | Skips same size and mtime, hashes same-size changed-mtime files with xxHash64, and removes stale destination files |
+| `node_modules/<pkg>/` | Replaced with the published files. The original install is backed up, and `knarr remove` restores it. |
+| `.knarr/` | Link state and the restore script. Added to `.gitignore`. |
+| `package.json` | A `postinstall` hook that puts links back after `npm install` wipes them. It does nothing for teammates without Knarr. Dependencies are untouched. |
+| Bundler config | Vite: adds the `knarr/vite` plugin. Next.js: adds the package to `transpilePackages`. Tailwind v4: adds an `@source` line. Each is skipped with instructions if the config is too complex to edit safely. |
+| Lockfile | Untouched. |
 
-See [detailed comparison](docs/comparison.md) for native pnpm options, yalc, symlink workflows, and Knarr tradeoffs.
+## Compatibility
 
-## Migrate From yalc In 60 Seconds
+| | |
+| --- | --- |
+| Package managers | npm, pnpm (including its virtual store), Yarn 4 with `node-modules` or `pnpm` linker, Bun. Yarn PnP isn't supported because it has no `node_modules`. |
+| Bundlers | Vite, Webpack, rspack, Next.js. Others pick up the changed files in `node_modules` on their own. |
+| Platforms | macOS, Linux, Windows. |
+| Node.js | 22.22 or newer. |
 
-```bash
-cd my-app
-npx knarr migrate
-npx knarr use ../my-lib
-
-cd ../my-lib
-knarr dev
-```
-
-See [Migrating from yalc](docs/migrating-from-yalc.md) for the full guide.
+CI runs the test suite on all three platforms, and links a package into real npm, pnpm, Yarn, Bun, Vite, Webpack, rspack, and Next.js apps (`pnpm compat:smoke`).
 
 ## Install
 
 ```bash
-pnpm add -g knarr       # or npm install -g knarr
-npx knarr init          # optional consumer setup and repair helpers
+npm install -g knarr     # or: pnpm add -g knarr
 ```
 
-## Performance Notes
+Or skip the install and run every command through `npx knarr`.
 
-Knarr uses Node's copy-on-write reflink mode when the current filesystem supports it, with automatic fallback to a normal copy. Reflink support is probed once per volume and cached. Incremental sync checks size and mtime first, then falls back to xxHash64 only when needed, so unchanged files are skipped quickly.
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `knarr use <path>` | Build, publish, and link a local package into this app. |
+| `knarr dev [--all]` | Watch, build, and push on every change. |
+| `knarr publish` / `knarr push` | Copy into the store / and update every linked app. |
+| `knarr add <pkg>` / `knarr remove <pkg>` | Link from the store / restore the original install. |
+| `knarr status`, `knarr list`, `knarr explain` | What is linked where, and why. |
+| `knarr restore`, `knarr update`, `knarr rollback` | Re-apply links, pull the latest build, go back to an earlier build. |
+| `knarr doctor`, `knarr check` | Diagnose setup problems; check a package's `exports` and files. |
+| `knarr init`, `knarr migrate`, `knarr clean`, `knarr reset` | Set up an app, move from yalc, prune the store, undo everything. |
+
+Every command takes `--dry-run`, `--json`, and `--verbose`. Full reference: [docs/commands.md](docs/commands.md).
+
+## Coming from yalc
+
+```bash
+cd my-app
+npx knarr migrate --from ../my-lib   # remove .yalc/, yalc.lock, and file:.yalc deps, then link my-lib
+```
+
+See [Migrating from yalc](docs/migrating-from-yalc.md).
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md)
+- [Getting started](docs/getting-started.md)
 - [Commands](docs/commands.md)
-- [Comparison](docs/comparison.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [CI/CD](docs/ci-cd.md)
-- [Examples](examples/)
+- [How it works](docs/how-it-works.md)
+- [Bundlers](docs/bundlers.md) and [monorepos](docs/monorepo.md)
+- [Troubleshooting](docs/troubleshooting.md) and [FAQ](docs/faq.md)
+- [CI/CD](docs/ci-cd.md): Knarr is for local development; use canary releases in CI.
+- [Programmatic API](docs/api.md) (experimental)
 - [Contributing](CONTRIBUTING.md)
-
-Additional guides for bundlers, CI, monorepos, internals, and the experimental programmatic API live in [docs/](docs/).
 
 ## Acknowledgments
 
-Knarr is built on top of excellent open-source projects:
-
-- [chokidar](https://github.com/paulmillr/chokidar) - file watching
-- [xxhash-wasm](https://github.com/nicolo-ribaudo/xxhash-wasm-legacy) - fast file hashing
-- [citty](https://github.com/unjs/citty) - CLI framework
-- [tsdown](https://tsdown.dev) - TypeScript bundler
-- [vitest](https://vitest.dev) - test runner
-- [Vite](https://vite.dev) - frontend tooling
+Built on [chokidar](https://github.com/paulmillr/chokidar) (file watching), [xxhash-wasm](https://github.com/jungomi/xxhash-wasm) (hashing), [citty](https://github.com/unjs/citty) (CLI), and [picomatch](https://github.com/micromatch/picomatch) (globs), bundled with [tsdown](https://tsdown.dev) and tested with [Vitest](https://vitest.dev).
 
 ## License
 
