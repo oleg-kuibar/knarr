@@ -155,10 +155,7 @@ export async function startWatcher(
               (lastSuccessfulPush ? ` (${lastSuccessfulPush.toLocaleTimeString()})` : "") +
               ". Fix the error and save to retry."
           );
-          if (options.notify) {
-            const { ringBell } = await import("../utils/bell.js");
-            ringBell(true);
-          }
+          if (options.notify) ringBell(true);
           return;
         }
       }

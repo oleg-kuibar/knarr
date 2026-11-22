@@ -588,11 +588,6 @@ function matchesPnpmPackageEntry(
   return entry === exactEntry || entry.startsWith(`${exactEntry}_`);
 }
 
-function isInside(root: string, target: string): boolean {
-  const rel = relative(resolve(root), resolve(target));
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
 function requireSingleVirtualStoreCandidate(
   packageName: string,
   storeKind: "pnpm" | "yarn-pnpm",
@@ -665,7 +660,7 @@ async function isLocalVirtualStoreDir(
     if (isNodeError(err) && err.code === "ENOENT") return resolve(storeDir);
     throw err;
   });
-  return isInside(consumerRoot, storeRoot);
+  return isPathInside(consumerRoot, storeRoot);
 }
 
 async function readConfiguredPnpmVirtualStoreDir(nodeModulesDir: string): Promise<string | null> {
@@ -741,7 +736,7 @@ function isPnpmVirtualStorePackagePathFromRoot(
   packageName: string,
   targetPath: string
 ): boolean {
-  if (!isInside(pnpmDir, targetPath)) return false;
+  if (!isPathInside(pnpmDir, targetPath)) return false;
 
   const rel = relative(pnpmDir, targetPath).replace(/\\/g, "/");
   const suffix = `node_modules/${packageName}`.replace(/\\/g, "/");
@@ -752,7 +747,7 @@ function isYarnPnpmStorePackagePathFromRoot(
   storeDir: string,
   targetPath: string
 ): boolean {
-  if (!isInside(storeDir, targetPath)) return false;
+  if (!isPathInside(storeDir, targetPath)) return false;
 
   const rel = relative(storeDir, targetPath).replace(/\\/g, "/");
   const parts = rel.split("/");

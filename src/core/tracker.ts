@@ -222,20 +222,6 @@ export async function getConsumers(packageName: string): Promise<string[]> {
  * Clean stale consumers — remove registrations for directories that no longer exist.
  * Returns the number of stale entries removed.
  */
-export function cleanStaleConsumers(): Promise<{
-  removedConsumers: number;
-  removedPackages: number;
-  removedMissingLinks: number;
-  skippedUnreliableConsumers: number;
-}>;
-export function cleanStaleConsumers(options: {
-  removeMissingLinks?: boolean;
-}): Promise<{
-  removedConsumers: number;
-  removedPackages: number;
-  removedMissingLinks: number;
-  skippedUnreliableConsumers: number;
-}>;
 export async function cleanStaleConsumers(
   options: { removeMissingLinks?: boolean } = {}
 ): Promise<{

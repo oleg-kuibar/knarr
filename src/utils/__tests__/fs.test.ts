@@ -12,6 +12,7 @@ import {
   moveDir,
   ensurePrivateDir,
   copyDir,
+  atomicWriteFile,
 } from "../fs.js";
 
 const originalArgv = [...process.argv];
@@ -215,6 +216,26 @@ describe("incrementalCopy", () => {
 
     expect(result.copied).toBe(1);
     expect(await readFile(join(dest, "entry"), "utf-8")).toBe("file");
+  });
+});
+
+describe("atomicWriteFile", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "KNARR-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("leaves no temp file behind when the rename fails", async () => {
+    await mkdir(join(tempDir, "state.json"));
+
+    await expect(atomicWriteFile(join(tempDir, "state.json"), "{}")).rejects.toThrow();
+
+    expect(await readdir(tempDir)).toEqual(["state.json"]);
   });
 });
 
