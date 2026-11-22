@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Build, verify, and run `npm publish --dry-run` without publishing
+        description: Verify and run `npm publish --dry-run` only; skips the approval-gated publish job
         required: false
         type: boolean
         default: true
@@ -29,6 +29,7 @@ jobs:
     outputs:
       tarball: ${{ steps.pack.outputs.tarball }}
       sha256: ${{ steps.pack.outputs.sha256 }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,6 +42,21 @@ jobs:
           node-version: 24
           # No dependency cache in the release pipeline: a cache entry written by
           # another workflow could otherwise end up in the published package.
+
+      - name: Check version and changelog
+        id: release
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if npm view "knarr@${version}" version >/dev/null 2>&1; then
+            echo "::error::knarr@${version} is already published. Bump package.json#version."
+            exit 1
+          fi
+          awk -v heading="## ${version}" '$0 == heading { found = 1; next } /^## / && found { exit } found' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no '## ${version}' section. Rename '## Unreleased' to '## ${version}'."
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --audit-level=low
@@ -64,10 +80,22 @@ jobs:
           echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
           echo "Packed $tarball ($sha256)"
 
+      - name: Publish dry run
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: npm publish "./$TARBALL" --access public --dry-run
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-tarball
           path: ${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes
+          path: release-notes.md
           if-no-files-found: error
           retention-days: 7
 
@@ -76,7 +104,7 @@ jobs:
   publish:
     name: publish to npm
     needs: verify
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' && !inputs.dry_run
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -118,25 +146,28 @@ jobs:
           EXPECTED_SHA256: ${{ needs.verify.outputs.sha256 }}
         run: echo "${EXPECTED_SHA256}  ${TARBALL}" | sha256sum --check --strict
 
-      - name: Refuse an already-published version
-        env:
-          TARBALL: ${{ needs.verify.outputs.tarball }}
-        run: |
-          version="$(tar -xzOf "$TARBALL" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
-          if npm view "knarr@${version}" version >/dev/null 2>&1; then
-            echo "::error::knarr@${version} is already published"
-            exit 1
-          fi
-          echo "knarr@${version} is not published yet"
-
       - name: Publish
         env:
           TARBALL: ${{ needs.verify.outputs.tarball }}
-          DRY_RUN: ${{ inputs.dry_run }}
         # Trusted publishing: no token secret. --provenance links the package to this run.
-        run: |
-          if [ "$DRY_RUN" = "true" ]; then
-            npm publish "./$TARBALL" --provenance --access public --dry-run
-          else
-            npm publish "./$TARBALL" --provenance --access public
-          fi
+        run: npm publish "./$TARBALL" --provenance --access public
+
+  github-release:
+    name: create GitHub release
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # create the vX.Y.Z tag and release
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          digest-mismatch: error
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: gh release create "v${VERSION}" --target "$GITHUB_SHA" --title "v${VERSION}" --notes-file release-notes.md
