@@ -6,7 +6,7 @@ import { consola } from "../utils/console.js";
 import { findStoreEntry, getStoreEntry } from "../core/store.js";
 import { publish } from "../core/publisher.js";
 import { inject, backupExisting, checkMissingDeps, isDeclaredConsumerDependency } from "../core/injector.js";
-import { addLink, registerConsumer, getLink } from "../core/tracker.js";
+import { addLink, registerConsumer, getLink, warnOnCorruptRegistry } from "../core/tracker.js";
 import { exists } from "../utils/fs.js";
 import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import type { ResolvedPackageManager } from "../utils/package-manager.js";
@@ -155,7 +155,7 @@ export async function addPackageToConsumer(options: AddPackageOptions): Promise<
     buildId: entry.meta.buildId ?? "",
   };
   await addLink(consumerPath, packageName, linkEntry);
-  await registerConsumer(packageName, consumerPath);
+  await registerConsumer(packageName, consumerPath).catch(warnOnCorruptRegistry);
   // Keep installs from silently dropping the link (refreshes the recorded CLI path).
   await ensureRestoreHook(consumerPath);
   if (!(await isDeclaredConsumerDependency(consumerPath, packageName))) {
