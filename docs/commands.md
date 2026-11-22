@@ -367,10 +367,11 @@ Flags:
 |---|---|
 | `-y, --yes` | Skip confirmation prompts |
 
-Performs two cleanup passes:
+Performs three cleanup passes:
 
 1. **Stale consumers** — removes entries in `~/.knarr/consumers.json` that point to directories that no longer exist on disk.
 2. **Unreferenced store entries** — removes packages from `~/.knarr/store/` that are not linked by any active consumer.
+3. **Orphaned temp directories** — removes the `<entry>.tmp-<pid>-<ms>` and `<entry>.old-<ms>` directories an interrupted publish leaves in `~/.knarr/store/`. The age comes from the timestamp in the name, and directories younger than 5 minutes are kept because their publish may still be running.
 
 Safe to run at any time. Does not affect packages that are actively linked. Reports reclaimed disk space after cleanup. If `~/.knarr/consumers.json` is corrupt, `clean` exits with an error and deletes nothing.
 
