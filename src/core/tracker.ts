@@ -14,8 +14,8 @@ import {
 } from "../utils/paths.js";
 import { ensureDir, ensurePrivateDir, exists, atomicWriteFile, isNodeError } from "../utils/fs.js";
 import { withFileLock } from "../utils/lockfile.js";
-import { isConsumerState, isConsumersRegistry } from "../utils/validators.js";
-import { parseJson } from "../utils/json.js";
+import { parseConsumerState, parseConsumersRegistry } from "../utils/validators.js";
+import { ownRecord, parseJson } from "../utils/json.js";
 
 // ── Consumer State (.knarr/state.json in each consumer project) ──
 
@@ -39,19 +39,19 @@ export async function readConsumerStateSafe(
   const statePath = getConsumerStatePath(consumerPath);
   try {
     const content = await readFile(statePath, "utf-8");
-    const parsed = parseJson(content);
-    if (!isConsumerState(parsed)) {
+    const state = parseConsumerState(parseJson(content));
+    if (!state) {
       consola.warn(`Invalid consumer state in ${statePath}, using defaults`);
-      return { state: { version: "1", links: {} }, reliable: false };
+      return { state: { version: "1", links: ownRecord() }, reliable: false };
     }
-    return { state: parsed, reliable: true };
+    return { state, reliable: true };
   } catch (err) {
     if (isNodeError(err) && err.code === "ENOENT") {
       // No state file → no links, this is reliable
-      return { state: { version: "1", links: {} }, reliable: true };
+      return { state: { version: "1", links: ownRecord() }, reliable: true };
     }
     consola.warn(`Failed to read consumer state: ${err instanceof Error ? err.message : String(err)}`);
-    return { state: { version: "1", links: {} }, reliable: false };
+    return { state: { version: "1", links: ownRecord() }, reliable: false };
   }
 }
 
@@ -115,10 +115,6 @@ export async function getLink(
 
 // ── Global Consumers Registry (~/.knarr/consumers.json) ──
 
-function emptyRegistry(): ConsumersRegistry {
-  return Object.create(null) as ConsumersRegistry;
-}
-
 /**
  * Read the global consumers registry with reliability information.
  * `reliable: false` means the file exists but is corrupt or unreadable, so
@@ -130,18 +126,18 @@ export async function readConsumersRegistrySafe(): Promise<{
 }> {
   const regPath = getConsumersPath();
   try {
-    const parsed = parseJson(await readFile(regPath, "utf-8"));
-    if (!isConsumersRegistry(parsed)) {
+    const registry = parseConsumersRegistry(parseJson(await readFile(regPath, "utf-8")));
+    if (!registry) {
       consola.warn(`Invalid consumers registry in ${regPath}, using empty registry`);
-      return { registry: emptyRegistry(), reliable: false };
+      return { registry: ownRecord(), reliable: false };
     }
-    return { registry: Object.assign(emptyRegistry(), parsed), reliable: true };
+    return { registry, reliable: true };
   } catch (err) {
     if (isNodeError(err) && err.code === "ENOENT") {
-      return { registry: emptyRegistry(), reliable: true };
+      return { registry: ownRecord<string[]>(), reliable: true };
     }
     consola.warn(`Failed to read consumers registry: ${err instanceof Error ? err.message : String(err)}`);
-    return { registry: emptyRegistry(), reliable: false };
+    return { registry: ownRecord<string[]>(), reliable: false };
   }
 }
 
@@ -246,7 +242,7 @@ export async function cleanStaleConsumers(
 
   await withFileLock(regPath, async () => {
     const registry = await readConsumersRegistryForWrite();
-    const updated = emptyRegistry();
+    const updated = ownRecord<string[]>();
 
     for (const [pkgName, consumers] of Object.entries(registry)) {
       const results = await Promise.all(

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { consola } from "./console.js";
-import { parseJsonObject, stringRecordField } from "./json.js";
+import { ownRecord, parseJsonObject, stringRecordField } from "./json.js";
 import type {
   ConsumerState,
   KnarrMeta,
@@ -84,17 +84,17 @@ export function isLinkEntry(value: unknown): value is LinkEntry {
   );
 }
 
-/** Check if a value is a valid ConsumerState */
-export function isConsumerState(value: unknown): value is ConsumerState {
-  if (typeof value !== "object" || value === null) return false;
+export function parseConsumerState(value: unknown): ConsumerState | null {
+  if (typeof value !== "object" || value === null) return null;
   const v = value as Record<string, unknown>;
-  if (v.version !== "1") return false;
-  if (typeof v.links !== "object" || v.links === null) return false;
-  const links = v.links as Record<string, unknown>;
-  for (const entry of Object.values(links)) {
-    if (!isLinkEntry(entry)) return false;
+  if (v.version !== "1") return null;
+  if (typeof v.links !== "object" || v.links === null) return null;
+  const links = ownRecord<LinkEntry>();
+  for (const [name, entry] of Object.entries(v.links)) {
+    if (!isLinkEntry(entry)) return null;
+    links[name] = entry;
   }
-  return true;
+  return { ...(v as Omit<ConsumerState, "links">), links };
 }
 
 /**
@@ -135,17 +135,12 @@ export async function warnVersionMismatch(
   }
 }
 
-/** Check if a value is a valid ConsumersRegistry */
-export function isConsumersRegistry(
-  value: unknown
-): value is ConsumersRegistry {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const v = value as Record<string, unknown>;
-  for (const val of Object.values(v)) {
-    if (!Array.isArray(val)) return false;
-    for (const item of val) {
-      if (typeof item !== "string") return false;
-    }
+export function parseConsumersRegistry(value: unknown): ConsumersRegistry | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const registry = ownRecord<string[]>();
+  for (const [name, consumers] of Object.entries(value)) {
+    if (!Array.isArray(consumers) || !consumers.every((item) => typeof item === "string")) return null;
+    registry[name] = consumers;
   }
-  return true;
+  return registry;
 }

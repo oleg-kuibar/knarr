@@ -3,8 +3,8 @@ import { join, dirname, resolve, relative } from "node:path";
 import picomatch from "picomatch";
 import { exists } from "./fs.js";
 import { normalizePath } from "./paths.js";
-import type { PackageJson } from "../types.js";
-import { asPackageJson, isJsonObject, readJsonObject } from "./json.js";
+import type { OwnRecord, PackageJson } from "../types.js";
+import { asPackageJson, isJsonObject, ownRecord, readJsonObject } from "./json.js";
 
 export interface WorkspacePackage {
   name: string;
@@ -20,8 +20,8 @@ export interface WorkspaceGraph {
 }
 
 export interface Catalogs {
-  default: Record<string, string>;
-  named: Record<string, Record<string, string>>;
+  default: OwnRecord<string>;
+  named: OwnRecord<OwnRecord<string>>;
 }
 
 /**
@@ -63,14 +63,7 @@ export async function findWorkspacePackageRoot(startDir: string): Promise<string
  * catalogs only use flat string key-value pairs (no anchors, multiline, etc).
  */
 export async function parseCatalogs(workspaceRoot: string): Promise<Catalogs> {
-  // Keys come from a repository file. With plain {} objects, a "__proto__"
-  // catalog replaced the map's prototype (unknown names then resolved to
-  // injected values) and "constructor"/"toString" resolved to built-in
-  // functions. Null-prototype maps store every key as plain data.
-  const result: Catalogs = {
-    default: Object.create(null) as Record<string, string>,
-    named: Object.create(null) as Record<string, Record<string, string>>,
-  };
+  const result: Catalogs = { default: ownRecord(), named: ownRecord() };
   const filePath = join(workspaceRoot, "pnpm-workspace.yaml");
 
   let content: string;
@@ -120,7 +113,7 @@ export async function parseCatalogs(workspaceRoot: string): Promise<Catalogs> {
       const trimmed = line.trim();
       if (trimmed.endsWith(":")) {
         currentNamedCatalog = trimmed.slice(0, -1);
-        result.named[currentNamedCatalog] = Object.create(null) as Record<string, string>;
+        result.named[currentNamedCatalog] = ownRecord();
         state = "named-catalog-entries";
       }
       continue;
@@ -141,7 +134,7 @@ export async function parseCatalogs(workspaceRoot: string): Promise<Catalogs> {
       const trimmed = line.trim();
       if (trimmed.endsWith(":")) {
         currentNamedCatalog = trimmed.slice(0, -1);
-        result.named[currentNamedCatalog] = Object.create(null) as Record<string, string>;
+        result.named[currentNamedCatalog] = ownRecord();
       } else {
         state = "named-catalogs";
       }

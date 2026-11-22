@@ -1,5 +1,13 @@
 import { readFile } from "node:fs/promises";
-import type { PackageJson } from "../types.js";
+import type { OwnRecord, PackageJson } from "../types.js";
+
+export function ownRecord<V>(source?: Readonly<Record<string, V>>): OwnRecord<V> {
+  const record = Object.create(null) as OwnRecord<V>;
+  if (source) {
+    for (const [key, value] of Object.entries(source)) record[key] = value;
+  }
+  return record;
+}
 
 /**
  * Typed JSON access. JSON from disk is untrusted input: package.json files from
@@ -48,9 +56,9 @@ export function objectField(obj: JsonObject, key: string): JsonObject | undefine
 }
 
 /** The string-valued entries of `obj[key]` (e.g. package.json "scripts"). */
-export function stringRecordField(obj: JsonObject, key: string): Record<string, string> {
+export function stringRecordField(obj: JsonObject, key: string): OwnRecord<string> {
   const value = objectField(obj, key);
-  const result: Record<string, string> = Object.create(null) as Record<string, string>;
+  const result = ownRecord<string>();
   if (!value) return result;
   for (const [k, v] of Object.entries(value)) {
     if (typeof v === "string") result[k] = v;

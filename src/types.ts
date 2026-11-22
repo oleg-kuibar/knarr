@@ -28,19 +28,26 @@ export interface LinkEntry {
   buildId?: string;
 }
 
+declare const nullPrototype: unique symbol;
+
+/**
+ * A map keyed by untrusted strings (package names, catalog names). It has no
+ * prototype, so keys such as `constructor` or `__proto__` are plain data.
+ * A `{}` literal does not type-check as one; create it with `ownRecord()`
+ * from `src/utils/json.ts`.
+ */
+export type OwnRecord<V> = { [key: string]: V } & { readonly [nullPrototype]: true };
+
 /** Consumer project state file (.knarr/state.json) */
 export interface ConsumerState {
   version: "1";
   packageManager?: PackageManager;
   role?: "consumer" | "library";
-  links: Record<string, LinkEntry>;
+  links: OwnRecord<LinkEntry>;
 }
 
-/** Global consumers registry (~/.knarr/consumers.json) */
-export interface ConsumersRegistry {
-  /** Maps package name → array of consumer project paths */
-  [packageName: string]: string[];
-}
+/** Global consumers registry (~/.knarr/consumers.json): package name → consumer project paths */
+export type ConsumersRegistry = OwnRecord<string[]>;
 
 export type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
 
