@@ -36,7 +36,8 @@ Before calling work done: `pnpm lint && pnpm build && pnpm test`. Run `pnpm comp
 - **Publish**: resolve files like `npm pack` (`files`, `.npmignore`/`.gitignore`), hash, and atomically swap into the store. Old builds go to `history/` (default limit 3).
 - **Inject**: incremental copy (xxhash per file, CoW where available) from store into the consumer's real package dir.
 - **Push**: publish, then inject into every registered consumer. `--all` runs in workspace topological order.
-- **Tracker**: per-consumer `.knarr/state.json`, global `~/.knarr/consumers.json`.
+- **Tracker**: per-consumer `.knarr/state.json`, global `~/.knarr/consumers.json`. Change consumer state only through `updateConsumerState()` (lock, corrupt-file refusal, create-if-missing).
+- Vocabulary: `GLOSSARY.md` is canonical; decisions with their context are in `docs/adr/`.
 
 ## Code map
 

@@ -1,0 +1,3 @@
+# Copy package files instead of symlinking or hardlinking
+
+Knarr copies a package's publishable files into the consumer's real `node_modules/` directory. Symlinks make Node resolve dependencies from the package source (duplicate React, failing `instanceof`) and sit outside bundler watch scopes; hardlinks share an inode, so incremental change detection sees no change, watchers on the other path get no events, and in-place writes leak into every linked copy. Copying costs disk and time, which reflinks (copy-on-write) and per-file incremental copy recover. See `docs/how-it-works.md` ("Why not symlinks?", "Why not hardlinks?").
