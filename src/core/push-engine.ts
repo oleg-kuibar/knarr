@@ -15,7 +15,8 @@ import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
 import { consola } from "../utils/console.js";
 import type { StoreEntry } from "../types.js";
-import { readJsonObject } from "../utils/json.js";
+import { readJsonObject, stringField } from "../utils/json.js";
+import type { JsonObject } from "../utils/json.js";
 
 const consumerLimit = pLimit(4);
 
@@ -559,6 +560,23 @@ function announceBuildCommand(packageDir: string, message: string): void {
   consola.info(message);
 }
 
+async function readOutputDirs(packageDir: string): Promise<Set<string>> {
+  let pkg: JsonObject;
+  try {
+    pkg = await readJsonObject(join(packageDir, "package.json"));
+  } catch {
+    return new Set();
+  }
+  const files = pkg["files"];
+  const paths = [
+    ...(Array.isArray(files) ? files.filter((f): f is string => typeof f === "string") : []),
+    ...["main", "module", "types"].map((field) => stringField(pkg, field)),
+  ];
+  return new Set(
+    paths.flatMap((p) => p?.replace(/^\.\//, "").split(/[\\/]/)[0] ?? [])
+  );
+}
+
 /**
  * Resolve build command and watch patterns from CLI args, config, and auto-detection.
  * Merge priority: CLI args > package.json#knarr > auto-detection.
@@ -595,14 +613,16 @@ export async function resolveWatchConfig(
     // With a build command: watch source directories that actually exist.
     // Avoids infinite loop where build output (dist/) triggers another build.
     const { exists } = await import("../utils/fs.js");
-    const candidates = ["src", "lib", "source", "app", "pages", "components"];
+    const outputDirs = await readOutputDirs(packageDir);
+    const candidates = ["src", "lib", "source", "app", "pages", "components"]
+      .filter((dir) => !outputDirs.has(dir));
     const existing = (await Promise.all(
       candidates.map(async (dir) => ({
         dir,
         exists: await exists(join(packageDir, dir)),
       }))
     )).filter((c) => c.exists).map((c) => c.dir);
-    patterns = existing.length > 0 ? existing : ["src", "lib"];
+    patterns = existing.length > 0 ? existing : ["src"];
     verbose(`[watch] Using source patterns with build command: ${patterns.join(", ")}`);
   } else if (buildCmd && patterns) {
     verbose(`[watch] Using configured watch patterns with build command: ${patterns.join(", ")}`);
