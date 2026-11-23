@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
+
+Patch release. Knarr now installs as a single package with no runtime dependencies, about a quarter of its previous install size.
 
 ### Changes
 
-- **Zero runtime dependencies.** Installing Knarr now installs one package instead of six: chokidar, citty, and picomatch are bundled into every entry, and xxhash-wasm is gone. The CLI, API, and plugins share one set of chunks instead of shipping the core twice, so the unpacked package drops from about 500 KB to about 310 KB (about 1.1 MB to 310 KB with dependencies). Public exports and CLI behavior are unchanged.
+- **Zero runtime dependencies.** Installing Knarr now installs one package instead of six: chokidar, citty, and picomatch are bundled into every entry, and xxhash-wasm is gone. The CLI, API, and plugins share one set of chunks instead of shipping the core twice, so the unpacked package drops from about 500 KB to about 290 KB (about 1.1 MB to 290 KB with dependencies). Public exports and CLI behavior are unchanged.
 - Incremental copy compares same-size files byte by byte instead of hashing both with xxHash64. Hashing both files read the same bytes, so this is as fast, and the answer is exact.
 
 ### Fixes
