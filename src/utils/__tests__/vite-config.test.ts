@@ -74,4 +74,11 @@ describe("addKnarrVitePlugin", () => {
     );
     expect(out).toContain("defineConfig({\n  plugins: [knarr()],\n  server: { port: 3000 },\n});");
   });
+
+  it("keeps plugin entries on consecutive lines when the config has blank lines", async () => {
+    const out = await rewrite(
+      'import { defineConfig } from "vite";\n\nexport default defineConfig({\n\n  plugins: [react(), tailwindcss()],\n});\n'
+    );
+    expect(out).toContain("plugins: [\n    react(),\n    tailwindcss(),\n    knarr(),\n  ],");
+  });
 });

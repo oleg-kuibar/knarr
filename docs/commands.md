@@ -515,7 +515,7 @@ These flags can be passed to any Knarr command:
 
 | Flag | Alias | Description |
 |---|---|---|
-| `--verbose` | `-v` | Enable verbose debug logging. Logs file hashes, symlink resolution, store operations, and timing. |
+| `--verbose` | `-v` | Enable verbose debug logging. Logs skipped files, symlink resolution, store operations, and timing. |
 | `--dry-run` | | Preview changes without writing files. Prints a grouped summary of all mutations that would have been performed (copies, removes, mkdir, bin links, lock acquisitions, lifecycle hooks, commands). Watch modes preview the initial build/push once and exit without starting file watchers. |
 | `--json` | | Output machine-readable JSON to stdout. Suppresses human-readable log output. |
 

@@ -1,7 +1,9 @@
-import { join, normalize } from "node:path";
-import { readFileSync } from "node:fs";
+import { dirname, extname, join, normalize } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import type { Plugin, UserConfig } from "vite";
 import { objectField, parseJsonObject } from "./utils/json.js";
+import type { JsonObject } from "./utils/json.js";
+import { validatePackageName } from "./utils/validators.js";
 
 /** Synchronously read linked package names from state.json */
 function readLinkedPackagesSync(stateFile: string): string[] {
@@ -12,6 +14,98 @@ function readLinkedPackagesSync(stateFile: string): string[] {
   } catch {
     return [];
   }
+}
+
+function readManifestSync(dir: string): JsonObject | undefined {
+  try {
+    return parseJsonObject(readFileSync(join(dir, "package.json"), "utf-8"), dir);
+  } catch {
+    return undefined;
+  }
+}
+
+function findInstalledPackageDir(fromDir: string, name: string): string | undefined {
+  let dir = fromDir;
+  for (;;) {
+    const candidate = join(dir, "node_modules", name);
+    if (existsSync(join(candidate, "package.json"))) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+const ENTRY_CONDITIONS = ["import", "module", "browser", "default", "require"];
+const JS_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".jsx"]);
+
+function conditionalTarget(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const conditions = value as JsonObject;
+  for (const condition of ENTRY_CONDITIONS) {
+    const target = conditionalTarget(conditions[condition]);
+    if (target) return target;
+  }
+  return undefined;
+}
+
+function mainEntry(manifest: JsonObject): string | undefined {
+  const exportsField = manifest["exports"];
+  if (exportsField !== undefined) {
+    const isSubpathMap =
+      typeof exportsField === "object" &&
+      exportsField !== null &&
+      !Array.isArray(exportsField) &&
+      Object.keys(exportsField).some((key) => key.startsWith("."));
+    return conditionalTarget(isSubpathMap ? (exportsField as JsonObject)["."] : exportsField);
+  }
+  for (const field of ["module", "main"]) {
+    const value = manifest[field];
+    if (typeof value === "string") return value;
+  }
+  return "index.js";
+}
+
+function hasJsEntry(packageDir: string, manifest: JsonObject): boolean {
+  const entry = mainEntry(manifest);
+  if (!entry) return false;
+  const ext = extname(entry);
+  const entryPath = join(packageDir, entry);
+  if (ext === "") return existsSync(`${entryPath}.js`) || existsSync(join(entryPath, "index.js"));
+  return JS_EXTENSIONS.has(ext) && existsSync(entryPath);
+}
+
+/**
+ * `linked > dep` entries for optimizeDeps.include. Excluding a linked package also
+ * stops Vite from scanning its imports, so its CommonJS dependencies would reach the
+ * browser unconverted.
+ */
+function linkedDependencyIncludes(nodeModulesDir: string, linkedPackages: string[]): string[] {
+  const linked = new Set(linkedPackages);
+  const includes: string[] = [];
+  for (const pkg of linkedPackages) {
+    let pkgDir: string;
+    try {
+      pkgDir = realpathSync(join(nodeModulesDir, pkg));
+    } catch {
+      continue;
+    }
+    const deps = objectField(readManifestSync(pkgDir) ?? {}, "dependencies");
+    for (const dep of Object.keys(deps ?? {})) {
+      if (linked.has(dep)) continue;
+      try {
+        validatePackageName(dep);
+      } catch {
+        continue;
+      }
+      const depDir = findInstalledPackageDir(pkgDir, dep);
+      const depManifest = depDir && readManifestSync(depDir);
+      if (depDir && depManifest && hasJsEntry(depDir, depManifest)) {
+        includes.push(`${pkg} > ${dep}`);
+      }
+    }
+  }
+  return includes;
 }
 
 export interface KnarrVitePluginOptions {
@@ -53,7 +147,13 @@ export default function knarrPlugin(options: KnarrVitePluginOptions = {}): Plugi
         ];
 
         console.log(`[knarr] Excluding from pre-bundling: ${newExclude.join(", ")}`);
-        result.optimizeDeps = { exclude: newExclude };
+
+        const existingInclude = config.optimizeDeps?.include ?? [];
+        const newInclude = linkedDependencyIncludes(join(root, "node_modules"), linkedPackages).filter(
+          (entry) => !existingInclude.includes(entry)
+        );
+        debug(`[knarr] Pre-bundling dependencies of linked packages: ${newInclude.join(", ") || "none"}`);
+        result.optimizeDeps = { exclude: newExclude, include: newInclude };
       }
 
       // WebContainers don't emit native filesystem events, so chokidar

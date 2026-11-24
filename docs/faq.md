@@ -23,7 +23,7 @@ When Knarr copies files, it probes each volume for reflink support using `COPYFI
 
 On filesystems that do not support reflinks (ext4, NTFS), Knarr caches the failure and all subsequent copies on that volume go straight to a plain `copyFile` — no wasted syscalls retrying an unsupported operation.
 
-Knarr also copies incrementally: it compares file sizes first (fast reject), and when sizes match it compares the bytes of source and destination. Mtimes are not trusted, because a build can rewrite a file within the filesystem's mtime resolution. Only files whose content changed get copied. Files removed from the source are deleted from the destination. All comparisons run in parallel, throttled to the available CPU core count.
+Knarr also copies incrementally: it compares file sizes first (fast reject), and when sizes match it compares the bytes of source and destination. Mtimes are not trusted, because a build can rewrite a file within the filesystem's mtime resolution. Only files whose content changed get copied. Files removed from the source are deleted from the destination. All comparisons run in parallel, throttled to the available CPU core count (at least 8).
 
 ## How is Knarr different from yalc?
 

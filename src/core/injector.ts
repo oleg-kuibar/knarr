@@ -17,7 +17,8 @@ import { isDryRun, verbose } from "../utils/logger.js";
 import { recordMutation } from "../utils/dry-run.js";
 import { inspectProjectPackageManager } from "../utils/package-manager.js";
 import { invalidateBundlerCache } from "../utils/bundler-cache.js";
-import { asPackageJson, parseJsonObject, stringField } from "../utils/json.js";
+import { asPackageJson, objectField, parseJsonObject, stringField } from "../utils/json.js";
+import type { JsonObject } from "../utils/json.js";
 
 export interface InjectResult {
   copied: number;
@@ -759,20 +760,25 @@ export async function isDeclaredConsumerDependency(
   consumerPath: string,
   packageName: string
 ): Promise<boolean> {
-  const pkg = await readPackageJson(consumerPath);
-  if (!pkg) return false;
-  return Boolean(
-    pkg.dependencies?.[packageName] ||
-      pkg.devDependencies?.[packageName] ||
-      pkg.optionalDependencies?.[packageName] ||
-      pkg.peerDependencies?.[packageName]
+  const manifest = await readManifest(consumerPath);
+  if (!manifest) return false;
+  return ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].some(
+    (field) => {
+      const deps = objectField(manifest, field);
+      return deps !== undefined && Object.hasOwn(deps, packageName);
+    }
   );
 }
 
 async function readPackageJson(dir: string): Promise<PackageJson | null> {
+  const manifest = await readManifest(dir);
+  return manifest && asPackageJson(manifest);
+}
+
+async function readManifest(dir: string): Promise<JsonObject | null> {
   try {
     const content = await readFile(join(dir, "package.json"), "utf-8");
-    return asPackageJson(parseJsonObject(content, join(dir, "package.json")));
+    return parseJsonObject(content, join(dir, "package.json"));
   } catch (err) {
     if (isNodeError(err) && err.code !== "ENOENT") {
       consola.warn(`Failed to read package.json in ${dir}: ${err instanceof Error ? err.message : String(err)}`);

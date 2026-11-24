@@ -23,7 +23,7 @@ knarr dev
 | **pnpm fit** | yalc can be used with workspaces, but its default `add` workflow is separate from pnpm's virtual-store model | Follows existing `.pnpm/` symlinks when injecting into pnpm installs |
 | **Watch/update loop** | `yalc push` / `yalc publish --push`; external watchers are optional | Built-in `knarr dev` or `knarr push --watch` |
 | **After install** | `yalc add` can reinstall from `.yalc` if artifacts remain; `yalc link` symlinks need relinking | `knarr restore`, optionally via `postinstall` hook |
-| **Incremental consumer copy** | yalc updates package contents; `--changed` can skip unchanged publish/push work | Hash-based diff, only changed files copied into consumers |
+| **Incremental consumer copy** | yalc updates package contents; `--changed` can skip unchanged publish/push work | Size check then byte comparison; only changed files copied into consumers |
 | **Backup/restore** | No | Yes, original npm version backed up |
 | **Git guardrails** | yalc documents `yalc check` for user-managed hooks | No git hooks |
 

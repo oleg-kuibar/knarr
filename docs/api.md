@@ -119,7 +119,7 @@ async function removeInjected(
 
 ```typescript
 interface InjectOptions {
-  force?: boolean;       // force copy all files, bypassing hash comparison
+  force?: boolean;       // force copy all files, skipping the unchanged-file check
 }
 ```
 

@@ -201,7 +201,7 @@ flowchart TD
 ```
 
 1. Each `copyFile` first probes for CoW reflink support (`COPYFILE_FICLONE_FORCE`) on the target volume. The result is cached per volume root — if reflinks aren't supported (ext4, NTFS), all subsequent copies on that volume go straight to a plain `copyFile` with no wasted syscalls. On APFS (macOS), btrfs (Linux), and ReFS (Windows), the reflink is instant and uses no additional disk space.
-2. Before copying, Knarr compares file sizes: different sizes mean different content, so the file is copied. When sizes match, it compares the bytes of both files and copies only if they differ. Mtimes are not trusted, because a build can rewrite a file within the filesystem's mtime resolution. Files over 1 MB are compared in 1 MB chunks to avoid loading them into memory. Only changed files get copied, and files removed from the source get deleted from the destination. All file comparisons run in parallel, throttled to the CPU core count.
+2. Before copying, Knarr compares file sizes: different sizes mean different content, so the file is copied. When sizes match, it compares the bytes of both files and copies only if they differ. Mtimes are not trusted, because a build can rewrite a file within the filesystem's mtime resolution. Files over 1 MB are compared in 1 MB chunks to avoid loading them into memory. Only changed files get copied, and files removed from the source get deleted from the destination. All file comparisons run in parallel, throttled to the CPU core count (at least 8).
 3. Each file is copied to a `.knarr-tmp-<pid>-<uuid>` sibling and renamed onto its final path in `node_modules/`, so readers see the old file or the new one, never a partial write. The rename generates the filesystem events bundler watchers need.
 
 ## State
@@ -315,7 +315,7 @@ pnpm's "injected dependencies" feature already proved that copies work for this.
 
 Hardlinks sound perfect (instant, zero disk space) but they don't work here:
 
-1. **Breaks incremental copy.** Knarr compares source and destination file hashes to detect changes. Hardlinks share an inode, so modifying the source silently modifies the destination too — the hashes always match, and Knarr never detects that anything changed.
+1. **Breaks incremental copy.** Knarr compares source and destination file contents to detect changes. Hardlinks share an inode, so modifying the source silently modifies the destination too — the contents always match, and Knarr never detects that anything changed.
 2. **Breaks bundler watchers.** On macOS (FSEvents) and Windows (ReadDirectoryChangesW), modifying a file through one hardlink path does NOT notify watchers on a different path. Bundlers watching `node_modules/` would never see changes made via the store.
 3. **Writes leak into the store.** A tool that rewrites a hardlinked file in place, instead of replacing it, changes the store copy and every other consumer linked to it. pnpm's own store has this risk too, so Knarr never writes through an existing file: it copies to a temp file and renames it over the target.
 4. **Bundler caching.** Even if hardlinks worked perfectly, bundlers like Vite pre-bundle and cache deps, so they wouldn't re-read the files anyway.

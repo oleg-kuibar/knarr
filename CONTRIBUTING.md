@@ -71,7 +71,7 @@ Tests use [vitest](https://vitest.dev/) with a 70% line coverage threshold (`vit
 | E2E | `src/__tests__/e2e.test.ts` | Full CLI flows using real fixtures from `examples/packages/` |
 | Watcher | `src/__tests__/watcher.test.ts` | Real chokidar watching, debounce, and ignore rules |
 | Standalone emulation | `src/__tests__/standalone-emulate.test.ts` | Real package manager install + CLI invocation |
-| Benchmarks | `src/__tests__/*.bench.ts`, `src/utils/__tests__/hash.bench.ts` | Performance measurements (run with `pnpm bench`; Vitest 5 `({ bench })` test-context API) |
+| Benchmarks | `src/__tests__/*.bench.ts`, `src/utils/__tests__/*.bench.ts` | Performance measurements (run with `pnpm bench`; Vitest 5 `({ bench })` test-context API) |
 
 ### Running e2e tests
 
