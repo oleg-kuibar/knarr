@@ -214,7 +214,7 @@ async function cleanupPackageJson(pkgPath: string): Promise<void> {
     }
 
     if (changed) {
-      const indent = pkgContent.match(/^(\s+)"/m)?.[1] || "  ";
+      const indent = pkgContent.match(/^([ \t]+)"/m)?.[1] || "  ";
       await atomicWriteFile(pkgPath, JSON.stringify(pkg, null, indent) + "\n");
       consola.success("Cleaned up package.json");
     }

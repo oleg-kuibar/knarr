@@ -195,7 +195,7 @@ knarr status --verbose
 
 Verbose mode logs:
 
-- File hash computations and skip decisions
+- Skip decisions for unchanged files
 - Symlink resolution paths (useful for pnpm debugging)
 - Store read/write operations
 - Consumer registry lookups

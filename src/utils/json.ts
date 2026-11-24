@@ -78,5 +78,5 @@ export function asPackageJson(obj: JsonObject): PackageJson | null {
 
 /** Indentation of an existing JSON document, so rewrites keep its style. */
 export function detectJsonIndent(text: string): string {
-  return /^(\s+)"/m.exec(text)?.[1] ?? "  ";
+  return /^([ \t]+)"/m.exec(text)?.[1] ?? "  ";
 }

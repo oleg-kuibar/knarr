@@ -6,7 +6,7 @@ import { isComplexConfig } from "./vite-config.js";
  * Detect the indentation style used in a file.
  */
 function detectIndent(content: string): string {
-  const match = content.match(/^(\s+)\S/m);
+  const match = content.match(/^([ \t]+)\S/m);
   return match?.[1] || "  ";
 }
 

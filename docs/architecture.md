@@ -87,7 +87,7 @@ State machine per package prevents infinite loops: `idle → building → idle` 
 | Mechanism | Where | What it protects |
 |---|---|---|
 | `withFileLock()` | `publisher.ts` | Prevents concurrent publishes of the same package from corrupting the store. Uses `mkdir` as an atomic lock primitive with exponential backoff and 60s stale detection. |
-| `pLimit(cpuCount)` | `publisher.ts`, `hash.ts` | Limits parallel file copies and hash computations to CPU core count. |
+| `pLimit(max(cpuCount, 8))` | `publisher.ts`, `hash.ts`, `utils/fs.ts` | Limits parallel file copies, hash computations, and file comparisons to the CPU core count, at least 8. |
 | `pLimit(4)` | `push-engine.ts` | Limits parallel consumer injections to 4 to avoid saturating I/O. |
 
 `pLimit` is a minimal reimplementation in `utils/concurrency.ts` (no external dependency).

@@ -45,6 +45,8 @@ export default defineConfig({
 
 > **Auto-injection:** Both `knarr add` and `knarr init` automatically add the Knarr Vite plugin to your config when they detect Vite. `knarr remove` removes it when the last Knarr-linked package is unlinked. You typically don't need to add it manually.
 
+Excluding a linked package also stops Vite from scanning its imports, so the plugin adds each of the package's JavaScript `dependencies` to `optimizeDeps.include` as `linked-pkg > dep`. CommonJS dependencies (such as `prop-types`) then still get converted to ESM. CSS-only and types-only dependencies are skipped, because Vite can't pre-bundle them.
+
 The plugin logs only what you'd act on: which packages it excludes from pre-bundling, and when a push triggers a reload or restart. To see watcher setup details while debugging, use `knarr({ verbose: true })` or start Vite with `KNARR_VERBOSE=1`.
 
 ### Why a plugin?

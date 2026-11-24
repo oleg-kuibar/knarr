@@ -81,6 +81,25 @@ describe("corrupt consumers registry", () => {
   });
 });
 
+describe("undeclared dependency hint", () => {
+  it("stays quiet for a dependency declared by a consumer without a version", async () => {
+    const { consola } = await import("../utils/console.js");
+    await writeFile(
+      join(testConsumer, "package.json"),
+      JSON.stringify({ name: "test-app", private: true, dependencies: { "test-lib": "^1.0.0" } })
+    );
+    await writePackage(testLib, { prebuilt: "built" });
+    const info = vi.spyOn(consola, "info");
+
+    try {
+      await runAddFromConsumer({ from: testLib, skipBuild: true });
+      expect(info.mock.calls.some(([message]) => String(message).includes("isn't in package.json"))).toBe(false);
+    } finally {
+      info.mockRestore();
+    }
+  });
+});
+
 describe("build-aware use/add flow", () => {
   it("runs an auto-detected build with --yes before publishing a source path", async () => {
     await writePackage(testLib, {
