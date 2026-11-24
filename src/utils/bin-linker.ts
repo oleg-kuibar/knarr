@@ -4,10 +4,11 @@ import {
   writeFile,
   chmod,
   rm,
-  lstat,
   readFile,
   readlink,
+  open,
 } from "node:fs/promises";
+import { constants } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { platform } from "node:os";
 import { consola } from "./console.js";
@@ -271,17 +272,16 @@ async function binFileBelongsToPackage(
   linkPath: string,
   packageRoot: string
 ): Promise<boolean> {
-  let fileStat;
+  let target: string | undefined;
   try {
-    fileStat = await lstat(linkPath);
+    target = await readlink(linkPath);
   } catch (err) {
     if (isNodeError(err) && err.code === "ENOENT") return false;
-    throw err;
+    if (!(isNodeError(err) && err.code === "EINVAL")) throw err;
   }
 
-  const resolvedPackageRoot = resolve(packageRoot);
-  if (fileStat.isSymbolicLink()) {
-    const target = await readlink(linkPath);
+  if (target !== undefined) {
+    const resolvedPackageRoot = resolve(packageRoot);
     const resolvedTarget = resolve(binDir, target);
     return (
       resolvedTarget === resolvedPackageRoot ||
@@ -289,9 +289,21 @@ async function binFileBelongsToPackage(
     );
   }
 
-  if (!fileStat.isFile()) return false;
+  let handle;
+  try {
+    handle = await open(linkPath, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+  } catch (err) {
+    if (isNodeError(err) && (err.code === "ENOENT" || err.code === "EISDIR")) return false;
+    throw err;
+  }
+  let content: string;
+  try {
+    if (!(await handle.stat()).isFile()) return false;
+    content = await handle.readFile("utf-8");
+  } finally {
+    await handle.close();
+  }
 
-  const content = await readFile(linkPath, "utf-8");
   const relPackageRoot = normalizePath(relative(binDir, packageRoot));
   const relWindowsPackageRoot = relPackageRoot.replace(/\//g, "\\");
   return (

@@ -93,6 +93,7 @@
     "@types/picomatch": "^4.0.3",
     "chokidar": "^6.0.0",
     "citty": "^0.2.2",
+    "fast-check": "^4.10.2",
     "oxlint": "^1.92.0",
     "oxlint-tsgolint": "^7.0.2006",
     "picomatch": "^4.0.7",

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- `knarr remove` checks whether a bin shim belongs to the package through a single file handle, so the file can't be swapped between the check and the read.
+
 ## 0.3.2
 
 Patch release. Fixes a blank page in Vite apps whose linked package pulls in CommonJS dependencies, a wrong "isn't in package.json" hint for consumers without a `version`, and blank lines in rewritten Vite and Next.js configs.
