@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.2
+
+Patch release. Fixes a blank page in Vite apps whose linked package pulls in CommonJS dependencies, a wrong "isn't in package.json" hint for consumers without a `version`, and blank lines in rewritten Vite and Next.js configs.
+
+### Fixes
+
+- Vite plugin: a linked package's CommonJS dependencies no longer reach the browser unconverted (a blank page). The plugin adds the package's JavaScript `dependencies` to `optimizeDeps.include` as `linked-pkg > dep`, skipping CSS-only and types-only packages.
+- `knarr add`/`use` no longer says a package isn't in `package.json` when the consumer's `package.json` has no `version` field. The same bug made pnpm and Yarn pnpm-linker consumers without a `version` skip the virtual-store lookup.
+- Vite and Next.js config edits no longer add blank lines between plugin entries when the config contains a blank line.
+
 ## 0.3.1
 
 Patch release. Knarr now installs as a single package with no runtime dependencies, about a quarter of its previous install size.
